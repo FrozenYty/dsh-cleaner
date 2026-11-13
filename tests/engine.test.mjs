@@ -100,6 +100,8 @@ test('a dry run lists exactly the archived sessions on disk, counts their bytes,
     assert.match(candidate.modified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     assert.ok(Date.now() - Date.parse(candidate.modified) < 60 * 60 * 1000)
   }
+  // A tool result has to be lossless JSON: an `undefined` field would silently vanish here.
+  assert.deepEqual(JSON.parse(JSON.stringify(listing)), listing)
 
   for (const candidate of listing.candidates) assert.ok(existsSync(candidate.path), `${candidate.path} must survive a dry run`)
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id, 'session.v4.jsonl.zstd')))
