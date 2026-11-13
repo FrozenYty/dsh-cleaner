@@ -267,7 +267,7 @@ for (const name of SINGLE_LANGUAGE_DOCS.keys()) {
 for (const name of ['README.md', 'README-zh.md']) {
   if (!existsSync(join(root, name))) fail(`${name}: missing (bilingual pair)`)
 }
-const ROOT_SINGLE_LANGUAGE = ['AGENTS.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'LICENSE']
+const ROOT_SINGLE_LANGUAGE = ['AGENTS.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE']
 for (const name of ROOT_SINGLE_LANGUAGE) {
   if (!existsSync(join(root, name))) fail(`${name}: missing (single-language root document)`)
 }

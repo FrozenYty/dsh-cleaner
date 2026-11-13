@@ -2,6 +2,12 @@
 
 [English](README.md) | 中文
 
+[![ci](https://github.com/FrozenYty/dsh-cleaner/actions/workflows/ci.yml/badge.svg)](https://github.com/FrozenYty/dsh-cleaner/actions/workflows/ci.yml)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+![build step](https://img.shields.io/badge/build-none-brightgreen)
+![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
+
 > 归档只是把它藏起来；删不删，是人的决定。
 
 一个 DeepSeek Harness 的 profile bundle，补上产品本身不做的那件事：把已归档会话的日志从磁盘上真正删掉。
@@ -69,8 +75,9 @@ dsh plugin --profile <profile> add /path/to/dsh-cleaner
 
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
-    session-36560858-…  182051 bytes  3 file(s)
-    session-177a4f1f-…  2475067 bytes  1 file(s)
+  The session store holds 36 directories, 91025807 bytes (86.81 MiB) in all.
+    session-36560858-…  182051 bytes  3 file(s)  last write 2026-11-02T07:39:15.053Z
+    session-177a4f1f-…  2475067 bytes  1 file(s)  last write 2026-11-03T02:14:07.060Z
     …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.
@@ -111,11 +118,51 @@ already gone。
 - **不清投影缓存。** harness 把每个会话的投影放在 `storages/session_projcache/`，本插件不碰：删掉的会话
   可能留一条陈旧投影和缓存文件，直到运行时自己改写或丢弃。那是派生数据、会自愈，也刻意不让它成为引擎的
   第三条可能搞错的路径。
+- **不清附件。** 会话带过的图片和文件在内容寻址的仓库里（`attachments/v1/objects`），不在会话目录里：
+  一个对象可能同时属于好几个会话，而要找出某个会话引用过哪些，就得解析它的日志——正是本插件拒绝做的事。
+  写这份文档的机器上那个仓库有 54 MiB，原样留着。
 - **没有定时、没有保留策略、没有大小上限。** 删不删是决定，不是规则。
 - **证明不了“人批准过这份清单”。** id 让被批准的集合在对话里明确可见，各条拒绝规则也把损害限制住了，
   但模型仍然可以点一个没人看过的 id。见 [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md)。
 - **不修日志。** 会话已归档但日志损坏、读不出来，照样会被删：本插件是清理的最后一条路，所以不能依赖日志
   可解析。
+
+## 常见问题
+
+**归档错了，还能救回来吗？**
+在删之前都能。本插件从不写归档表，所以文件还在时取消归档照常有效；而在你看过清单之后又被取消归档的会话，
+删除那一步会点名拒绝它。
+
+**harness 开着的时候能用吗？**
+能。它只读 workspace 文件、只 unlink 会话目录，不持有会话存储的任何句柄。正在执行命令的这个会话永远被
+拒绝，被活着的 agent 占着的会话也一样。删掉的会话可能在界面上留一行，直到运行时刷新——见上面的投影缓存。
+
+**没归档的会话会被删吗？**
+不会。候选集就是归档表，按 id 去查；未归档的会话根本不会被查到，而不是“查出来再过滤掉”。
+
+**清单里的“最后写入时间”是什么？**
+那个会话目录里最新文件的写入时间，也就是这个会话最后一次追加内容的时间。正是这个事实让“六个全删”变成一
+个决定：这六个里最早的最后写入是 2026-11-02，最晚的是 2026-11-12，除此之外输出里没有任何东西能把它们
+区分开。
+
+**它怎么知道整个存储有多大？**
+每次列清单会把 `sessions/` 下每个项目目录走一遍。这趟遍历也正是“已归档但目录已经不在”的 id 会显示成
+already gone 的原因——第二次运行看到的就是这个状态。
+
+## 兼容性
+
+- **DSH**：对着已安装的 `0.2.2-rc.1` 桌面版验证。`engine.js` 里的存储布局和 id 转义是从那个版本的
+  `app.asar`（`@deepseek-ai/dsh-session-persistence` 及其 JSONL 后端）里读出来的，不是凭记忆写的。以后
+  哪个版本改了这两样中的任何一样，是本插件唯一没法自己消化的变化——而且失败方向是安全的：0 个候选、所有
+  已归档 id 报成 already gone（见 [docs/design.md](docs/design.md) §8）。
+- **会话格式**：一个会话一个目录，里面是 `session.vN.jsonl.zstd` 各代。插件不解析任何格式，所以已经发布的
+  每一代、以及将来新加的代，都被“整个目录删掉”这一条覆盖。
+- **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、两个平台上都跑测试；隔离开关两边拼法不同（24 上是
+  `--test-isolation=none`，与本机一致；22 上是 `--experimental-test-isolation=none`）。
+
+## 安全
+
+插件信任什么、能被弄成删什么、又绝对碰不到什么：[SECURITY.md](SECURITY.md)。
 
 ## 验证
 
@@ -154,5 +201,6 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么是两个工具，为什么必须点名 id？ | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | 为什么链接和不规则目录只拒绝、不跟随？ | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |
+| 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | 助手在这里要守什么规则？ | [AGENTS.md](AGENTS.md) |

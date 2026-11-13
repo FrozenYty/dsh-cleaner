@@ -2,6 +2,12 @@
 
 English | [中文](README-zh.md)
 
+[![ci](https://github.com/FrozenYty/dsh-cleaner/actions/workflows/ci.yml/badge.svg)](https://github.com/FrozenYty/dsh-cleaner/actions/workflows/ci.yml)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+![build step](https://img.shields.io/badge/build-none-brightgreen)
+![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
+
 > An archive hides a session; deleting it is a decision.
 
 A DeepSeek Harness profile bundle for the one thing the product does not do: remove an archived
@@ -78,8 +84,9 @@ exchange, from the rehearsal above:
 
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
-    session-36560858-…  182051 bytes  3 file(s)
-    session-177a4f1f-…  2475067 bytes  1 file(s)
+  The session store holds 36 directories, 91025807 bytes (86.81 MiB) in all.
+    session-36560858-…  182051 bytes  3 file(s)  last write 2026-11-02T07:39:15.053Z
+    session-177a4f1f-…  2475067 bytes  1 file(s)  last write 2026-11-03T02:14:07.060Z
     …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.
@@ -125,12 +132,61 @@ no directory, which the listing reports as already gone.
   `storages/session_projcache/`, and this plugin does not touch them: a deleted session may keep a
   stale row and its cache file until the runtime rewrites or drops it. Derived data, self-healing, and
   owned by another subsystem — and deliberately not a third path for the engine to be wrong about.
+- **No attachment cleanup.** Images and files a session carried live in a content-addressed store
+  (`attachments/v1/objects`), not in the session directory: one object can belong to several sessions,
+  and finding a session's references would mean parsing its log, which this plugin refuses to do. That
+  store is 54 MiB on the machine this was written on, and it is left alone.
 - **No schedule, no retention policy, no size cap.** Deleting is a decision, not a rule.
 - **No proof that a person approved the list.** The ids make the approved set explicit in the
   conversation and the refusals bound the damage, but a model could still name an id nobody looked at.
   See [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md).
 - **No log repair.** A corrupt or unreadable log is still deleted when its session is archived: this
   plugin is the cleanup path of last resort, so it must not depend on the log being parseable.
+
+## Questions
+
+**I archived a session by mistake — is it gone?**
+Not until something is deleted. This plugin never writes the archive list, so unarchiving still works
+while the files are there, and a session restored between the listing and the deletion is refused by
+name.
+
+**Does it work while the harness is running?**
+Yes: it reads the workspace file and unlinks session directories, and holds no handle to the session
+store. The session running the command is always refused, and so is any session a live agent holds. A
+deleted session's row may linger in the UI until the runtime refreshes — see the projection cache note
+above.
+
+**Will it delete sessions that are not archived?**
+No. The candidate set is the archive list, looked up by id: an unarchived session is never looked up,
+not merely filtered out.
+
+**Why does the listing show a last-write time?**
+It is the newest file's write time in that session directory — the last time the session appended
+anything. That is the fact that turns "delete all six" into a decision: of the six listed here, the
+oldest last wrote on 2026-11-02 and the newest on 2026-11-12, and nothing else in the output separates
+them.
+
+**How does it know how big the store is?**
+It walks every project directory under `sessions/` once per listing. That walk is also what makes an
+archived id with no directory visible as `already_gone`, which is the state a second run finds.
+
+## Compatibility
+
+- **DSH**: verified against the installed `0.2.2-rc.1` desktop build. The storage layout and the id
+  escaping in `engine.js` were read from that build's `app.asar`
+  (`@deepseek-ai/dsh-session-persistence` and its JSONL backend), not from memory. A later build that
+  renames either is the one change this plugin cannot absorb by itself — and it fails safely: zero
+  candidates, every archived id reported as already gone (`docs/design.md` §8).
+- **Session format**: one directory per session with `session.vN.jsonl.zstd` generations inside. No
+  format is parsed, so every released generation, and any later one, is covered by construction.
+- **Node**: `^22.19.0 || >=24.0.0`. CI runs the suite on both majors and both platforms; the
+  isolation flag differs between them (`--test-isolation=none` on 24, which is what the local runner
+  uses, and `--experimental-test-isolation=none` on 22).
+
+## Security
+
+What the plugin trusts, what it can be made to delete, and what it cannot touch:
+[SECURITY.md](SECURITY.md).
 
 ## Verify
 
@@ -171,5 +227,6 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why two tools, and why explicit ids? | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | Why are links and irregular directories refused? | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
+| What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |

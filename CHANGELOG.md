@@ -14,11 +14,18 @@ A release adds its section in the same pull request that writes the change, so t
   bytes; a deletion removes the session's own directory and reports what actually left the disk.
 - Two model-facing tools: `list_archived_sessions`, which takes no argument and cannot delete, and
   `delete_archived_sessions`, which deletes only the ids it is given by name.
+- The listing also reports each log's last write (the newest file's write time) and the size of the whole
+  store, so a reclaimable total is judged against what it came from.
 - The candidate rule is `global.archivedSessionIds` and nothing else, re-read at deletion time; the
   running session and every live agent's session are protected and reported; symlinked and junctioned
   directories are refused rather than followed; a session directory holding anything but regular files
   is refused rather than removed.
+- Every check the listing makes is repeated against the live filesystem at deletion time, including the
+  containment test: a plan naming a path outside the storage root is refused, and that is covered by a
+  test that tampers with a plan to prove it.
 - Verification through the mounted `sessionPersistence` service after a deletion, reported and never
   able to veto one. The plugin parses no session format and rewrites no log line.
-- Repository checks (`scripts/check.mjs`) and 20 fixture tests, both run by CI on Linux and Windows with
-  Node 24.
+- Repository checks (`scripts/check.mjs`) and 24 fixture tests, both run by CI with Node 22 and Node 24
+  on Linux and Windows.
+- `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
+  deletion owes that answer.

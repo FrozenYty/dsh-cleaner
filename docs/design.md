@@ -48,6 +48,10 @@ Read from the installed asar, not from memory. The JSONL backend stores one sess
   (`session.jsonl.zstd`, `session.v3.jsonl.zstd`) beside the current one, and the backend documents the
   directory as available for future session-local artifacts. The deletion unit is therefore the
   directory, not a file, and no session format is parsed to find it.
+- **The log is not the whole session.** Images and files a session carried live in a separate
+  content-addressed store (`attachments/v1/objects`), shared between sessions; nothing in a session
+  directory points at them, and finding a session's references would mean reading its log. That store is
+  therefore out of scope by design, not by omission.
 
 The workspace storage file is read-only here: `global.archivedSessionIds` is the only field this plugin
 reads, and the plugin never writes the file. A deleted id stays in that list and becomes an id with no
@@ -87,7 +91,10 @@ first, because that is the one the contract names.
    for its size, `unlink` it, and `rmdir` the directory.
 4. Report `removed` (id, path, file count, bytes), `removed_bytes` (measured at unlink time, so it is
    what actually left the disk), `failed` (with the bytes freed before the failure) and `refused` (with
-   the reason). One candidate's failure does not abort the sweep.
+   the reason). One candidate's failure does not abort the sweep. The listing carries two more facts a
+   person needs to decide: `modified`, the newest file's write time in each candidate directory, and
+   `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
+   be judged.
 5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
 
 The last step is the only use this plugin makes of the seam. It is a report and not a gate: the seam
