@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, rm, rmdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, beforeEach, test } from 'node:test'
@@ -146,8 +146,10 @@ test('a directory the walk refused is named in the listing, with the reason', as
     const rendered = text(tools.get('list_archived_sessions'), value)
     assert.match(rendered, /Not a candidate: .*--D-LINKED-- — not a directory; a link at this level is not followed/)
   } finally {
-    // Removed as a link, never descended into: a junction is a directory entry, not a directory tree.
-    await rmdir(link)
+    // A junction is a directory entry, a symlink is not: `rmdir` removes the first and fails with ENOTDIR
+    // on the second, which is the same split the engine has to live with. Neither call descends the link.
+    if (process.platform === 'win32') await rmdir(link)
+    else await unlink(link)
   }
 })
 
