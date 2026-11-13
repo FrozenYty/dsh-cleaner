@@ -178,8 +178,8 @@ already gone 的原因——第二次运行看到的就是这个状态。
   已归档 id 报成 already gone（见 [docs/design.md](docs/design.md) §8）。
 - **会话格式**：一个会话一个目录，里面是 `session.vN.jsonl.zstd` 各代。插件不解析任何格式，所以已经发布的
   每一代、以及将来新加的代，都被“整个目录删掉”这一条覆盖。
-- **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、两个平台上都跑测试；隔离开关两边拼法不同（24 上是
-  `--test-isolation=none`，与本机一致；22 上是 `--experimental-test-isolation=none`）。
+- **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、两个平台上跑的都是 `npm test`；让测试共用一个进程
+  的那个开关两边拼法不同，`scripts/test.mjs` 按当前版本自己选，所以同一条命令在两个版本上都成立。
 
 ## 安全
 
@@ -188,15 +188,16 @@ already gone 的原因——第二次运行看到的就是这个状态。
 ## 验证
 
 ```sh
-node scripts/check.mjs                              # 清单、依赖面、schema、locale、patch、文档
-node --check index.js                               # bundle 入口能按 ESM 解析
+node scripts/check.mjs     # 清单、依赖面、schema、locale、patch、文档
+node --check index.js      # bundle 入口能按 ESM 解析
 node --check engine.js
-node --test --test-isolation=none tests/*.test.mjs  # fixture 测试，故意只用一个进程
+npm test                   # fixture 测试，故意只用一个进程
 ```
 
-`--test-isolation=none` 是这台机器的必须项：默认 runner 会按文件各起一个进程，而这个沙箱拒绝那种 spawn。
-它同时是 Node 24 的拼法；Node 22 叫 `--experimental-test-isolation`。CI 在两个大版本、两个平台上各跑一遍，
-所以拼法和平台都是被绿过的，不是声称的。
+测试故意共用一个进程：默认 runner 会按文件各起一个进程，而受限沙箱拒绝那种 spawn。Node 24 把开关拼作
+`--test-isolation`，Node 22 拼作 `--experimental-test-isolation`，所以由 `scripts/test.mjs` 按当前版本
+选，而不是在 package.json、CI 和这里各写一份。CI 在两个大版本、两个平台上跑的就是这条 `npm test`，
+所以拼法和平台是绿出来的，不是声称的。
 
 没有任何测试碰真实 `DSH_HOME`。引擎把会话存储根目录和 workspace 存储文件当参数收，引擎测试全传 fixture
 路径，入口测试把 `DSH_HOME` 指到自己的目录。对真实存储的 dry-run 是另一件刻意的事：

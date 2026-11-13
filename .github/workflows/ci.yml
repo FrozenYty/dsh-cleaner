@@ -12,22 +12,13 @@ jobs:
     strategy:
       # Both platforms, because the deletion engine is filesystem code: it walks directories, resolves
       # links and unlinks files, and the two families disagree about all three. Both Node majors,
-      # because the package claims them and the isolation flag is spelled differently in each.
+      # because the package claims them and the isolation flag is spelled differently in each — the
+      # spelling lives in scripts/test.mjs, chosen from the running version, so running `npm test` here
+      # is also the check that the choice is right.
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            node: "24"
-            isolation: "--test-isolation=none"
-          - os: windows-latest
-            node: "24"
-            isolation: "--test-isolation=none"
-          - os: ubuntu-latest
-            node: "22"
-            isolation: "--experimental-test-isolation=none"
-          - os: windows-latest
-            node: "22"
-            isolation: "--experimental-test-isolation=none"
+        os: [ubuntu-latest, windows-latest]
+        node: ["22", "24"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,12 +32,12 @@ jobs:
           node --check index.js
           node --check engine.js
           node --check scripts/check.mjs
+          node --check scripts/test.mjs
 
       - name: Fixture tests
-        # One process on purpose, exactly as the README documents: the suites build their own trees under
-        # tests/. Node 24 spells the flag `--test-isolation`, Node 22 `--experimental-test-isolation`; the
-        # matrix carries the spelling, so a green run means the same thing here and on this machine.
-        run: node --test ${{ matrix.isolation }} tests/*.test.mjs
+        # The command a contributor runs, not a variant of it: scripts/test.mjs shares one process on
+        # purpose and picks this major's spelling of the flag.
+        run: npm test
 
       - name: Repository checks
         run: node scripts/check.mjs

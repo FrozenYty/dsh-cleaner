@@ -21,7 +21,7 @@
     "delete"
   ],
   "scripts": {
-    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "test": "node scripts/test.mjs",
     "check": "node scripts/check.mjs"
   },
   "exports": {

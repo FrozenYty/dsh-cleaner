@@ -34,6 +34,9 @@ A release adds its section in the same pull request that writes the change, so t
   model to call the deleting tool on an answer that listed none is how a wasted call gets made.
 - Refusal reasons no longer restate the decision they are filed under: the answer already prefixes each
   one, so a kept id reads "not an archived session" instead of "not an archived session; kept".
+- One test command for both majors: `npm test` runs `scripts/test.mjs`, which chooses the isolation flag
+  spelling from the running Node version, so the package script no longer fails on Node 22 while the
+  package claims it. CI runs that same command on every leg.
 - Repository checks (`scripts/check.mjs`) and 29 fixture tests, both run by CI with Node 22 and Node 24
   on Linux and Windows.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is

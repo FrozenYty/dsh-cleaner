@@ -203,9 +203,9 @@ archived id with no directory visible as `already_gone`, which is the state a se
   candidates, every archived id reported as already gone (`docs/design.md` §8).
 - **Session format**: one directory per session with `session.vN.jsonl.zstd` generations inside. No
   format is parsed, so every released generation, and any later one, is covered by construction.
-- **Node**: `^22.19.0 || >=24.0.0`. CI runs the suite on both majors and both platforms; the
-  isolation flag differs between them (`--test-isolation=none` on 24, which is what the local runner
-  uses, and `--experimental-test-isolation=none` on 22).
+- **Node**: `^22.19.0 || >=24.0.0`. CI runs `npm test` on both majors and both platforms; the flag that
+  puts the suites in one process is spelled per major, and `scripts/test.mjs` chooses it from the running
+  version, so the same command works on each.
 
 ## Security
 
@@ -215,16 +215,17 @@ What the plugin trusts, what it can be made to delete, and what it cannot touch:
 ## Verify
 
 ```sh
-node scripts/check.mjs                              # manifest, dependency surface, schemas, locales, patch, documents
-node --check index.js                               # the bundle entry parses as ESM
+node scripts/check.mjs     # manifest, dependency surface, schemas, locales, patch, documents
+node --check index.js      # the bundle entry parses as ESM
 node --check engine.js
-node --test --test-isolation=none tests/*.test.mjs  # the fixture tests, one process on purpose
+npm test                   # the fixture tests, one process on purpose
 ```
 
-`--test-isolation=none` is required on this machine: the default runner spawns one process per file and
-the sandbox refuses that spawn. It is also the Node 24 spelling; Node 22 names it
-`--experimental-test-isolation`. CI runs the suite on both majors and both platforms, so the flag
-spelling and the platform are each covered by a green run rather than by a claim.
+The suites share one process deliberately: the default runner spawns one process per test file, and a
+confined sandbox refuses that spawn. Node 24 spells the flag `--test-isolation`, Node 22
+`--experimental-test-isolation`, so `scripts/test.mjs` picks the spelling for the running major rather
+than repeating it in package.json, CI and here. CI runs that same `npm test` on both majors and both
+platforms, which is what makes the spelling and the platform green rather than claimed.
 
 No test touches a real `DSH_HOME`. The engine takes the session storage root and the workspace storage
 file as arguments, every engine test passes fixture paths, and the entry tests point `DSH_HOME` at a

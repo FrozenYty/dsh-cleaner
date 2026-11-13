@@ -58,14 +58,16 @@ trailer as another contributor.
 
 | Job | Command | What a failure means |
 |---|---|---|
-| Every module parses | `node --check index.js` (also `engine.js`, `scripts/check.mjs`) | a syntax error |
-| Fixture tests | `node --test --test-isolation=none tests/*.test.mjs` | a behavioural promise broke — fix the behaviour, not the assertion |
+| Every module parses | `node --check index.js` (also `engine.js`, `scripts/check.mjs`, `scripts/test.mjs`) | a syntax error |
+| Fixture tests | `npm test` | a behavioural promise broke — fix the behaviour, not the assertion |
 | Repository checks | `node scripts/check.mjs` | the manifest, the schema subset, the locale pair, the patch, a document reference or a machine path is wrong |
 
-The workflow runs those three on **four legs** — Node 22 and 24, Linux and Windows — and the isolation
-flag is spelled per Node major (`--test-isolation=none` on 24, `--experimental-test-isolation=none` on
-22). A leg is not scenery: it is what makes the `engines` field and the platform claims true. Removing
-one to shorten the queue is a change to what this repository asserts.
+The workflow runs those three on **four legs** — Node 22 and 24, Linux and Windows. `npm test` runs
+`scripts/test.mjs`, which picks the flag spelling for the running major (the suites share one process on
+purpose, and the two majors spell that differently), so the legs differ only in version and platform — and
+running the contributor's own command is what proves it. A leg is not scenery: it is what makes the
+`engines` field and the platform claims true. Removing one to shorten the queue is a change to what this
+repository asserts.
 
 `scripts/check.mjs` verifies, without loading the Harness:
 
