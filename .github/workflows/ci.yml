@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    strategy:
+      # Both platforms, because the deletion engine is filesystem code: it walks directories, resolves
+      # links and unlinks files, and the two families disagree about all three.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 on both sides: Node 22 documents this flag as `--experimental-test-isolation`, and
+          # the local runner is Node 24. Pinning the same major keeps "passes locally" and "green in CI"
+          # the same statement.
+          node-version: "24"
+
+      - name: Every module parses
+        run: |
+          node --check index.js
+          node --check engine.js
+          node --check scripts/check.mjs
+
+      - name: Fixture tests
+        # One process on purpose, exactly as the README documents: the suites build their own trees under
+        # tests/, and the default runner adds only a process boundary.
+        run: node --test --test-isolation=none tests/*.test.mjs
+
+      - name: Repository checks
+        run: node scripts/check.mjs

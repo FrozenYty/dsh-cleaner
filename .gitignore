@@ -1,0 +1,21 @@
+# Installed tooling and local scratch. The bundle is linked, so node_modules only appears if a tool is
+# run from this directory.
+node_modules/
+.pnpm-store/
+
+# Editor and OS clutter.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+*.tmp
+
+# Logs and local captures.
+*.log
+
+# Test fixtures. The suites build their own tree here and remove it when they finish; a run that is
+# interrupted between the two leaves one behind, and it is never part of the repository.
+tests/.tmp/
+tests/.tmp-entry/

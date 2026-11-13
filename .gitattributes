@@ -1,0 +1,14 @@
+# Normalize line endings: this repository is edited on Windows but read everywhere.
+* text=auto eol=lf
+
+*.js text
+*.mjs text
+*.json text
+*.yml text
+*.yaml text
+*.md text
+*.svg text
+
+*.png binary
+*.jpg binary
+*.webp binary
