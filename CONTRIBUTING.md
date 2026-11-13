@@ -14,18 +14,20 @@ This is a plugin whose whole job is to delete files. Two rules come before every
 
 ## 2. Branching
 
-`main` is the only long-lived branch and the default. This repository is written by one person and one
-assistant, so a change lands on `main` when every check is green — with one exception: a change to what
-the plugin **promises** (the candidate rule, the protection rule, the deletion path, a tool name or a
-result field) goes through a pull request, so the diff, the reasoning and the green run sit in one
-reviewable place. Branch names for that case are lowercase, hyphen-separated and prefixed by type:
+`main` is the only long-lived branch and the default, and it is protected: a pull request needs all six
+CI legs green (`check <os> node <major>`) before it can merge, force pushes and deletions are refused, and
+the rule includes administrators — a direct push is declined rather than quietly bypassing the checks. So
+every change reaches `main` the same way, whether it changes a promise or a sentence: branch, pull request,
+green run, squash. Branch names are lowercase, hyphen-separated and prefixed by type:
 
 ```
 feat/engine-refuse-reflinks    fix/listing-byte-count    docs/design-pair
 ```
 
 Merge with **squash** and delete the branch. Never force-push `main`: the history there is what people
-clone.
+clone. A change to what the plugin **promises** (the candidate rule, the protection rule, the deletion
+path, a tool name or a result field) still deserves more than a green run: say in the pull request which
+promise moved and which test now covers it, because a check cannot read intent.
 
 ## 3. Commits
 
