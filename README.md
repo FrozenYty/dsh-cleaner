@@ -255,11 +255,12 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-Its row is part of the session list the window fetched, and the harness publishes no "this log is gone"
-event to refresh that list with — so an open window keeps the row it already has. **A page reload is
-enough; a restart is not needed.** What the plugin can do, it does: naming the id in another
-`delete_archived_sessions` call drops it from the project's own records (the answer says
-`The workspace list dropped them…`), and a window that fetches the list after that no longer shows it.
+Name its id in one more `delete_archived_sessions` call. Two records keep a session alive on screen after
+its log is gone: the project's membership and the archive set. The first makes the row render at all, the
+second is why it reappears under *ungrouped* when the first is removed. The plugin asks the registry to drop
+both (the answer says `The workspace records dropped them…`), and a window that is already open keeps its
+own copy of the list until it reloads. If a row survives that reload, nothing in this plugin can reach it:
+the copy belongs to the window.
 
 ## Compatibility
 

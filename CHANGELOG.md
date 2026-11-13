@@ -75,6 +75,12 @@ A release adds its section in the same pull request that writes the change, so t
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not
   a restart. [ADR 0006](docs/adr/0006-detach-by-asking.md) records the second amendment, and the answer,
   README and design say what actually happens.
+- The deletion now also asks the registry to **unarchive** the ids it removed. Detaching the project
+  membership alone left the rows on screen under *ungrouped*: the client's workspace model holds archived
+  Session identities too, and an archived session belonging to no project has no visible list left to be
+  hidden from. Restoring a session whose log is gone is the direction the registry documents as supported,
+  and both calls are made only for ids whose files are gone ([ADR 0006](docs/adr/0006-detach-by-asking.md),
+  third amendment).
 - Repository checks (`scripts/check.mjs`) and 44 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
