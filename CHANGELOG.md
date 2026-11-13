@@ -69,8 +69,8 @@ A release adds its section in the same pull request that writes the change, so t
 - The last holder of a deleted session's row is named: the running window's own persisted sidebar view
   (`localStorage["dsh.workspace.view.v5"]`), re-read on every start, which no host plugin can reach. With
   the store, the project records, the archive set and the session list all clean, the README now says where
-  the row lives and what clears it — a sort away from manual, or removing that key — instead of implying
-  that a reload is enough ([ADR 0006](docs/adr/0006-detach-by-asking.md), fourth amendment).
+  the row lives and what clears it — **a restart of the app, not a page reload**, which the fifth live run
+  settled ([ADR 0006](docs/adr/0006-detach-by-asking.md), fourth and fifth amendments).
 - The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
   project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not
