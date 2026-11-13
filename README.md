@@ -8,7 +8,7 @@ English | [中文](README-zh.md)
 ![build step](https://img.shields.io/badge/build-none-brightgreen)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 
-> An archive hides a session; deleting it is a decision.
+> An archive is not a deletion; deleting needs your nod.
 
 A DeepSeek Harness profile bundle for the one thing the product does not do: remove an archived
 session's log. It lists what is still on disk, waits while a person decides, deletes exactly the ids

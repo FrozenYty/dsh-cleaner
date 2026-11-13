@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "An archive hides a session; deleting it is a decision. Remove the logs of archived sessions in DeepSeek Harness on request: list them, delete the ids a person approved, and report the bytes reclaimed.",
+  "description": "An archive is not a deletion; deleting needs your nod. Remove the logs of archived sessions in DeepSeek Harness on request: list them, delete the ids a person approved, and report the bytes reclaimed.",
   "license": "MIT",
   "repository": {
     "type": "git",

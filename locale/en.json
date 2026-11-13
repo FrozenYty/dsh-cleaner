@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cleaner",
-    "description": "An archive hides a session; its log stays on disk. Delete it on request."
+    "description": "An archive is not a deletion; deleting needs your nod."
   }
 }

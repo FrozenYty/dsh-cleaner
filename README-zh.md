@@ -8,7 +8,7 @@
 ![build step](https://img.shields.io/badge/build-none-brightgreen)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 
-> 归档只是把它藏起来；删不删，是人的决定。
+> 归档不是删除，删除要你点头。
 
 一个 DeepSeek Harness 的 profile bundle，补上产品本身不做的那件事：把已归档会话的日志从磁盘上真正删掉。
 它列出还在占地方的东西，等人做决定，只删被点名的那几个 id，并报告回收了多少字节。没有定时器，没有

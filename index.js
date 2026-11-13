@@ -2,12 +2,12 @@
  * dsh-cleaner — permanently delete the logs of archived sessions, on request.
  *
  * THE CONTRACT
- * An archive hides a session; it does not remove anything. This plugin is the removal, and it happens
- * in exactly three steps: it lists, the person approves, it deletes the ids they named and reports the
- * bytes reclaimed. There is no timer, no interval, no age threshold and no background sweep anywhere
- * in this file or in the engine — a schedule is a policy about the future, and the rule here is that
- * deletion is an act somebody asked for. The listing tool cannot delete; the deleting tool cannot
- * invent an id, because every id in its argument came from the listing.
+ * An archive is not a deletion: it hides the session and touches nothing. This plugin is the removal,
+ * and it happens in exactly three steps: it lists, the person approves, it deletes the ids they named
+ * and reports the bytes reclaimed. There is no timer, no interval, no age threshold and no background
+ * sweep anywhere in this file or in the engine — a schedule is a policy about the future, and the rule
+ * here is that deletion is an act somebody asked for. The listing tool cannot delete; the deleting tool
+ * cannot invent an id, because every id in its argument came from the listing.
  *
  * TWO TOOLS, NOT TWO MODES OF ONE
  * `list_archived_sessions` has no side effect and no required argument, so calling it can never be a
