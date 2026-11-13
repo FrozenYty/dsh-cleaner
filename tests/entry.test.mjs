@@ -127,6 +127,21 @@ test('a listing with nothing left to delete does not invite a deletion call', as
   assert.doesNotMatch(rendered, /call delete_archived_sessions/)
 })
 
+test('a long list of already-deleted ids is counted and marked, not printed whole', async () => {
+  const tools = install()
+  const gone = Array.from({ length: 14 }, (_, index) => `session-gone-${index + 1}`)
+  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), ...gone])
+
+  const value = await run(tools.get('list_archived_sessions'), {})
+  assert.equal(value.already_gone.length, 14)
+  assert.equal(value.candidates.length, 2)
+
+  const rendered = text(tools.get('list_archived_sessions'), value)
+  assert.match(rendered, /Already gone \(archived, but no directory is stored\): 14 — session-gone-1\b/)
+  assert.match(rendered, /and 4 more/)
+  assert.doesNotMatch(rendered, /session-gone-14/, 'the tail is marked, not printed')
+})
+
 test('the deleting tool removes only the ids it was given, and reports the bytes', async () => {
   const tools = install()
   const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })

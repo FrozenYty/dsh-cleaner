@@ -127,6 +127,13 @@ function formatBytes(bytes) {
   return `${bytes} bytes (${(bytes / (1024 * 1024)).toFixed(2)} MiB)`
 }
 
+/** A bounded enumeration: the count is the fact, the ids are the detail, and a long tail is marked. */
+function listIds(ids) {
+  const shown = ids.slice(0, 10)
+  const rest = ids.length - shown.length
+  return ` — ${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`
+}
+
 /** Every line a listing answers with, including the ones that explain an empty result. */
 function renderList(value) {
   const lines = []
@@ -146,7 +153,12 @@ function renderList(value) {
     )
   }
   if (value.already_gone.length > 0) {
-    lines.push(`Already gone (archived, but no directory is stored): ${value.already_gone.length} — ${value.already_gone.join(', ')}`)
+    // Nothing here is actionable — these ids have no log left to delete — so a long tail is counted and
+    // marked rather than printed, which is the difference between a line and a page after a big cleanup.
+    lines.push(
+      `Already gone (archived, but no directory is stored): ${value.already_gone.length}`
+      + listIds(value.already_gone),
+    )
   }
   for (const entry of value.protected) lines.push(`Kept, protected: ${entry.id} — ${entry.reason}`)
   for (const entry of value.skipped) lines.push(`Not a candidate: ${entry.path} — ${entry.reason}`)
@@ -230,10 +242,10 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'list_archived_sessions',
     description:
-      'List the archived DeepSeek Harness sessions whose logs are still on disk: each one\'s bytes, when it last '
-      + 'wrote, and what the store holds in total. Archiving only hides a session: its log stays on disk until '
-      + 'something removes it, and nothing does. This tool deletes nothing and takes no argument, so calling it can '
-      + 'never be a mistake. Show the list to the person, and call delete_archived_sessions with the ids they approve.',
+      'List the archived DeepSeek Harness sessions whose logs are still on disk: each one\'s bytes and last write, '
+      + 'and what the store holds in total. An archive only hides a session — its log stays on disk and nothing in '
+      + 'the product removes it. Read-only and argument-free, so calling it can never be a mistake. Show it to the '
+      + 'person, then pass the ids they approve to delete_archived_sessions.',
     parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: { schema: LIST_VALUE, render: (_args, value) => [{ type: 'text', text: renderList(value) }] },
     async execute(_args, exec) {
@@ -246,10 +258,9 @@ export function apply(ctx) {
     description:
       'Permanently delete the stored logs of the named archived sessions, and report the bytes reclaimed. Pass '
       + 'exactly the ids from list_archived_sessions that the person approved: this call is the confirmation step, '
-      + 'so do not make it before they have seen the list. Only an archived session can be deleted; the session '
-      + 'running this command, a session a live agent holds, an unarchived session and an archived session that is '
-      + 'no longer on disk are all refused and reported instead of failing the call. The logs themselves are never '
-      + 'rewritten — each session\'s own directory is removed, whole.',
+      + 'so never pass an id nobody has seen. An id that cannot be deleted — not archived, already gone, or held by '
+      + 'a running session — is refused in the answer with the reason instead of failing the call. Each session\'s '
+      + 'own directory is removed whole; no log line is rewritten.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -258,9 +269,7 @@ export function apply(ctx) {
         session_ids: {
           type: 'array',
           items: { type: 'string' },
-          description:
-            'Exact session ids from list_archived_sessions, as the person approved them — never an id '
-            + 'from memory.',
+          description: 'Exact session ids from list_archived_sessions — never an id from memory.',
         },
       },
     },

@@ -45,7 +45,12 @@ A release adds its section in the same pull request that writes the change, so t
 - The install section answers the questions a second person asks: where the clone lives (the profile links
   to it), which command installs it into a desktop profile versus a CLI-owned one, that updating is
   `git pull` plus a restart, and that removing it leaves the store alone.
-- Repository checks (`scripts/check.mjs`) and 29 fixture tests, both run by CI with Node 22 and Node 24
+- The listing stops printing every already-deleted id once there are more than ten: the count is the
+  fact, the ids are the detail, and after a fifty-session cleanup the answer is a line instead of a page.
+- The two tool descriptions say each fact once — the consent rule lives in the tool description, the
+  value rule on the parameter, and the refusal list in the answer — which is 200 characters less text the
+  model reads before it can act, measured on the definitions themselves.
+- Repository checks (`scripts/check.mjs`) and 32 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
