@@ -258,7 +258,7 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     for (const id of requested) {
       if (candidates.some((candidate) => candidate.id === id)) continue
       const reason = !archived.includes(id)
-        ? 'not an archived session; kept'
+        ? 'not an archived session'
         : protectedReason.get(id) ?? 'archived, but no session directory is stored; already deleted'
       requestedReport.push({ id, reason })
     }
@@ -338,12 +338,12 @@ async function removeCandidate(candidate, root, archived) {
   if (typeof id !== 'string' || typeof path !== 'string') {
     return { kind: 'refused', id: String(id), reason: 'the plan entry has no usable id or path' }
   }
-  if (!archived.has(id)) return { kind: 'refused', id, reason: 'no longer archived; kept' }
+  if (!archived.has(id)) return { kind: 'refused', id, reason: 'no longer archived' }
   // The id and the path have to describe the same session, or the report names the wrong one. Inside a
   // plan this file produced they always agree, because the scan looks the directory up by the encoded
   // id; the check is here so that a plan is held to it too.
   if (basename(path) !== encodeSegment(id)) {
-    return { kind: 'refused', id, reason: `the path names a different session (${basename(path)}); kept` }
+    return { kind: 'refused', id, reason: `the path names a different session (${basename(path)})` }
   }
 
   let info
@@ -363,7 +363,7 @@ async function removeCandidate(candidate, root, archived) {
   }
   const inside = relative(root, resolved)
   if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
-    return { kind: 'refused', id, reason: `resolves outside the session storage root (${resolved}); kept` }
+    return { kind: 'refused', id, reason: `resolves outside the session storage root (${resolved})` }
   }
 
   const reading = await readDirectoryFiles(path)

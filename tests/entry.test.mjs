@@ -167,7 +167,7 @@ test('an unarchived or already-deleted id is refused in the answer, not thrown',
   })
 
   assert.deepEqual(value.removed.map((entry) => entry.id), ['session-archived-2'])
-  assert.deepEqual(value.refused, [{ id: LIVE.id, reason: 'not an archived session; kept' }])
+  assert.deepEqual(value.refused, [{ id: LIVE.id, reason: 'not an archived session' }])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
 
   const again = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })

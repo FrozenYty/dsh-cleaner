@@ -144,7 +144,7 @@ test('a session that is on disk but not archived survives a deletion run', async
   // Asked for by name, an unarchived id is refused with a reason instead of failing the call.
   const asked = await plan({ only: [LIVE.id] })
   assert.deepEqual(asked.candidates, [])
-  assert.deepEqual(asked.requested, [{ id: LIVE.id, reason: 'not an archived session; kept' }])
+  assert.deepEqual(asked.requested, [{ id: LIVE.id, reason: 'not an archived session' }])
   const nothing = await applyCleanup(asked)
   assert.deepEqual(nothing.removed, [])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
@@ -200,7 +200,7 @@ test('the archive list is re-read at deletion time: a session restored in betwee
   const report = await applyCleanup(listing)
 
   assert.deepEqual(report.removed.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
-  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'no longer archived; kept' }])
+  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'no longer archived' }])
   assert.ok(existsSync(join(ROOT, '--D-BETA--', 'session-archived-3', 'session.v4.jsonl.zstd')))
 })
 
