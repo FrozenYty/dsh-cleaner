@@ -191,8 +191,8 @@ node --test --test-isolation=none tests/*.test.mjs  # fixture 测试，故意只
 ```
 
 `--test-isolation=none` 是这台机器的必须项：默认 runner 会按文件各起一个进程，而这个沙箱拒绝那种 spawn。
-它同时是 Node 24 的拼法；Node 22 叫 `--experimental-test-isolation`，所以本机和 CI 都跑 Node 24、用同
-一条命令。CI 在 Linux 和 Windows 上各跑一遍。
+它同时是 Node 24 的拼法；Node 22 叫 `--experimental-test-isolation`。CI 在两个大版本、两个平台上各跑一遍，
+所以拼法和平台都是被绿过的，不是声称的。
 
 没有任何测试碰真实 `DSH_HOME`。引擎把会话存储根目录和 workspace 存储文件当参数收，引擎测试全传 fixture
 路径，入口测试把 `DSH_HOME` 指到自己的目录。对真实存储的 dry-run 是另一件刻意的事：

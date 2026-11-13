@@ -217,8 +217,8 @@ node --test --test-isolation=none tests/*.test.mjs  # the fixture tests, one pro
 
 `--test-isolation=none` is required on this machine: the default runner spawns one process per file and
 the sandbox refuses that spawn. It is also the Node 24 spelling; Node 22 names it
-`--experimental-test-isolation`, which is why both this machine and CI run Node 24 and the same command.
-CI runs the suite on Linux and Windows.
+`--experimental-test-isolation`. CI runs the suite on both majors and both platforms, so the flag
+spelling and the platform are each covered by a green run rather than by a claim.
 
 No test touches a real `DSH_HOME`. The engine takes the session storage root and the workspace storage
 file as arguments, every engine test passes fixture paths, and the entry tests point `DSH_HOME` at a
