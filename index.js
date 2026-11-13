@@ -62,12 +62,13 @@ function defineTool(options) {
   }
 }
 
-/** The two paths this plugin works on: the harness home, then the session root and workspace store. */
+/** The paths this plugin works on: the session root, the workspace store, and the cache it reads titles from. */
 function storagePaths() {
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
   return {
     sessionsRoot: join(home, 'sessions'),
     workspaceFile: join(home, 'storages', 'workspace.json'),
+    projections: join(home, 'storages', 'session_projcache', 'sessions'),
   }
 }
 
@@ -131,6 +132,9 @@ function formatBytes(bytes) {
 const files = (count) => `${count} file${count === 1 ? '' : 's'}`
 const directories = (count) => `${count} session director${count === 1 ? 'y' : 'ies'}`
 
+/** A session's own title, when the cache had one: the way a person recognises which log this is. */
+const title = (entry) => (typeof entry.title === 'string' && entry.title !== '' ? `"${entry.title}"  ` : '')
+
 /** A bounded enumeration: the count is the fact, the ids are the detail, and a long tail is marked. */
 function listIds(ids) {
   const shown = ids.slice(0, 10)
@@ -152,7 +156,7 @@ function renderList(value) {
   )
   for (const candidate of value.candidates) {
     lines.push(
-      `  ${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
+      `  ${title(candidate)}${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
       + `last write ${candidate.modified ?? 'unknown'}  ${candidate.path}`,
     )
   }
@@ -186,7 +190,7 @@ function renderDelete(value) {
       : `Deleted ${directories(value.removed.length)}: ${formatBytes(value.removed_bytes)} reclaimed.`,
   )
   for (const entry of value.removed) {
-    lines.push(`  ${entry.id}  ${formatBytes(entry.bytes)}  ${files(entry.files)}  ${entry.path}`)
+    lines.push(`  ${title(entry)}${entry.id}  ${formatBytes(entry.bytes)}  ${files(entry.files)}  ${entry.path}`)
   }
   for (const entry of value.failed) {
     lines.push(`Partially removed: ${entry.id} — ${entry.error} (${formatBytes(entry.bytes_freed)} freed)`)

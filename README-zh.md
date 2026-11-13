@@ -94,8 +94,8 @@ bundle 加载成功了。
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
-    session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
-    session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
+    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z
     …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.
@@ -104,6 +104,7 @@ list_archived_sessions {}
 
 delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
   The session persistence backend no longer lists any of them.
 ```
 
@@ -126,6 +127,8 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
   `dsh-session-persistence-jsonl`（里面是 `session.vN.jsonl.zstd` 各代）。目录名是后端对 id 的转义，
   在 `engine.js` 里照抄了一份；目录里的每一代都属于同一个会话，一起删。
 - `<DSH_HOME>/storages/workspace.json` —— 只读，用来看 `global.archivedSessionIds`。
+- `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` —— 只读，只为一行：会话标题。它显示在 id
+  旁边，好让一串 id 能对上你记得名字的那些会话。文件缺失、版本更旧或读不出来，只损失标题，别的都不受影响。
 
 workspace 文件永远不写。删掉的 id 会留在归档表里，只是变成一个“没有目录的 id”，清单会把它报成
 already gone。
@@ -133,9 +136,9 @@ already gone。
 ## 它不做什么
 
 - **不取消归档、不重新归档、不 pin。** 它只删日志；归档表和 workspace 记录归 harness 管。
-- **不清投影缓存。** harness 把每个会话的投影放在 `storages/session_projcache/`，本插件不碰：删掉的会话
-  可能留一条陈旧投影和缓存文件，直到运行时自己改写或丢弃。那是派生数据、会自愈，也刻意不让它成为引擎的
-  第三条可能搞错的路径。
+- **不清投影缓存。** harness 把每个会话的投影放在 `storages/session_projcache/`，本插件只从里面读一行
+  ——显示在 id 旁边的标题——什么都不写：删掉的会话可能留一条陈旧投影和缓存文件，直到运行时自己改写或丢弃。
+  那是派生数据、会自愈，也比为了一个名字去解析日志便宜。
 - **不清附件。** 会话带过的图片和文件在内容寻址的仓库里（`attachments/v1/objects`），不在会话目录里：
   一个对象可能同时属于好几个会话，而要找出某个会话引用过哪些，就得解析它的日志——正是本插件拒绝做的事。
   写这份文档的机器上那个仓库有 54 MiB，原样留着。
@@ -183,6 +186,10 @@ already gone。
 那个会话目录里最新文件的写入时间，也就是这个会话最后一次追加内容的时间。正是这个事实让“六个全删”变成一
 个决定：上面那段对话里的六个，最早的最后写入是 2026-11-02，最晚的是 2026-11-12，除此之外输出里没有任何
 东西能把它们区分开。
+
+**清单里的标题是哪来的？**
+harness 放在存储旁边的投影缓存——和侧边栏显示的是同一个名字。只读那个文件，从不写；也不会为了找名字去打开
+日志。没有标题的会话就只按 id 列出来。
 
 **它怎么知道整个存储有多大？**
 每次列清单会把 `sessions/` 下每个项目目录走一遍。这趟遍历也正是“已归档但目录已经不在”的 id 会显示成

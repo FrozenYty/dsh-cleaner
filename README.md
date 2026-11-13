@@ -107,9 +107,8 @@ exchange, from the live run recorded in [Status](#status):
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
-    session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
-    session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z
-    …
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
+    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z    …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.
 
@@ -117,6 +116,7 @@ list_archived_sessions {}
 
 delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
   The session persistence backend no longer lists any of them.
 ```
 
@@ -142,6 +142,9 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
   directory name is the backend's own escaping of the id, reproduced in `engine.js`; every generation
   in the directory is part of the same session and goes with it.
 - `<DSH_HOME>/storages/workspace.json` — read only, for `global.archivedSessionIds`.
+- `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` — read only, for one row: the session's
+  title, shown beside the id so a list of ids can be matched against the sessions someone remembers by
+  name. A missing, older or unreadable file costs the title and changes nothing else.
 
 The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
 no directory, which the listing reports as already gone.
@@ -151,9 +154,9 @@ no directory, which the listing reports as already gone.
 - **No unarchive, no re-archive, no pinning.** It removes logs and nothing else; the archive list and
   the workspace records belong to the harness.
 - **No projection cache eviction.** The harness keeps per-session projections under
-  `storages/session_projcache/`, and this plugin does not touch them: a deleted session may keep a
-  stale row and its cache file until the runtime rewrites or drops it. Derived data, self-healing, and
-  owned by another subsystem — and deliberately not a third path for the engine to be wrong about.
+  `storages/session_projcache/`, and this plugin reads one row from them — the title it shows beside an
+  id — and writes nothing: a deleted session may keep a stale row and its cache file until the runtime
+  rewrites or drops it. Derived data, self-healing, and cheaper than parsing a log to find a name.
 - **No attachment cleanup.** Images and files a session carried live in a content-addressed store
   (`attachments/v1/objects`), not in the session directory: one object can belong to several sessions,
   and finding a session's references would mean parsing its log, which this plugin refuses to do. That
@@ -210,6 +213,11 @@ It is the newest file's write time in that session directory — the last time t
 anything. That is the fact that turns "delete all six" into a decision: of the six in the exchange
 above, the oldest last wrote on 2026-11-02 and the newest on 2026-11-12, and nothing else in the output
 separates them.
+
+**Where does the title in the listing come from?**
+The projection cache the harness keeps beside the store — the same name the sidebar shows. It is read
+from that file and never written, no log is opened to find it, and a session without one is listed by id
+alone.
 
 **How does it know how big the store is?**
 It walks every project directory under `sessions/` once per listing. That walk is also what makes an
