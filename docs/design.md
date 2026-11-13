@@ -109,15 +109,15 @@ first, because that is the one the contract names.
    be judged.
 5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
 6. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
-   is already gone, because a ghost row is exactly what a person is looking at when they name it. The
-   plugin never edits the workspace store: `detachSession` runs on the registry's own mutation chain, and
-   the workspace controller's `follow()` stream is what carries the durable change to the client. Why this
-   is the one place the plugin touches another subsystem's records, and what the alternatives were:
-   [ADR 0006](adr/0006-detach-by-asking.md). What this can and cannot do: it changes the project's
-   records at once, so the session leaves its project — but a window that is already open keeps the
-   session list it fetched, and the row leaves the sidebar only when that list is fetched again. The
-   harness has no "this log is gone" event to publish, which is the same absence that makes this plugin
-   necessary.
+   is gone, archived or not, because a ghost row is exactly what a person is looking at when they name it
+   and an earlier deletion may already have unarchived it. The plugin never edits the workspace store:
+   `detachSession` runs on the registry's own mutation chain, and the workspace controller's `follow()`
+   stream is what carries the durable change to the client. Why this is the one place the plugin touches
+   another subsystem's records, and what the alternatives were: [ADR 0006](adr/0006-detach-by-asking.md).
+   What this can and cannot do: it changes the project's records at once, so the session leaves its
+   project — but a window that is already open keeps the session list it fetched, and the row leaves the
+   sidebar only when that list is fetched again. The harness has no "this log is gone" event to publish,
+   which is the same absence that makes this plugin necessary.
 
 Both of the last two steps are reports about a deletion that already happened, and neither can veto one.
 The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a

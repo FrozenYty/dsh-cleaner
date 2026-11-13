@@ -362,6 +362,39 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   assert.doesNotMatch(text(tools.get('delete_archived_sessions'), second), /persistence backend/)
 })
 
+test('an unarchived id with no log is still dropped, and the session list is still asked about it', async () => {
+  const calls = []
+  const registry = {
+    archivedSessionIds: ['session-archived-1'],
+    list: () => [{
+      sessionIds: ['session-archived-1'],
+      async detachSession(id) {
+        calls.push(id)
+        this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
+      },
+    }],
+    async unarchiveSession(id) {
+      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({
+    workspaces: registry,
+    query: { listSessions: async () => [{ sessionId: 'session-archived-1' }] },
+  })
+
+  const first = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(first.removed_count, 1)
+  // The state a person is in after an earlier cleanup: no log left, no archive entry, and a row still
+  // drawn. Detaching is all that is left to ask for, and the session list is the answer that says where
+  // the row still lives.
+  registry.list()[0].sessionIds = ['session-archived-1']
+  const again = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(again.removed_count, 0)
+  assert.deepEqual(again.workspace.unarchived, [])
+  assert.deepEqual(again.query.still_listed, ['session-archived-1'])
+  assert.match(text(tools.get('delete_archived_sessions'), again), /The session list still names session-archived-1/)
+})
+
 test('a session list that still names a deleted id is reported, because a row can outlive the log', async () => {
   const tools = install({ query: { listSessions: async () => [{ sessionId: 'session-archived-2' }, { sessionId: 'session-archived-1' }] } })
 

@@ -399,11 +399,10 @@ export function apply(ctx) {
       const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
       const report = await applyCleanup(plan)
       const removedIds = report.removed.map((entry) => entry.id)
-      // The rows to drop are not only the ones just deleted: an id the caller names whose log is already
-      // gone is a ghost row too, and naming it is the person saying it should be gone. It is already
-      // archived by construction (`already_gone` is computed from the archive list), so nothing can be
-      // detached that the plugin was not asked about.
-      const orphans = plan.already_gone
+      // The records to drop are not only the ones just deleted: an id the caller names whose log is gone
+      // is a ghost row too, and naming it is the person saying it should be gone. `unlogged` is exactly
+      // those names, archived or not, so nothing is dropped that the plugin was not asked about.
+      const orphans = plan.unlogged
       const drop = [...removedIds, ...orphans]
       return {
         sessions_root: paths.sessionsRoot,
