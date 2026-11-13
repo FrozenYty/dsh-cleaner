@@ -250,6 +250,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does the bundle half import nothing? | [ADR 0002](docs/adr/0002-zero-import-bundle-half.md) |
 | Why two tools, and why explicit ids? | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | Why are links and irregular directories refused? | [ADR 0004](docs/adr/0004-refuse-links.md) |
+| Why is a plan checked again when it is executed? | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |

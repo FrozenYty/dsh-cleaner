@@ -50,7 +50,9 @@ The load-bearing constraints, each with an ADR:
 - the surface is two tools with explicit ids, so consent is a mechanism and not a description
   ([ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md));
 - links and irregular directories are refused, not followed
-  ([ADR 0004](docs/adr/0004-refuse-links.md)).
+  ([ADR 0004](docs/adr/0004-refuse-links.md));
+- every guard is repeated against the live filesystem when a plan is executed, and the id is bound to the
+  path it names ([ADR 0005](docs/adr/0005-re-verify-at-execution.md)).
 
 ## 3. Working principles
 

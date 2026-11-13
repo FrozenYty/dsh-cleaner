@@ -222,6 +222,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么 bundle 这一半什么都不 import？ | [ADR 0002](docs/adr/0002-zero-import-bundle-half.md) |
 | 为什么是两个工具，为什么必须点名 id？ | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | 为什么链接和不规则目录只拒绝、不跟随？ | [ADR 0004](docs/adr/0004-refuse-links.md) |
+| 为什么执行时还要把 plan 再核一遍？ | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |
 | 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |

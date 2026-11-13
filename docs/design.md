@@ -83,7 +83,8 @@ first, because that is the one the contract names.
 
 1. Re-read `global.archivedSessionIds`. The plan is a description of the past; this is the deliberate
    act, and an id restored between the listing and now must survive it. A workspace file that cannot be
-   read or parsed throws here, before anything is removed.
+   read or parsed throws here, before anything is removed. Why every step below is repeated rather than
+   trusted: [ADR 0005](adr/0005-re-verify-at-execution.md).
 2. Resolve the session storage root once (`realpath`). A root that is itself a link is followed to its
    target on purpose; containment is then measured against that target, so nothing escapes it.
 3. For each candidate, in order: still archived? does the directory name still encode this id (a plan
