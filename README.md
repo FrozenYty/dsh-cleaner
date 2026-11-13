@@ -150,8 +150,10 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
 The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
 no directory, which the listing reports as already gone. The project's session list is not written either:
 the registry detaches the deleted ids when asked, which is what makes their sidebar rows go away at once
-([ADR 0006](docs/adr/0006-detach-by-asking.md)). The one copy no host-side step can reach is the window's
-own sidebar view, so the bundle carries a browser half that prunes it at every page load
+([ADR 0006](docs/adr/0006-detach-by-asking.md)). Which of those two records is touched is decided per id by
+asking the host's own session list first, because a session it still holds in memory is still drawn by a
+window ([ADR 0009](docs/adr/0009-two-records-two-cases.md)). The one copy no host-side step can reach is the
+window's own sidebar view, so the bundle carries a browser half that prunes it at every page load
 ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
 
 ## What it does not do

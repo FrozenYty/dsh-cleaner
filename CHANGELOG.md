@@ -104,7 +104,12 @@ A release adds its section in the same pull request that writes the change, so t
   `a live agent holds this session (status: running)` ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
   Verified live: a session reported `status: idle` was deleted — 49,720 bytes, the store going from 30
   directories to 29 — and nothing recreated its log.
-- Repository checks (`scripts/check.mjs`) and 57 fixture tests, both run by CI with Node 22 and Node 24
+- Which workspace record a deletion touches is now decided per id, by asking the host's own session list
+  first. A session the host still holds keeps **both** its project membership and its archive entry — the
+  sidebar hides an archived row of a project and shows the row of an ungrouped one, so dropping either is
+  what made a deleted session hop from *archived under its project* to *visible under ungrouped*. A session
+  the host has let go loses both, as before ([ADR 0009](docs/adr/0009-two-records-two-cases.md)).
+- Repository checks (`scripts/check.mjs`) and 58 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms. The browser half is tested by evaluating the same file the page evaluates, so a
   mistake in it fails a test instead of a person's sidebar.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is

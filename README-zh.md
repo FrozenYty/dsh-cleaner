@@ -133,7 +133,9 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
 
 workspace 文件永远不写。删掉的 id 会留在归档表里，只是变成一个“没有目录的 id”，清单会把它报成
 already gone。项目里的会话列表也不是插件写的：它**请** registry 把这些 id 摘掉，这样侧边栏那一行才会立刻消失
-（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。唯一宿主侧碰不到的那份副本是窗口自己的侧边栏视图，
+（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。这两处记录动不动，是按 id 分别决定的：先问宿主自己的会话清单，
+因为宿主仍握在内存里的会话，窗口仍然会画出它那一行
+（[ADR 0009](docs/adr/0009-two-records-two-cases.md)）。唯一宿主侧碰不到的那份副本是窗口自己的侧边栏视图，
 所以 bundle 里带了一个浏览器半边，每次页面加载都会把它清一遍
 （[ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)）。
 

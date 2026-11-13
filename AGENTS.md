@@ -60,7 +60,10 @@ The load-bearing constraints, each with an ADR:
 - the bundle ships a browser half whose only job is to prune the window's own sidebar view, because that
   view is the one record no host-side step can reach ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md));
 - a loaded agent does not block a deletion — a **busy** one does, and the refusal names the status
-  ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
+  ([ADR 0008](docs/adr/0008-busy-not-resident.md));
+- what a deletion leaves in the workspace is decided per id by asking the host's own session list: a session
+  it still holds keeps both records, one it has let go loses both
+  ([ADR 0009](docs/adr/0009-two-records-two-cases.md)).
 
 ## 3. Working principles
 

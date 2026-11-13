@@ -141,7 +141,10 @@ asked for the ids it was given.
 7. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
    what a window draws its session rows from, and it is a different service from the persistence seam: a
    session can be gone from the store and still be named there, which is why a row can outlive the log. The
-   answer reports it instead of promising a screen it cannot see.
+   answer reports it instead of promising a screen it cannot see — and the *same* answer decides step 6: an
+   id the list still names keeps both its project membership and its archive entry, because the sidebar
+   hides an archived row of a project and shows the row of an ungrouped one
+   ([ADR 0009](adr/0009-two-records-two-cases.md)).
 
 Where the promise stops: the sidebar also renders from a view the window persists for itself
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
