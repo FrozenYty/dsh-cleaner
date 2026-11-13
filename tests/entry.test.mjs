@@ -269,23 +269,36 @@ test('the deleting tool removes only the ids it was given, and reports the bytes
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
 })
 
-test('a deletion asks the workspace registry to drop the row it just orphaned', async () => {
-  const calls = []
+test('a deletion asks the workspace registry to forget the session it orphaned', async () => {
+  const detachment = []
+  const unarchived = []
   const workspace = {
     sessionIds: ['session-archived-1', 'session-archived-2'],
     async detachSession(id) {
-      calls.push(id)
+      detachment.push(id)
       this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
     },
   }
-  const tools = install({ workspaces: { list: () => [workspace] } })
+  const registry = {
+    archivedSessionIds: ['session-archived-1', 'session-archived-2'],
+    list: () => [workspace],
+    async unarchiveSession(id) {
+      unarchived.push(id)
+      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({ workspaces: registry })
 
   const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 1)
-  assert.deepEqual(calls, ['session-archived-1'], 'the registry is asked, so the row can go now')
+  assert.deepEqual(detachment, ['session-archived-1'], 'the registry is asked, so the row can go now')
   assert.deepEqual(value.workspace.detached, ['session-archived-1'])
+  // The archive set is what still names a session with no log, and the client renders that identity.
+  assert.deepEqual(unarchived, ['session-archived-1'])
+  assert.deepEqual(value.workspace.unarchived, ['session-archived-1'])
+  assert.deepEqual(registry.archivedSessionIds, ['session-archived-2'])
   assert.deepEqual(workspace.sessionIds, ['session-archived-2'])
-  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace list dropped them/)
+  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace records dropped them \(1 detached, 1 unarchived\)/)
 })
 
 test('a profile without a workspace registry still answers', async () => {
@@ -320,7 +333,14 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
       this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
     },
   }
-  const tools = install({ workspaces: { list: () => [workspace] } })
+  const registry = {
+    archivedSessionIds: ['session-archived-1'],
+    list: () => [workspace],
+    async unarchiveSession(id) {
+      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({ workspaces: registry })
 
   // First call removes the log; the row goes with it.
   const first = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })

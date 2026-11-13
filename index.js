@@ -122,41 +122,55 @@ async function verifyRemoved(ctx, ids) {
 }
 
 /**
- * Ask the workspace registry to drop the deleted sessions from its project lists.
+ * Ask the workspace registry to forget the sessions whose logs are gone.
  *
- * A log that is gone leaves a row behind: the registry keeps a session's place in its project when the
- * directory is missing, because it cannot tell a deletion from a temporarily unavailable path. So the
- * plugin asks the owner of that list to detach the ids — it never edits the workspace store itself — and
- * the answer says what happened. Best-effort and after the fact: the files are already gone, so nothing
- * here can fail the call, and a profile without the registry still answers.
+ * A log that is gone leaves things behind: the registry keeps a session's place in its project while the
+ * directory is missing (it cannot tell a deletion from a temporarily unavailable path), and the archive
+ * set keeps naming it, which is what a client still renders. So the plugin asks the owner of those
+ * records to detach the id from its project and to unarchive it — it never edits the workspace store
+ * itself — and the answer says what happened. Unarchiving a session whose log is gone is the supported
+ * direction ("a restore only drops an id from the archive set, so an entry whose session is gone still
+ * unarchives"), and neither call can be made for a session that still has files.
+ *
+ * Best-effort and after the fact: the files are already gone, so nothing here can fail the call, and a
+ * profile without the registry still answers.
  * @param ctx - plugin context.
- * @param ids - the ids the deletion removed.
- * @returns `{registry, detached}` or `{registry, error}` or `{registry: 'absent'}`.
+ * @param ids - the ids the deletion removed, and the named ids whose logs were already gone.
+ * @returns `{registry, detached, unarchived, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
  */
-async function detachFromProjects(ctx, ids) {
+async function forgetSessions(ctx, ids) {
   const registry = 'workspaceRegistry'
   const workspaces = ctx.get(registry)
   if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
   const detached = []
+  const unarchived = []
   const failed = []
+  const fail = (id, error) => failed.push({ id, error: error instanceof Error ? error.message : String(error) })
   try {
+    const archived = typeof workspaces.archivedSessionIds === 'object' ? workspaces.archivedSessionIds : []
     for (const id of ids) {
-      const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
-      if (holder === undefined) {
-        detached.push(id)
-        continue
-      }
       try {
-        await holder.detachSession(id)
+        const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
+        if (holder !== undefined) await holder.detachSession(id)
         detached.push(id)
       } catch (error) {
-        failed.push({ id, error: error instanceof Error ? error.message : String(error) })
+        fail(id, error)
+        continue
+      }
+      if (!archived.includes(id) || typeof workspaces.unarchiveSession !== 'function') continue
+      try {
+        await workspaces.unarchiveSession(id)
+        unarchived.push(id)
+      } catch (error) {
+        fail(id, error)
       }
     }
   } catch (error) {
     return { registry, error: error instanceof Error ? error.message : String(error) }
   }
-  return failed.length === 0 ? { registry, detached } : { registry, detached, failed }
+  return failed.length === 0
+    ? { registry, detached, unarchived }
+    : { registry, detached, unarchived, failed }
 }
 
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
@@ -243,9 +257,11 @@ function renderDelete(value) {
     lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
   } else if (value.workspace?.detached?.length > 0) {
     const orphans = value.workspace.orphans?.length ?? 0
+    const unarchived = value.workspace.unarchived?.length ?? 0
     lines.push(
-      'The workspace list dropped them; a window that is already open keeps its own copy of that list '
-      + 'until it reloads, and then the rows are gone.'
+      `The workspace records dropped them (${value.workspace.detached.length} detached`
+      + (unarchived > 0 ? `, ${unarchived} unarchived` : '')
+      + '); a window that is already open keeps its own copy of that list until it reloads.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
     )
   }
@@ -366,7 +382,7 @@ export function apply(ctx) {
         refused: [...plan.requested, ...report.refused],
         workspace: drop.length === 0
           ? { registry: 'not-asked' }
-          : { orphans, ...await detachFromProjects(ctx, drop) },
+          : { orphans, ...await forgetSessions(ctx, drop) },
         verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
       }
     },

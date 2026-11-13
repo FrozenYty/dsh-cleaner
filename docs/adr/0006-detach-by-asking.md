@@ -59,6 +59,15 @@ Option 3, as a best-effort step after a deletion:
 > detach buys is real but bounded: the project's records no longer name a session that cannot be opened,
 > and the row leaves when the window next fetches its list — a page reload, not a restart. The answer says
 > that instead of implying the row vanishes on screen.
+>
+> **Amended a third time, after the second live run: the detach alone is not enough.** A page reload kept
+> the rows under *ungrouped*, which rules the session list out — the store no longer lists them. What still
+> names them is the **archive set**: the client's workspace model holds archived Session identities, and an
+> archived session that belongs to no project has no visible list left to be hidden from, so it renders as
+> ungrouped. The registry supports the missing direction explicitly — "a restore only drops an id from the
+> archive set, so an entry whose session is gone still unarchives" — so the plugin now asks for both: detach
+> the membership, then unarchive the id. Both calls are made only for ids whose files this call removed or
+> whose log the caller named as already gone, so neither can be made for a session that still has files.
 
 ## Consequences
 
