@@ -108,17 +108,18 @@ first, because that is the one the contract names.
    `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
    be judged.
 5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
-6. Ask the workspace registry to detach the ids that were removed, so the sidebar drops their rows now
-   rather than at the next refresh. The plugin never edits the workspace store: `detachSession` runs on
-   the registry's own mutation chain, and the workspace controller's `follow()` stream is what carries the
-   durable change to the client. Why this is the one place the plugin touches another subsystem's records,
-   and what the alternatives were: [ADR 0006](adr/0006-detach-by-asking.md).
+6. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
+   is already gone, because a ghost row is exactly what a person is looking at when they name it. The
+   plugin never edits the workspace store: `detachSession` runs on the registry's own mutation chain, and
+   the workspace controller's `follow()` stream is what carries the durable change to the client. Why this
+   is the one place the plugin touches another subsystem's records, and what the alternatives were:
+   [ADR 0006](adr/0006-detach-by-asking.md).
 
 Both of the last two steps are reports about a deletion that already happened, and neither can veto one.
 The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a
 read that throws, a registry that is absent and a detach that fails are each described in the answer — and
-`verify.backend: 'not-asked'` / `workspace.registry: 'not-asked'` is what a call that removed nothing
-answers with.
+`verify.backend: 'not-asked'` is what a call that removed nothing answers with, while the detach is still
+asked for the ids it was given.
 
 ## 6. Why files are unlinked one at a time
 

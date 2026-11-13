@@ -255,10 +255,10 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-It should not be: the deletion asks the workspace registry to detach the ids it removed, and the answer
-says whether that worked (`The workspace list dropped them…`). If the answer says the registry was absent,
-the profile mounted no `workspaceRegistry` and the row clears at the next refresh; if it names an id, that
-one detach failed and the row stays until then.
+Name its id in one more `delete_archived_sessions` call: an id whose log is already gone still has a row,
+and naming it is what drops that row — the answer says `The workspace list dropped them…` and how many of
+the ids had no log left to remove. If the answer instead says no workspace registry is mounted, the profile
+has none and the row clears at the next refresh; if it names an id, that one detach failed.
 
 ## Compatibility
 

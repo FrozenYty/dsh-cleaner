@@ -234,7 +234,6 @@ function renderDelete(value) {
     lines.push(`Partially removed: ${entry.id} — ${entry.error} (${formatBytes(entry.bytes_freed)} freed)`)
   }
   for (const entry of value.refused) lines.push(`Kept: ${entry.id} — ${entry.reason}`)
-  if (value.removed.length === 0) return lines.join('\n')
   if (value.workspace?.registry === 'absent') {
     lines.push('No workspace registry is mounted, so the sidebar drops them at its next refresh.')
   } else if (value.workspace?.error !== undefined) {
@@ -243,8 +242,13 @@ function renderDelete(value) {
     const ids = value.workspace.failed.map((entry) => entry.id)
     lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
   } else if (value.workspace?.detached?.length > 0) {
-    lines.push('The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.')
+    const orphans = value.workspace.orphans?.length ?? 0
+    lines.push(
+      'The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.'
+      + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
+    )
   }
+  if (value.removed.length === 0) return lines.join('\n')
   if (value.verify.backend === 'absent') {
     lines.push('Checked against the disk only: no session persistence backend is mounted in this profile.')
   } else if (value.verify.error !== undefined) {
@@ -346,6 +350,12 @@ export function apply(ctx) {
       const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
       const report = await applyCleanup(plan)
       const removedIds = report.removed.map((entry) => entry.id)
+      // The rows to drop are not only the ones just deleted: an id the caller names whose log is already
+      // gone is a ghost row too, and naming it is the person saying it should be gone. It is already
+      // archived by construction (`already_gone` is computed from the archive list), so nothing can be
+      // detached that the plugin was not asked about.
+      const orphans = plan.already_gone
+      const drop = [...removedIds, ...orphans]
       return {
         sessions_root: paths.sessionsRoot,
         removed: report.removed,
@@ -353,7 +363,9 @@ export function apply(ctx) {
         removed_bytes: report.removed_bytes,
         failed: report.failed,
         refused: [...plan.requested, ...report.refused],
-        workspace: removedIds.length === 0 ? { registry: 'not-asked' } : await detachFromProjects(ctx, removedIds),
+        workspace: drop.length === 0
+          ? { registry: 'not-asked' }
+          : { orphans, ...await detachFromProjects(ctx, drop) },
         verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
       }
     },
