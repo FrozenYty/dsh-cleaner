@@ -66,9 +66,11 @@ A release adds its section in the same pull request that writes the change, so t
   directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
   answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
   none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
-- An id whose log is gone is now handled whatever its archive state: naming it in `delete_archived_sessions`
-  detaches it from its project, unarchives it when it is still archived, and has the session list asked
-  about it — because an earlier deletion can leave a row whose session is no longer archived at all.
+- The last holder of a deleted session's row is named: the running window's own persisted sidebar view
+  (`localStorage["dsh.workspace.view.v5"]`), re-read on every start, which no host plugin can reach. With
+  the store, the project records, the archive set and the session list all clean, the README now says where
+  the row lives and what clears it — a sort away from manual, or removing that key — instead of implying
+  that a reload is enough ([ADR 0006](docs/adr/0006-detach-by-asking.md), fourth amendment).
 - The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
   project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not
@@ -83,7 +85,10 @@ A release adds its section in the same pull request that writes the change, so t
 - The deletion answer now also reports the host's **session list** (`ctx.sessionQuery`): when it still names
   a deleted id, the answer says so, because that list is what a window draws its rows from and a row can
   outlive the log. It is a report and not a gate, like the persistence check beside it.
-- Repository checks (`scripts/check.mjs`) and 46 fixture tests, both run by CI with Node 22 and Node 24
+- An id whose log is gone is now handled whatever its archive state: naming it in `delete_archived_sessions`
+  detaches it from its project, unarchives it when it is still archived, and has the session list asked
+  about it — because an earlier deletion can leave a row whose session is no longer archived at all.
+- Repository checks (`scripts/check.mjs`) and 48 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.

@@ -130,6 +130,13 @@ asked for the ids it was given.
    session can be gone from the store and still be named there, which is why a row can outlive the log. The
    answer reports it instead of promising a screen it cannot see.
 
+Where the promise stops: the sidebar also renders from a view the window persists for itself
+(`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
+and it is re-read on every start. A deleted session keeps its slot there until that view is rebuilt, which
+is why a row can survive a reload, the store, the project records, the archive set and the session list all
+being clean. No host plugin can reach a browser storage key, so the deletion promises the records and the
+disk — the screen belongs to the window.
+
 ## 6. Why files are unlinked one at a time
 
 `rm -r` on the directory would be shorter. It would also decide, on the plugin's behalf, what to do with
