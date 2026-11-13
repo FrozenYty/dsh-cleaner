@@ -251,15 +251,25 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     candidates.push({ id, path: entry.dir, bytes: entry.bytes, files: entry.files, modified: entry.modified })
   }
 
-  // Every id the caller asked for must be accounted for. The reasons are checked in the order a
-  // reader would: archive membership first, then protection, then what is on disk.
+  // Every id the caller asked for must be accounted for, with a reason a person can act on. "Not
+  // archived" covers two different situations worth telling apart: the session exists and only needs
+  // archiving, or nothing is stored under that id at all.
   const requestedReport = []
   if (requested.size > 0) {
     for (const id of requested) {
       if (candidates.some((candidate) => candidate.id === id)) continue
-      const reason = !archived.includes(id)
-        ? 'not an archived session'
-        : protectedReason.get(id) ?? 'archived, but no session directory is stored; already deleted'
+      const encoded = encodeSegment(id)
+      let reason
+      if (!archived.includes(id)) {
+        reason = stored.has(encoded)
+          ? 'not an archived session; archive it first to make it a candidate'
+          : 'not an archived session, and no log is stored under that id'
+      } else if (!stored.has(encoded)) {
+        reason = 'archived, but no session directory is stored; already deleted'
+      } else {
+        // Archived, stored and skipped above: protection is the only reason left.
+        reason = protectedReason.get(id) ?? 'protected'
+      }
       requestedReport.push({ id, reason })
     }
   }

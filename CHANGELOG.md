@@ -37,6 +37,9 @@ A release adds its section in the same pull request that writes the change, so t
 - One test command for both majors: `npm test` runs `scripts/test.mjs`, which chooses the isolation flag
   spelling from the running Node version, so the package script no longer fails on Node 22 while the
   package claims it. CI runs that same command on every leg.
+- A refusal for an id that is not archived now says which case it is: the session exists and only needs
+  archiving, or nothing is stored under that id at all. Both stay refusals, but only one of them is the
+  person's next step, and the answer names it.
 - CI runs every leg on Linux, macOS and Windows: a friend may be on any of them, and the engine is
   filesystem code — directory walks, link detection and unlink are exactly where the families differ.
 - The install section answers the questions a second person asks: where the clone lives (the profile links

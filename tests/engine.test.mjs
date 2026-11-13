@@ -144,10 +144,27 @@ test('a session that is on disk but not archived survives a deletion run', async
   // Asked for by name, an unarchived id is refused with a reason instead of failing the call.
   const asked = await plan({ only: [LIVE.id] })
   assert.deepEqual(asked.candidates, [])
-  assert.deepEqual(asked.requested, [{ id: LIVE.id, reason: 'not an archived session' }])
+  assert.deepEqual(asked.requested, [
+    { id: LIVE.id, reason: 'not an archived session; archive it first to make it a candidate' },
+  ])
   const nothing = await applyCleanup(asked)
   assert.deepEqual(nothing.removed, [])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
+})
+
+test('a refusal says whether the id needs archiving or does not exist at all', async () => {
+  const asked = await plan({ only: [LIVE.id, 'session-never-existed'] })
+
+  assert.deepEqual(asked.candidates, [])
+  assert.deepEqual(asked.requested, [
+    { id: LIVE.id, reason: 'not an archived session; archive it first to make it a candidate' },
+    { id: 'session-never-existed', reason: 'not an archived session, and no log is stored under that id' },
+  ])
+  const report = await applyCleanup(asked)
+  assert.deepEqual(report.removed, [])
+  // Nothing was a candidate, so the deletion had nothing to re-check: the reasons live in the plan, and
+  // the tool answer merges plan.requested with report.refused.
+  assert.deepEqual(report.refused, [])
 })
 
 test('a second run reports no candidate rather than an error, and says why', async () => {
