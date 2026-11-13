@@ -66,10 +66,9 @@ A release adds its section in the same pull request that writes the change, so t
   directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
   answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
   none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
-- An id whose log is already gone still has a sidebar row, and naming it in `delete_archived_sessions`
-  now drops that row: the detach set covers the ids a call removed and the ghost ids it was given. That is
-  the state an update leaves behind — nothing left to delete, and a row on screen ([ADR 0006](docs/adr/0006-detach-by-asking.md),
-  amended before release).
+- An id whose log is gone is now handled whatever its archive state: naming it in `delete_archived_sessions`
+  detaches it from its project, unarchives it when it is still archived, and has the session list asked
+  about it — because an earlier deletion can leave a row whose session is no longer archived at all.
 - The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
   project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not

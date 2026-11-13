@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readdir, rm, rmdir, symlink, writeFile, chmod } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -165,6 +165,18 @@ test('a refusal says whether the id needs archiving or does not exist at all', a
   // Nothing was a candidate, so the deletion had nothing to re-check: the reasons live in the plan, and
   // the tool answer merges plan.requested with report.refused.
   assert.deepEqual(report.refused, [])
+})
+
+test('a named id with no log is reported as unlogged whether or not it is still archived', async () => {
+  // Take the log away behind the plan's back, which is exactly the state a deletion leaves: the archive
+  // entry stays and the directory is gone.
+  rmSync(join(ROOT, '--D-ALPHA--', ARCHIVED[0].id), { recursive: true, force: true })
+
+  const asked = await plan({ only: ['session-never-existed', ARCHIVED[0].id] })
+  assert.deepEqual(asked.unlogged.sort(), ['session-never-existed', ARCHIVED[0].id].sort())
+  assert.deepEqual(asked.already_gone, [ARCHIVED[0].id])
+  const report = await applyCleanup(asked)
+  assert.deepEqual(report.removed, [])
 })
 
 test('a second run reports no candidate rather than an error, and says why', async () => {

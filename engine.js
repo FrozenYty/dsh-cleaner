@@ -319,10 +319,14 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
   // archived" covers two different situations worth telling apart: the session exists and only needs
   // archiving, or nothing is stored under that id at all.
   const requestedReport = []
+  const unlogged = []
   if (requested.size > 0) {
     for (const id of requested) {
       if (candidates.some((candidate) => candidate.id === id)) continue
       const encoded = encodeSegment(id)
+      // No directory under this id at all, archived or not: the caller named a session whose log is gone,
+      // and a record somewhere may still name it. That is the set the caller can have a ghost row for.
+      if (!stored.has(encoded)) unlogged.push(id)
       let reason
       if (!archived.includes(id)) {
         reason = stored.has(encoded)
@@ -352,6 +356,9 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     candidates,
     total_bytes: candidates.reduce((sum, candidate) => sum + candidate.bytes, 0),
     already_gone: alreadyGone,
+    // Named ids with no stored directory, whether or not the archive still lists them. A record can name
+    // such a session even after it was unarchived, which is exactly the state a ghost row is found in.
+    unlogged,
     protected: protectedSessions,
     skipped,
     requested: requestedReport,
