@@ -25,10 +25,11 @@ they approve, and reports the bytes reclaimed. No schedule, no age threshold, no
   0 failed, 0 refused. The live store was never written; it still holds its 36 directories. What that
   does **not** cover is a live model call: see [Verify](#verify) for what each layer proves.
 - **Checked with the Host's own schema validator**, taken out of the installed `0.2.2-rc.1` asar: both
-  output schemas pass `assertSupportedJsonSchema`, which is the check `tools.register()` runs before a
-  tool exists at all; both parameter schemas pass the stricter object-root assertion; and both real
-  results pass `validateJsonSchemaValue` against the output schema they declare. What that still does
-  not prove is activation — no profile has loaded this plugin.
+  output schemas pass `assertSupportedJsonSchema`, the check `tools.register()` runs before a tool exists
+  at all; both parameter schemas pass the stricter object-root assertion and accept exactly the argument
+  shapes the tools document (an invented argument, a string where an array belongs, or a missing required
+  field is rejected); and both real results pass `validateJsonSchemaValue` against the output schema they
+  declare. What that still does not prove is activation — no profile has loaded this plugin.
 - **Unit-tested only, never exercised in a profile**: the two tool wrappers against a live Host, the
   `sessionPersistence` verification step with a real backend, and everything about activation.
   `tests/` is the list of what exists.

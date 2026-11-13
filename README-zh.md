@@ -25,8 +25,9 @@
   模型调用：每一层能证明什么，见[验证](#验证)。
 - **用宿主自己的 schema 校验器验过**（从已安装的 `0.2.2-rc.1` asar 里取出）：两个输出 schema 通过
   `assertSupportedJsonSchema`——这正是 `tools.register()` 在工具存在之前会跑的检查；两个参数 schema 通过更
-  严格的 object-root 断言；两个真实返回值也都通过了针对其声明输出 schema 的 `validateJsonSchemaValue`。
-  这仍然**不是**激活证明：没有任何 profile 加载过这个插件。
+  严格的 object-root 断言，并且只接受工具文档里写的那种调用形状（多一个参数、该给数组却给了字符串、缺必填
+  字段，都会被拒）；两个真实返回值也都通过了针对其声明输出 schema 的 `validateJsonSchemaValue`。这仍然
+  **不是**激活证明：没有任何 profile 加载过这个插件。
 - **只有单元测试，未在 profile 里跑过**：两个工具包装在真实 Host 下的调用、`sessionPersistence` 核对
   步骤接真实后端的样子，以及所有和“能否激活”有关的事。`tests/` 就是存在的清单。
 - **这里根本证明不了**：`scripts/check.mjs` 从不加载 Harness，所以本仓库没有任何东西能证明插件会激活。
