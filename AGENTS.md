@@ -105,8 +105,8 @@ npm test                   # the fixture tests, one process on purpose
 The suites share one process deliberately: the default runner spawns one process per test file, and this
 machine's sandbox refuses that spawn. Node 22 and Node 24 spell the flag differently, so `scripts/test.mjs`
 chooses it from the running version — one command, both majors, and CI runs exactly that command on 22 and
-24, on Linux and Windows. Do not drop a leg to make CI faster: the engines field is a claim, and the matrix
-is what makes it true.
+24, on Linux, macOS and Windows. Do not drop a leg to make CI faster: the engines field is a claim, and the
+matrix is what makes it true.
 
 `scripts/check.mjs` cannot prove the plugin works: it never loads the Harness. Installing the bundle
 into a profile and calling the tools is the only real check, and it is the person's decision every time.

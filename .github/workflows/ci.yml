@@ -10,14 +10,14 @@ jobs:
   check:
     name: check ${{ matrix.os }} node ${{ matrix.node }}
     strategy:
-      # Both platforms, because the deletion engine is filesystem code: it walks directories, resolves
-      # links and unlinks files, and the two families disagree about all three. Both Node majors,
+      # Every platform a friend might use: the engine is filesystem code, and it walks directories,
+      # resolves links and unlinks files — three places where the families disagree. Both Node majors,
       # because the package claims them and the isolation flag is spelled differently in each — the
       # spelling lives in scripts/test.mjs, chosen from the running version, so running `npm test` here
       # is also the check that the choice is right.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         node: ["22", "24"]
     runs-on: ${{ matrix.os }}
     steps:

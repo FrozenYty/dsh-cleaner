@@ -51,7 +51,7 @@ trailer as another contributor.
 
 - Keep a PR under **400 changed lines**. Larger work is split.
 - Fill in the template: what changed, how it was verified, what else is affected.
-- **CI is the only gate.** When `check` is green on both platforms the PR may merge.
+- **CI is the only gate.** When `check` is green on every leg the PR may merge.
 - Merge with **squash** — one change, one commit on `main`.
 
 ## 5. What CI checks
@@ -62,7 +62,7 @@ trailer as another contributor.
 | Fixture tests | `npm test` | a behavioural promise broke — fix the behaviour, not the assertion |
 | Repository checks | `node scripts/check.mjs` | the manifest, the schema subset, the locale pair, the patch, a document reference or a machine path is wrong |
 
-The workflow runs those three on **four legs** — Node 22 and 24, Linux and Windows. `npm test` runs
+The workflow runs those three on **six legs** — Node 22 and 24, Linux, macOS and Windows. `npm test` runs
 `scripts/test.mjs`, which picks the flag spelling for the running major (the suites share one process on
 purpose, and the two majors spell that differently), so the legs differ only in version and platform — and
 running the contributor's own command is what proves it. A leg is not scenery: it is what makes the

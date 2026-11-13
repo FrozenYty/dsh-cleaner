@@ -61,25 +61,39 @@ session files”。这个 bundle 就是那次外部清理，它只守一条规�
 
 ## 安装
 
-装不装是人的决定，不是 bundle 的：
+profile 链接的是目录，所以跑起来的就是你 clone 下来的那份代码——放在一个能长期留着的位置：
 
 ```sh
-dsh plugin --profile <profile> add /path/to/dsh-cleaner
+git clone https://github.com/FrozenYty/dsh-cleaner.git ~/code/dsh-cleaner
 ```
 
-没有构建步骤、没有依赖、没有安装脚本：`index.js` 和 `engine.js` 只用 `node:` 内置模块和彼此。安装会把
-这个工作目录链接进 profile，跑的就是这个目录。
+然后把这个绝对路径装进你在用的 profile。桌面版里直接说一句就行：模型会用 `plugin_manager` 的
+`install_bundle` 带上这个路径——本仓库验证过的就是这条路。CLI 自己管的 profile（`web`、`headless`、
+`sdk`）用 `dsh plugin` 装同一个路径，它转发给 pnpm：
+
+```sh
+dsh plugin --profile web add ~/code/dsh-cleaner
+```
+
+没有构建步骤、没有依赖、没有安装脚本：`index.js` 和 `engine.js` 只用 `node:` 内置模块和彼此。
+
+**更新**是在那个 clone 里 `git pull` 再重启应用：宿主只在启动时读 bundle，正在运行的窗口用的还是它加载
+时的那份代码。**卸载**是 `plugin_manager` 的 `remove_bundle`，CLI 管的 profile 用
+`dsh plugin --profile <name> remove dsh-cleaner`；clone、存储、以及已经删掉的东西都不受影响。
+
+装好之后，插件列表里那张卡的标题是**清理**、描述是`只删归档，不碰在用。`——卡片在、开关是开的，就说明
+bundle 加载成功了。
 
 ## 第一次使用
 
-没有界面要打开：正常说话，模型去调工具。下面这段来自上面那次排练：
+没有界面要打开：正常说话，模型去调工具。下面这段来自[状态](#状态)里记录的那次真实运行：
 
 ```
 > 还有哪些已归档会话在占地方？
 
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
-  The session store holds 36 directories, 91902898 bytes (87.65 MiB) in all.
+  The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
     session-36560858-…  182051 bytes (177.8 KiB)  3 file(s)  last write 2026-11-02T07:39:15.053Z
     session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file(s)  last write 2026-11-03T02:14:07.060Z
     …
@@ -178,8 +192,9 @@ already gone 的原因——第二次运行看到的就是这个状态。
   已归档 id 报成 already gone（见 [docs/design.md](docs/design.md) §8）。
 - **会话格式**：一个会话一个目录，里面是 `session.vN.jsonl.zstd` 各代。插件不解析任何格式，所以已经发布的
   每一代、以及将来新加的代，都被“整个目录删掉”这一条覆盖。
-- **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、两个平台上跑的都是 `npm test`；让测试共用一个进程
-  的那个开关两边拼法不同，`scripts/test.mjs` 按当前版本自己选，所以同一条命令在两个版本上都成立。
+- **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、三个平台（Linux / macOS / Windows）上跑的都是
+  `npm test`；让测试共用一个进程的那个开关两边拼法不同，`scripts/test.mjs` 按当前版本自己选，所以同一条
+  命令在两个版本上都成立。
 
 ## 安全
 
@@ -196,7 +211,7 @@ npm test                   # fixture 测试，故意只用一个进程
 
 测试故意共用一个进程：默认 runner 会按文件各起一个进程，而受限沙箱拒绝那种 spawn。Node 24 把开关拼作
 `--test-isolation`，Node 22 拼作 `--experimental-test-isolation`，所以由 `scripts/test.mjs` 按当前版本
-选，而不是在 package.json、CI 和这里各写一份。CI 在两个大版本、两个平台上跑的就是这条 `npm test`，
+选，而不是在 package.json、CI 和这里各写一份。CI 在两个大版本、三个平台上跑的就是这条 `npm test`，
 所以拼法和平台是绿出来的，不是声称的。
 
 没有任何测试碰真实 `DSH_HOME`。引擎把会话存储根目录和 workspace 存储文件当参数收，引擎测试全传 fixture

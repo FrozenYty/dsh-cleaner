@@ -37,8 +37,13 @@ A release adds its section in the same pull request that writes the change, so t
 - One test command for both majors: `npm test` runs `scripts/test.mjs`, which chooses the isolation flag
   spelling from the running Node version, so the package script no longer fails on Node 22 while the
   package claims it. CI runs that same command on every leg.
+- CI runs every leg on Linux, macOS and Windows: a friend may be on any of them, and the engine is
+  filesystem code — directory walks, link detection and unlink are exactly where the families differ.
+- The install section answers the questions a second person asks: where the clone lives (the profile links
+  to it), which command installs it into a desktop profile versus a CLI-owned one, that updating is
+  `git pull` plus a restart, and that removing it leaves the store alone.
 - Repository checks (`scripts/check.mjs`) and 29 fixture tests, both run by CI with Node 22 and Node 24
-  on Linux and Windows.
+  on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
 - One line carries the plugin wherever a person meets it — the card in the plugin list, both READMEs,

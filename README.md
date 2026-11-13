@@ -70,27 +70,43 @@ approved. It refuses, and reports instead of failing:
 
 ## Install
 
-Installing is the person's decision, not the bundle's:
+The profile links to a directory, so the clone is what runs — put it somewhere it can stay:
 
 ```sh
-dsh plugin --profile <profile> add /path/to/dsh-cleaner
+git clone https://github.com/FrozenYty/dsh-cleaner.git ~/code/dsh-cleaner
 ```
 
-There is no build step, no dependency and no install script: `index.js` and `engine.js` use only
-`node:` builtins and each other. Installing links this working tree into the profile; what runs is this
-directory.
+Then install that absolute path into the profile you use. In the desktop app, ask for it: the model calls
+`plugin_manager` with `install_bundle` and the path — the route this repository was verified with. A
+profile the CLI owns (`web`, `headless`, `sdk`) takes the same path through `dsh plugin`, which forwards
+to pnpm:
+
+```sh
+dsh plugin --profile web add ~/code/dsh-cleaner
+```
+
+There is no build step, no dependency and no install script: `index.js` and `engine.js` use only `node:`
+builtins and each other.
+
+**Updating** is `git pull` in that clone and a restart of the app: the host reads the bundle when it
+starts, so a running window keeps the code it loaded. **Removing** is `plugin_manager` with
+`remove_bundle`, or `dsh plugin --profile <name> remove dsh-cleaner` on a CLI profile; the clone, the
+store, and every deletion already made are untouched.
+
+After installing, the card in the plugin list reads **Cleaner** — `Deletes archived logs, never a live
+session.` If the card is there with its switch on, the bundle loaded.
 
 ## First use
 
 There is no interface to open: you ask in ordinary language and the model calls the tools. One real
-exchange, from the rehearsal above:
+exchange, from the live run recorded in [Status](#status):
 
 ```
 > Which archived sessions are still taking space?
 
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
-  The session store holds 36 directories, 91902898 bytes (87.65 MiB) in all.
+  The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
     session-36560858-…  182051 bytes (177.8 KiB)  3 file(s)  last write 2026-11-02T07:39:15.053Z
     session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file(s)  last write 2026-11-03T02:14:07.060Z
     …
@@ -203,9 +219,9 @@ archived id with no directory visible as `already_gone`, which is the state a se
   candidates, every archived id reported as already gone (`docs/design.md` §8).
 - **Session format**: one directory per session with `session.vN.jsonl.zstd` generations inside. No
   format is parsed, so every released generation, and any later one, is covered by construction.
-- **Node**: `^22.19.0 || >=24.0.0`. CI runs `npm test` on both majors and both platforms; the flag that
-  puts the suites in one process is spelled per major, and `scripts/test.mjs` chooses it from the running
-  version, so the same command works on each.
+- **Node**: `^22.19.0 || >=24.0.0`. CI runs `npm test` on both majors and all three platforms (Linux,
+  macOS, Windows); the flag that puts the suites in one process is spelled per major, and
+  `scripts/test.mjs` chooses it from the running version, so the same command works on each.
 
 ## Security
 
@@ -224,8 +240,8 @@ npm test                   # the fixture tests, one process on purpose
 The suites share one process deliberately: the default runner spawns one process per test file, and a
 confined sandbox refuses that spawn. Node 24 spells the flag `--test-isolation`, Node 22
 `--experimental-test-isolation`, so `scripts/test.mjs` picks the spelling for the running major rather
-than repeating it in package.json, CI and here. CI runs that same `npm test` on both majors and both
-platforms, which is what makes the spelling and the platform green rather than claimed.
+than repeating it in package.json, CI and here. CI runs that same `npm test` on both majors and all
+three platforms, which is what makes the spelling and the platform green rather than claimed.
 
 No test touches a real `DSH_HOME`. The engine takes the session storage root and the workspace storage
 file as arguments, every engine test passes fixture paths, and the entry tests point `DSH_HOME` at a
