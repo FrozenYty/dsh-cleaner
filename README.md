@@ -138,7 +138,7 @@ no directory, which the listing reports as already gone.
 node scripts/check.mjs                              # manifest, dependency surface, schemas, locales, patch, documents
 node --check index.js                               # the bundle entry parses as ESM
 node --check engine.js
-node --test --test-isolation=none tests/*.test.mjs  # 20 fixture tests, one process on purpose
+node --test --test-isolation=none tests/*.test.mjs  # the fixture tests, one process on purpose
 ```
 
 `--test-isolation=none` is required on this machine: the default runner spawns one process per file and

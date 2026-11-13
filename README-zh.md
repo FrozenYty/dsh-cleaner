@@ -15,7 +15,8 @@
 - 当前版本：v0.1.0。
 - **对着真实存储跑过，但没有装进 profile**：一次 dry-run 列出 6 个已归档日志，与独立手工清点一致
   （8 个文件、4,169,349 字节）；随后在真实存储的**副本**上完整排练了一次删除——删前 36 个会话目录，
-  删后 30 个，失败 0、拒绝 0。真实存储全程没有被写过。
+  删后 30 个，失败 0、拒绝 0。真实存储全程没有被写过，36 个目录一个不少。这一条**不包含**一次真实的
+  模型调用：每一层能证明什么，见[验证](#验证)。
 - **只有单元测试，未在 profile 里跑过**：两个工具包装在真实 Host 下的调用、`sessionPersistence` 核对
   步骤接真实后端的样子，以及所有和“能否激活”有关的事。`tests/` 就是存在的清单。
 - **这里根本证明不了**：`scripts/check.mjs` 从不加载 Harness，所以本仓库没有任何东西能证明插件会激活。
@@ -122,7 +123,7 @@ already gone。
 node scripts/check.mjs                              # 清单、依赖面、schema、locale、patch、文档
 node --check index.js                               # bundle 入口能按 ESM 解析
 node --check engine.js
-node --test --test-isolation=none tests/*.test.mjs  # 20 个 fixture 测试，故意只用一个进程
+node --test --test-isolation=none tests/*.test.mjs  # fixture 测试，故意只用一个进程
 ```
 
 `--test-isolation=none` 是这台机器的必须项：默认 runner 会按文件各起一个进程，而这个沙箱拒绝那种 spawn。
