@@ -215,6 +215,32 @@ separates them.
 It walks every project directory under `sessions/` once per listing. That walk is also what makes an
 archived id with no directory visible as `already_gone`, which is the state a second run finds.
 
+## Troubleshooting
+
+**The model does not offer the tool.**
+The bundle is not loaded in this profile. The plugins page should show the **Cleaner** card and the
+profile's `package.json` should list `dsh-cleaner`; if both are true and the tools are still missing,
+restart the app — a window keeps the plugin list it booted with.
+
+**It lists nothing, and the disk is still full.**
+Only archived sessions can be candidates, and the listing reports the size of the whole store next to the
+reclaimable bytes: 4 MiB of candidates against a 90 MiB store means the rest is live sessions, the
+projection cache and the attachment store, none of which this plugin removes.
+
+**A refusal names a reason I do not understand.**
+Two are worth spelling out: `not an archived session; archive it first to make it a candidate` (the log is
+on disk, the session is simply not hidden yet) and `archived, but no session directory is stored; already
+deleted` (a second call with the same ids, or a session deleted from another window).
+
+**A deletion says `Partially removed`.**
+A file could not be unlinked — usually a lock held by an indexer or an antivirus. The answer names the file
+and the bytes freed so far, the directory stays, and the id is still a candidate, so the same call can
+simply be run again.
+
+**The card still shows an older description after an update.**
+The host reads the bundle when it starts: `git pull` updates the files, but a running window keeps the code
+and the locale it loaded. Restart.
+
 ## Compatibility
 
 - **DSH**: verified against the installed `0.2.2-rc.1` desktop build. The storage layout and the id

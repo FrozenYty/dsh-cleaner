@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rm, rmdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, rmdir, symlink, writeFile, chmod } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, beforeEach, test } from 'node:test'
@@ -449,6 +449,37 @@ test('a second directory with the same session id is reported, not silently igno
   const second = await plan()
   assert.ok(second.candidates.some((entry) => entry.id === 'session-archived-1'))
   assert.ok(existsSync(duplicate) || existsSync(original))
+})
+
+test('a file that cannot be unlinked is reported, and the session stays a candidate', {
+  // POSIX refuses to remove an entry from a directory it may not write to, which is the portable way to
+  // hold a deletion open. Windows offers none without native calls or ACL work — and the branch under
+  // test is the same throw either way, so the invariant is covered where it can be.
+  skip: process.platform === 'win32' ? 'no portable way to deny an unlink on Windows' : false,
+}, async () => {
+  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-2')
+  const file = join(dir, 'session.v4.jsonl.zstd')
+  await chmod(dir, 0o500)
+
+  try {
+    const listing = await plan({ only: ['session-archived-2'] })
+    const report = await applyCleanup(listing)
+
+    assert.deepEqual(report.removed, [])
+    assert.equal(report.removed_bytes, 0)
+    assert.equal(report.failed.length, 1)
+    assert.equal(report.failed[0].id, 'session-archived-2')
+    assert.match(report.failed[0].error, /cannot be removed/)
+    assert.ok(existsSync(file), 'a failure leaves the session where it was')
+
+    // The promise the README makes about this state: the id is still archived and still on disk, so the
+    // next run offers it again and the same call can be repeated.
+    const again = await plan({ only: ['session-archived-2'] })
+    assert.deepEqual(again.candidates.map((candidate) => candidate.id), ['session-archived-2'])
+    assert.deepEqual(again.requested, [])
+  } finally {
+    await chmod(dir, 0o755)
+  }
 })
 
 test('the scanner reports what it found without deciding anything', async () => {

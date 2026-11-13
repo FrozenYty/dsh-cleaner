@@ -29,7 +29,7 @@
 
 - [ ] `node --check index.js` and `node --check engine.js` pass
 - [ ] `node scripts/check.mjs` passes
-- [ ] `node --test --test-isolation=none tests/*.test.mjs` passes
+- [ ] `npm test` passes
 - [ ] A check or a test was seen to fail before it was trusted
 - [ ] Every deletion claim has a test that deletes nothing it should not
 - [ ] The README pair updated in this same PR
