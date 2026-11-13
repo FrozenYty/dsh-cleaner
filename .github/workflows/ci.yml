@@ -10,20 +10,30 @@ jobs:
   check:
     strategy:
       # Both platforms, because the deletion engine is filesystem code: it walks directories, resolves
-      # links and unlinks files, and the two families disagree about all three.
+      # links and unlinks files, and the two families disagree about all three. Both Node majors,
+      # because the package claims them and the isolation flag is spelled differently in each.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            node: "24"
+            isolation: "--test-isolation=none"
+          - os: windows-latest
+            node: "24"
+            isolation: "--test-isolation=none"
+          - os: ubuntu-latest
+            node: "22"
+            isolation: "--experimental-test-isolation=none"
+          - os: windows-latest
+            node: "22"
+            isolation: "--experimental-test-isolation=none"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          # Node 24 on both sides: Node 22 documents this flag as `--experimental-test-isolation`, and
-          # the local runner is Node 24. Pinning the same major keeps "passes locally" and "green in CI"
-          # the same statement.
-          node-version: "24"
+          node-version: ${{ matrix.node }}
 
       - name: Every module parses
         run: |
@@ -33,8 +43,9 @@ jobs:
 
       - name: Fixture tests
         # One process on purpose, exactly as the README documents: the suites build their own trees under
-        # tests/, and the default runner adds only a process boundary.
-        run: node --test --test-isolation=none tests/*.test.mjs
+        # tests/. Node 24 spells the flag `--test-isolation`, Node 22 `--experimental-test-isolation`; the
+        # matrix carries the spelling, so a green run means the same thing here and on this machine.
+        run: node --test ${{ matrix.isolation }} tests/*.test.mjs
 
       - name: Repository checks
         run: node scripts/check.mjs

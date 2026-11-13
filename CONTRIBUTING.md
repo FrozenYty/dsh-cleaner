@@ -58,6 +58,11 @@ trailer as another contributor.
 | Fixture tests | `node --test --test-isolation=none tests/*.test.mjs` | a behavioural promise broke — fix the behaviour, not the assertion |
 | Repository checks | `node scripts/check.mjs` | the manifest, the schema subset, the locale pair, the patch, a document reference or a machine path is wrong |
 
+The workflow runs those three on **four legs** — Node 22 and 24, Linux and Windows — and the isolation
+flag is spelled per Node major (`--test-isolation=none` on 24, `--experimental-test-isolation=none` on
+22). A leg is not scenery: it is what makes the `engines` field and the platform claims true. Removing
+one to shorten the queue is a change to what this repository asserts.
+
 `scripts/check.mjs` verifies, without loading the Harness:
 
 - `package.json` parses, `dsh.bundle.patch` points at the patch, every `files` entry exists, and every
