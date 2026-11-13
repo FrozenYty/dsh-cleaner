@@ -121,6 +121,44 @@ async function verifyRemoved(ctx, ids) {
   }
 }
 
+/**
+ * Ask the workspace registry to drop the deleted sessions from its project lists.
+ *
+ * A log that is gone leaves a row behind: the registry keeps a session's place in its project when the
+ * directory is missing, because it cannot tell a deletion from a temporarily unavailable path. So the
+ * plugin asks the owner of that list to detach the ids — it never edits the workspace store itself — and
+ * the answer says what happened. Best-effort and after the fact: the files are already gone, so nothing
+ * here can fail the call, and a profile without the registry still answers.
+ * @param ctx - plugin context.
+ * @param ids - the ids the deletion removed.
+ * @returns `{registry, detached}` or `{registry, error}` or `{registry: 'absent'}`.
+ */
+async function detachFromProjects(ctx, ids) {
+  const registry = 'workspaceRegistry'
+  const workspaces = ctx.get(registry)
+  if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
+  const detached = []
+  const failed = []
+  try {
+    for (const id of ids) {
+      const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
+      if (holder === undefined) {
+        detached.push(id)
+        continue
+      }
+      try {
+        await holder.detachSession(id)
+        detached.push(id)
+      } catch (error) {
+        failed.push({ id, error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+  } catch (error) {
+    return { registry, error: error instanceof Error ? error.message : String(error) }
+  }
+  return failed.length === 0 ? { registry, detached } : { registry, detached, failed }
+}
+
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} bytes`
@@ -197,6 +235,16 @@ function renderDelete(value) {
   }
   for (const entry of value.refused) lines.push(`Kept: ${entry.id} — ${entry.reason}`)
   if (value.removed.length === 0) return lines.join('\n')
+  if (value.workspace?.registry === 'absent') {
+    lines.push('No workspace registry is mounted, so the sidebar drops them at its next refresh.')
+  } else if (value.workspace?.error !== undefined) {
+    lines.push(`The workspace list could not be updated (${value.workspace.error}); the sidebar drops them at its next refresh.`)
+  } else if (value.workspace?.failed?.length > 0) {
+    const ids = value.workspace.failed.map((entry) => entry.id)
+    lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
+  } else if (value.workspace?.detached?.length > 0) {
+    lines.push('The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.')
+  }
   if (value.verify.backend === 'absent') {
     lines.push('Checked against the disk only: no session persistence backend is mounted in this profile.')
   } else if (value.verify.error !== undefined) {
@@ -234,7 +282,7 @@ const LIST_VALUE = {
 /** The deletion's canonical value; every key is present on every answer, empty or not. */
 const DELETE_VALUE = {
   type: 'object',
-  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'failed', 'refused', 'verify'],
+  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'failed', 'refused', 'workspace', 'verify'],
   properties: {
     sessions_root: { type: 'string' },
     removed: { type: 'array', items: { type: 'object' } },
@@ -242,6 +290,7 @@ const DELETE_VALUE = {
     removed_bytes: { type: 'number' },
     failed: { type: 'array', items: { type: 'object' } },
     refused: { type: 'array', items: { type: 'object' } },
+    workspace: { type: 'object' },
     verify: { type: 'object' },
   },
 }
@@ -296,6 +345,7 @@ export function apply(ctx) {
       const paths = storagePaths()
       const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
       const report = await applyCleanup(plan)
+      const removedIds = report.removed.map((entry) => entry.id)
       return {
         sessions_root: paths.sessionsRoot,
         removed: report.removed,
@@ -303,9 +353,8 @@ export function apply(ctx) {
         removed_bytes: report.removed_bytes,
         failed: report.failed,
         refused: [...plan.requested, ...report.refused],
-        verify: report.removed.length === 0
-          ? { backend: 'not-asked' }
-          : await verifyRemoved(ctx, report.removed.map((entry) => entry.id)),
+        workspace: removedIds.length === 0 ? { registry: 'not-asked' } : await detachFromProjects(ctx, removedIds),
+        verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
       }
     },
   }))

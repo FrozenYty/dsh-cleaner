@@ -52,7 +52,9 @@ The load-bearing constraints, each with an ADR:
 - links and irregular directories are refused, not followed
   ([ADR 0004](docs/adr/0004-refuse-links.md));
 - every guard is repeated against the live filesystem when a plan is executed, and the id is bound to the
-  path it names ([ADR 0005](docs/adr/0005-re-verify-at-execution.md)).
+  path it names ([ADR 0005](docs/adr/0005-re-verify-at-execution.md));
+- a deleted session is detached by asking the workspace registry, never by editing its store
+  ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 
 ## 3. Working principles
 
