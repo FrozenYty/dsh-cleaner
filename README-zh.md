@@ -75,9 +75,9 @@ dsh plugin --profile <profile> add /path/to/dsh-cleaner
 
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
-  The session store holds 36 directories, 91025807 bytes (86.81 MiB) in all.
-    session-36560858-…  182051 bytes  3 file(s)  last write 2026-11-02T07:39:15.053Z
-    session-177a4f1f-…  2475067 bytes  1 file(s)  last write 2026-11-03T02:14:07.060Z
+  The session store holds 36 directories, 91902898 bytes (87.65 MiB) in all.
+    session-36560858-…  182051 bytes (177.8 KiB)  3 file(s)  last write 2026-11-02T07:39:15.053Z
+    session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file(s)  last write 2026-11-03T02:14:07.060Z
     …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.

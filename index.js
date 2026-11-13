@@ -122,6 +122,8 @@ async function verifyRemoved(ctx, ids) {
 
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
 function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} bytes`
+  if (bytes < 1024 * 1024) return `${bytes} bytes (${(bytes / 1024).toFixed(1)} KiB)`
   return `${bytes} bytes (${(bytes / (1024 * 1024)).toFixed(2)} MiB)`
 }
 
