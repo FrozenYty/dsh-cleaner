@@ -341,13 +341,16 @@ test('a candidate replaced by a file between the listing and the deletion is ref
 })
 
 test('a tampered plan cannot delete outside the session storage root', async () => {
-  await mkdir(OUTSIDE, { recursive: true })
-  await writeFile(join(OUTSIDE, 'keep.bin'), Buffer.alloc(64, 3))
+  // A directory outside the root, named exactly like the session it claims to be: the id/path binding
+  // accepts it, so only the containment check can refuse it.
+  const elsewhere = join(TMP, 'elsewhere', 'session-archived-1')
+  await mkdir(elsewhere, { recursive: true })
+  await writeFile(join(elsewhere, 'keep.bin'), Buffer.alloc(64, 3))
   const listing = await plan()
   // The plan is a description of the past, and this one says the session lives somewhere else.
   const tampered = {
     ...listing,
-    candidates: [{ id: 'session-archived-1', path: OUTSIDE, bytes: 64, files: ['keep.bin'], modified: null }],
+    candidates: [{ id: 'session-archived-1', path: elsewhere, bytes: 64, files: ['keep.bin'], modified: null }],
   }
 
   const report = await applyCleanup(tampered)
@@ -356,7 +359,26 @@ test('a tampered plan cannot delete outside the session storage root', async () 
   assert.equal(report.refused.length, 1)
   assert.match(report.refused[0].reason, /resolves outside the session storage root/)
   assert.deepEqual(report.failed, [])
-  assert.ok(existsSync(join(OUTSIDE, 'keep.bin')))
+  assert.ok(existsSync(join(elsewhere, 'keep.bin')))
+})
+
+test('a plan whose path names a different session than its id is refused', async () => {
+  const listing = await plan()
+  const [first, second, ...rest] = listing.candidates
+  // Both ids are archived and both paths are inside the root, so containment alone would not notice
+  // that each one now points at the other's session — and the report would name the wrong session.
+  const swapped = {
+    ...listing,
+    candidates: [{ ...first, path: second.path }, { ...second, path: first.path }, ...rest],
+  }
+
+  const report = await applyCleanup(swapped)
+
+  assert.deepEqual(report.removed.map((entry) => entry.id), ['session-archived-3'])
+  assert.equal(report.refused.length, 2)
+  assert.match(report.refused[0].reason, /the path names a different session/)
+  assert.ok(existsSync(first.path))
+  assert.ok(existsSync(second.path))
 })
 
 test('the scanner reports what it found without deciding anything', async () => {

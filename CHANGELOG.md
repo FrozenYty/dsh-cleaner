@@ -21,11 +21,11 @@ A release adds its section in the same pull request that writes the change, so t
   directories are refused rather than followed; a session directory holding anything but regular files
   is refused rather than removed.
 - Every check the listing makes is repeated against the live filesystem at deletion time, including the
-  containment test: a plan naming a path outside the storage root is refused, and that is covered by a
-  test that tampers with a plan to prove it.
+  id/path binding and the containment test: a plan naming a path outside the storage root, or a path that
+  belongs to another session, is refused — each covered by a test that tampers with a plan to prove it.
 - Verification through the mounted `sessionPersistence` service after a deletion, reported and never
   able to veto one. The plugin parses no session format and rewrites no log line.
-- Repository checks (`scripts/check.mjs`) and 24 fixture tests, both run by CI with Node 22 and Node 24
+- Repository checks (`scripts/check.mjs`) and 25 fixture tests, both run by CI with Node 22 and Node 24
   on Linux and Windows.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.

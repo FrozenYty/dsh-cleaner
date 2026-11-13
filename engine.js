@@ -37,7 +37,7 @@
  */
 
 import { lstat, readdir, readFile, realpath, rmdir, unlink } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
 
 /**
  * Escape one string to a single safe path segment, as `dsh-session-persistence-jsonl` does: safe
@@ -332,6 +332,12 @@ async function removeCandidate(candidate, root, archived) {
     return { kind: 'refused', id: String(id), reason: 'the plan entry has no usable id or path' }
   }
   if (!archived.has(id)) return { kind: 'refused', id, reason: 'no longer archived; kept' }
+  // The id and the path have to describe the same session, or the report names the wrong one. Inside a
+  // plan this file produced they always agree, because the scan looks the directory up by the encoded
+  // id; the check is here so that a plan is held to it too.
+  if (basename(path) !== encodeSegment(id)) {
+    return { kind: 'refused', id, reason: `the path names a different session (${basename(path)}); kept` }
+  }
 
   let info
   try {

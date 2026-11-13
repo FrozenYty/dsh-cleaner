@@ -86,9 +86,10 @@ first, because that is the one the contract names.
    read or parsed throws here, before anything is removed.
 2. Resolve the session storage root once (`realpath`). A root that is itself a link is followed to its
    target on purpose; containment is then measured against that target, so nothing escapes it.
-3. For each candidate, in order: still archived? `lstat` a real directory (a link is refused)? its
-   `realpath` inside the root? every entry directly inside a regular file? Only then: `lstat` each file
-   for its size, `unlink` it, and `rmdir` the directory.
+3. For each candidate, in order: still archived? does the directory name still encode this id (a plan
+   naming someone else's path is refused, so the report cannot lie)? `lstat` a real directory (a link is
+   refused)? its `realpath` inside the root? every entry directly inside a regular file? Only then:
+   `lstat` each file for its size, `unlink` it, and `rmdir` the directory.
 4. Report `removed` (id, path, file count, bytes), `removed_bytes` (measured at unlink time, so it is
    what actually left the disk), `failed` (with the bytes freed before the failure) and `refused` (with
    the reason). One candidate's failure does not abort the sweep. The listing carries two more facts a
