@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cleaner",
-    "description": "An archive is not a deletion; deleting needs your nod."
+    "description": "Deletes archived logs, never a live session."
   }
 }
