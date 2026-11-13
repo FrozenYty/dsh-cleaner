@@ -123,6 +123,11 @@ are partly gone is reported as `failed` with the bytes freed, and the next run f
 The fixture tests never touch a real `DSH_HOME`: the engine takes paths, and the entry tests point
 `DSH_HOME` at their own tree. A dry run against the real store is a manual, deliberate act.
 
+One asymmetry is worth knowing: `tools.register()` asserts the **output** schema before the tool exists,
+and a call's arguments are validated against the **parameter** schema at dispatch, but the parameter
+schema's keyword subset is not asserted at load — a raw parameter object is projected straight to the
+model. `scripts/check.mjs` is what covers that half.
+
 ## 8. Failure modes
 
 - **The backend changes its storage layout or its id escaping.** Archived ids stop matching directory
