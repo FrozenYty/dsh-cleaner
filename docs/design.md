@@ -117,6 +117,7 @@ are partly gone is reported as `failed` with the bytes freed, and the next run f
 |---|---|---|
 | `scripts/check.mjs` | the manifest, the published file set, the dependency surface, the schema keywords, the locale pair, the patch, every document citation | that the plugin activates |
 | `tests/*.test.mjs` | the candidate matrix, the deletion path, the protections, the link and irregular-directory refusals, the idempotent second run, and the two tool wrappers | that the Host accepts the definitions, or that a live call reaches them |
+| the installed Host validator (`dsh-tools`, run by hand against a fixture) | that both output schemas pass the assertion `tools.register()` runs, that both parameter schemas are object-rooted, and that both real results satisfy the schema they declare | that a profile registers, assembles a prompt and calls the tool |
 | a live install | the tool list, a real listing, a real deletion | that the deletion was wise |
 
 The fixture tests never touch a real `DSH_HOME`: the engine takes paths, and the entry tests point
