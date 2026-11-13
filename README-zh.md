@@ -222,11 +222,12 @@ already gone 的原因——第二次运行看到的就是这个状态。
 宿主只在启动时读 bundle：`git pull` 更新的是文件，正在运行的窗口用的还是它加载时的代码和语言包。重启。
 
 **删掉的会话还在侧边栏里。**
-把那个 id 在 `delete_archived_sessions` 里再点一次名。日志消失之后，有两处记录还让它留在界面上：项目里的归属，
-和归档集。前者决定这一行会不会被渲染，后者是"归属摘掉之后它就掉进未分组"的原因。插件会请 registry 把两样都
-去掉（答案里写 `The workspace records dropped them…`），而已经打开的窗口会一直留着它自己那份清单，直到重载。
-如果重载之后那一行还在，答案会告诉你它在哪：`The session list still names <id>` 说明宿主自己的会话清单还记着
-它，只有重建那份清单才能清掉。窗口自己留的副本，插件碰不到。
+把那个 id 在 `delete_archived_sessions` 里再点一次名。日志消失之后，有三处记录还能让它留在界面上：项目里的归属、
+归档集，以及窗口自己持久化的侧边栏视图。插件会请 registry 去掉前两处（答案里写 `The workspace records dropped
+them…`），同时告诉你宿主那份会话清单是否还记着它。如果宿主已经不记着了，而那一行还在，那它就在运行中的窗口里：
+`localStorage["dsh.workspace.view.v5"]`，一份由客户端写入、每次启动都会读回来的 `sessionOrderByAccount` 映射。
+点这一行会报 `session/not-found`——这正是"宿主侧已经没有任何东西认识这个会话"的证据。插件碰不到浏览器存储：
+把侧边栏的排序从"手动"切走，或者删掉这个 key，那一行才会消失。
 
 ## 兼容性
 

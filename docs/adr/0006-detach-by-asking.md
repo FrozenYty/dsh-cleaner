@@ -68,6 +68,17 @@ Option 3, as a best-effort step after a deletion:
 > archive set, so an entry whose session is gone still unarchives" — so the plugin now asks for both: detach
 > the membership, then unarchive the id. Both calls are made only for ids whose files this call removed or
 > whose log the caller named as already gone, so neither can be made for a session that still has files.
+>
+> **Amended a fourth time, after the third live run: the last holder is the window, and it is out of reach.**
+> With the store, the project membership, the archive set and the host's session list all proved clean (the
+> host answers `session/not-found` when such a row is clicked), the rows still rendered after a reload. They
+> live in the renderer's own persisted sidebar view — `localStorage["dsh.workspace.view.v5"]`, a
+> `sessionOrderByAccount` map of account to ordered Session ids, written by the client and re-read on every
+> start. It lists the deleted ids in three buckets (the project, the ungrouped account, and the flat order).
+> No host plugin can reach a browser storage key, and nothing in the harness publishes "this log is gone" for
+> the client to prune it with — the same absence that makes this plugin necessary. What the deletion can
+> promise therefore stops here: logs, project records and archive entries are gone at once, and the row is
+> the window's own copy until that copy is rebuilt.
 
 ## Consequences
 

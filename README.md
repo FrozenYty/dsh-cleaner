@@ -255,13 +255,15 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-Name its id in one more `delete_archived_sessions` call. Two records keep a session alive on screen after
-its log is gone: the project's membership and the archive set. The first makes the row render at all, the
-second is why it reappears under *ungrouped* when the first is removed. The plugin asks the registry to drop
-both (the answer says `The workspace records dropped them…`), and a window that is already open keeps its
-own copy of the list until it reloads. If a row survives that reload, the answer tells you where it lives:
-`The session list still names <id>` means the host's own session list still has it, and rebuilt is the only
-thing that clears it. Nothing else in this plugin can reach a copy the window keeps.
+Name its id in one more `delete_archived_sessions` call. Three records keep a session on screen after its
+log is gone: the project's membership, the archive set, and the window's own persisted sidebar view. The
+plugin asks the registry to drop the first two (the answer says `The workspace records dropped them…`), and
+the answer also tells you whether the host's session list still names the id. If it does not, and the row is
+still drawn, then the copy is `localStorage["dsh.workspace.view.v5"]` inside the running window — a
+`sessionOrderByAccount` map written by the client and re-read on every start. Clicking such a row shows
+`session/not-found`, which is the proof that nothing on the host still knows the session. No plugin can
+reach a browser storage key: switching the sidebar's ordering away from manual, or removing that key, is
+what clears the row.
 
 ## Compatibility
 
