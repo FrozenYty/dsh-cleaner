@@ -98,6 +98,29 @@ function protections(ctx, exec) {
 }
 
 /**
+ * Ask the mounted session-query service whether it still lists the ids that were just deleted.
+ *
+ * This is a different service from the persistence seam, and it is the one a window renders its session
+ * rows from: a session can be gone from the store and still be listed here, which is why a row can outlive
+ * the log. Reported, never a gate — the files are already gone.
+ * @param ctx - plugin context.
+ * @param ids - the ids the deletion removed.
+ * @returns `{backend, still_listed}` or `{backend, error}` or `{backend: 'absent'}`.
+ */
+async function verifyNotListed(ctx, ids) {
+  const backend = 'sessionQuery'
+  const query = ctx.get(backend)
+  if (query === undefined || typeof query.listSessions !== 'function') return { backend: 'absent' }
+  try {
+    const sessions = await query.listSessions()
+    const listed = new Set(sessions.map((session) => String(session?.sessionId ?? session?.header?.id)))
+    return { backend, still_listed: ids.filter((id) => listed.has(id)) }
+  } catch (error) {
+    return { backend, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
  * Ask the mounted persistence backend whether it still lists the ids that were just deleted.
  *
  * This is the whole use this plugin makes of the official seam, and it is deliberately a report and
@@ -265,6 +288,14 @@ function renderDelete(value) {
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
     )
   }
+  if (value.query?.still_listed?.length > 0) {
+    lines.push(
+      `The session list still names ${value.query.still_listed.join(', ')}: that is the list a window draws`
+      + ' its rows from, so a row can outlive the log until that list is rebuilt.',
+    )
+  } else if (value.query?.error !== undefined) {
+    lines.push(`The session list could not be re-read (${value.query.error}); nothing above depends on it.`)
+  }
   if (value.removed.length === 0) return lines.join('\n')
   if (value.verify.backend === 'absent') {
     lines.push('Checked against the disk only: no session persistence backend is mounted in this profile.')
@@ -303,7 +334,7 @@ const LIST_VALUE = {
 /** The deletion's canonical value; every key is present on every answer, empty or not. */
 const DELETE_VALUE = {
   type: 'object',
-  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'failed', 'refused', 'workspace', 'verify'],
+  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'failed', 'refused', 'workspace', 'query', 'verify'],
   properties: {
     sessions_root: { type: 'string' },
     removed: { type: 'array', items: { type: 'object' } },
@@ -312,6 +343,7 @@ const DELETE_VALUE = {
     failed: { type: 'array', items: { type: 'object' } },
     refused: { type: 'array', items: { type: 'object' } },
     workspace: { type: 'object' },
+    query: { type: 'object' },
     verify: { type: 'object' },
   },
 }
@@ -383,6 +415,7 @@ export function apply(ctx) {
         workspace: drop.length === 0
           ? { registry: 'not-asked' }
           : { orphans, ...await forgetSessions(ctx, drop) },
+        query: drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop),
         verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
       }
     },

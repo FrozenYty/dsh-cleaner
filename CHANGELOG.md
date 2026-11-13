@@ -81,7 +81,10 @@ A release adds its section in the same pull request that writes the change, so t
   hidden from. Restoring a session whose log is gone is the direction the registry documents as supported,
   and both calls are made only for ids whose files are gone ([ADR 0006](docs/adr/0006-detach-by-asking.md),
   third amendment).
-- Repository checks (`scripts/check.mjs`) and 44 fixture tests, both run by CI with Node 22 and Node 24
+- The deletion answer now also reports the host's **session list** (`ctx.sessionQuery`): when it still names
+  a deleted id, the answer says so, because that list is what a window draws its rows from and a row can
+  outlive the log. It is a report and not a gate, like the persistence check beside it.
+- Repository checks (`scripts/check.mjs`) and 46 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
