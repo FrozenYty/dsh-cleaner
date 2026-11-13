@@ -200,11 +200,16 @@ above.
 No. The candidate set is the archive list, looked up by id: an unarchived session is never looked up,
 not merely filtered out.
 
+**Can a deletion be undone?**
+No. Each session's directory is unlinked file by file, and there is no trash to restore from: the
+workspace record stays, but the log behind it does not. That is the whole reason the surface is "list,
+then name ids" — the listing is the only preview there is.
+
 **Why does the listing show a last-write time?**
 It is the newest file's write time in that session directory — the last time the session appended
-anything. That is the fact that turns "delete all six" into a decision: of the six listed here, the
-oldest last wrote on 2026-11-02 and the newest on 2026-11-12, and nothing else in the output separates
-them.
+anything. That is the fact that turns "delete all six" into a decision: of the six in the exchange
+above, the oldest last wrote on 2026-11-02 and the newest on 2026-11-12, and nothing else in the output
+separates them.
 
 **How does it know how big the store is?**
 It walks every project directory under `sessions/` once per listing. That walk is also what makes an
