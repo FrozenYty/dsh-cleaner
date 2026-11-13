@@ -284,7 +284,7 @@ function renderDelete(value) {
     lines.push(
       `The workspace records dropped them (${value.workspace.detached.length} detached`
       + (unarchived > 0 ? `, ${unarchived} unarchived` : '')
-      + '); a window that is already open keeps its own copy of that list until it reloads.'
+      + '); a window that is already open keeps its own copy of that list until the app restarts.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
     )
   }

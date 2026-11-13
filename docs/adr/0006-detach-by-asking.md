@@ -57,8 +57,9 @@ Option 3, as a best-effort step after a deletion:
 > (`sessionQuery.listSessions`), and nothing in the harness publishes "this log is gone" — there is no
 > deletion API to publish it in the first place ([ADR 0001](0001-out-of-band-deletion.md)). So what the
 > detach buys is real but bounded: the project's records no longer name a session that cannot be opened,
-> and the row leaves when the window next fetches its list — a page reload, not a restart. The answer says
-> that instead of implying the row vanishes on screen.
+> and the row leaves when the window next fetches its list — a page reload, *not* a restart. *(Superseded:
+> a reload proved not to be enough — see the fifth note below.)* The answer says that instead of implying the
+> row vanishes on screen.
 >
 > **Amended a third time, after the second live run: the detach alone is not enough.** A page reload kept
 > the rows under *ungrouped*, which rules the session list out — the store no longer lists them. What still
@@ -79,6 +80,11 @@ Option 3, as a best-effort step after a deletion:
 > the client to prune it with — the same absence that makes this plugin necessary. What the deletion can
 > promise therefore stops here: logs, project records and archive entries are gone at once, and the row is
 > the window's own copy until that copy is rebuilt.
+>
+> **Confirmed by a fifth live run, which settles what "rebuilt" costs.** A page reload did not clear the rows
+> even with every host-side record clean; a full restart of the app did, immediately. So the accurate advice
+> is a restart, not a reload, and the answer now says so: `a window that is already open keeps its own copy
+> of that list until the app restarts`.
 
 ## Consequences
 

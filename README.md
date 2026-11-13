@@ -262,8 +262,8 @@ the answer also tells you whether the host's session list still names the id. If
 still drawn, then the copy is `localStorage["dsh.workspace.view.v5"]` inside the running window — a
 `sessionOrderByAccount` map written by the client and re-read on every start. Clicking such a row shows
 `session/not-found`, which is the proof that nothing on the host still knows the session. No plugin can
-reach a browser storage key: switching the sidebar's ordering away from manual, or removing that key, is
-what clears the row.
+reach a browser storage key: **restart the app** and the row is gone — a page reload is not enough, and this
+was measured, not assumed.
 
 ## Compatibility
 
