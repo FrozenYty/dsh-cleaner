@@ -190,6 +190,13 @@ export async function scanStoredSessions(sessionsRoot) {
         skipped.push({ path: dir, reason: reading.reason })
         continue
       }
+      // One session id should live in one project directory, but a moved cwd or a copied tree can leave
+      // a second directory with the same name. Keeping the first and reporting the second turns a silent
+      // under-count into a visible one; deleting the reported session makes the other a candidate next run.
+      if (stored.has(entry.name)) {
+        skipped.push({ path: dir, reason: 'a second directory with the same session id; the other one is the candidate' })
+        continue
+      }
       stored.set(entry.name, { dir, files: reading.files, bytes: reading.bytes, modified: reading.modified })
     }
   }

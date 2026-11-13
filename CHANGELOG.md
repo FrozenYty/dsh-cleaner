@@ -25,7 +25,11 @@ A release adds its section in the same pull request that writes the change, so t
   belongs to another session, is refused — each covered by a test that tampers with a plan to prove it.
 - Verification through the mounted `sessionPersistence` service after a deletion, reported and never
   able to veto one. The plugin parses no session format and rewrites no log line.
-- Repository checks (`scripts/check.mjs`) and 25 fixture tests, both run by CI with Node 22 and Node 24
+- A second directory carrying the same session id — a moved cwd, a copied tree — is reported as skipped
+  rather than dropped from the count, and the traversal guard is covered by a property test over hostile
+  ids: the escape always yields one inert path segment, and an archived id such as `../../outside` is
+  reported as already gone without reaching anything outside the store.
+- Repository checks (`scripts/check.mjs`) and 28 fixture tests, both run by CI with Node 22 and Node 24
   on Linux and Windows.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.

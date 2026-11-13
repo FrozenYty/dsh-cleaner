@@ -381,6 +381,59 @@ test('a plan whose path names a different session than its id is refused', async
   assert.ok(existsSync(second.path))
 })
 
+test('an id that tries to traverse is inert, because the escape makes it one path segment', async () => {
+  const nasty = '../../outside'
+  await mkdir(OUTSIDE, { recursive: true })
+  await writeFile(join(OUTSIDE, 'keep.bin'), Buffer.alloc(64, 3))
+  // The separators are escaped; the dots are safe characters and stay literal, which is harmless
+  // because the whole segment is neither `.` nor `..`.
+  assert.equal(encodeSegment(nasty), '..~002F..~002Foutside')
+  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), nasty])
+
+  const listing = await plan()
+  assert.equal(listing.candidates.length, 3)
+  assert.ok(listing.already_gone.includes(nasty))
+
+  const report = await applyCleanup(listing)
+  assert.equal(report.refused.length, 0)
+  assert.ok(existsSync(join(OUTSIDE, 'keep.bin')), 'nothing outside the resolved id was reached')
+})
+
+test('the id escape always yields one inert path segment', () => {
+  const nasty = [
+    '.', '..', '../..', '../../etc/passwd', '..\\..\\windows\\system32', 'a/b', 'a\\\\b', 'c:d', '~',
+    'x\u0000y', 'session-\u00fcn\u00efcode', '%2e%2e', ' leading', 'trailing ', 'A'.repeat(300),
+  ]
+  for (const raw of nasty) {
+    const encoded = encodeSegment(raw)
+    assert.match(encoded, /^[~A-Za-z0-9._-]+$/, `escaped form of ${JSON.stringify(raw)}`)
+    assert.equal(encoded.includes('/'), false)
+    assert.equal(encoded.includes('\\'), false)
+    assert.notEqual(encoded, '.')
+    assert.notEqual(encoded, '..')
+  }
+})
+
+test('a second directory with the same session id is reported, not silently ignored', async () => {
+  const original = join(ROOT, '--D-ALPHA--', 'session-archived-1')
+  const duplicate = join(ROOT, '--D-GAMMA--', 'session-archived-1')
+  await mkdir(duplicate, { recursive: true })
+  await writeFile(join(duplicate, 'session.v4.jsonl.zstd'), Buffer.alloc(42, 4))
+
+  const listing = await plan()
+  const candidate = listing.candidates.find((entry) => entry.id === 'session-archived-1')
+  assert.ok(candidate, 'one of the two directories is still the candidate')
+  assert.ok(
+    listing.skipped.some((entry) => entry.path === duplicate && /same session id/.test(entry.reason)),
+    'the duplicate is reported',
+  )
+  // Whichever one was reported, deleting it makes the other a candidate on the next run.
+  await applyCleanup(listing)
+  const second = await plan()
+  assert.ok(second.candidates.some((entry) => entry.id === 'session-archived-1'))
+  assert.ok(existsSync(duplicate) || existsSync(original))
+})
+
 test('the scanner reports what it found without deciding anything', async () => {
   const { stored, skipped } = await scanStoredSessions(ROOT)
   assert.deepEqual([...stored.keys()].sort(), [

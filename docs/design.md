@@ -133,6 +133,9 @@ The fixture tests never touch a real `DSH_HOME`: the engine takes paths, and the
 - **Two deletions run at once.** The second finds the files gone or unlink fails; both are reported, and
   nothing outside the candidate set is touched.
 - **The workspace file is corrupt.** Listing and deletion throw before removing anything.
+- **A session id has two directories** — a moved cwd, a copied tree, a restored backup. The scan keeps
+  one as the candidate and reports the other as skipped, so the store total is not silently short;
+  deleting the reported one makes the other a candidate on the next run.
 - **`DSH_HOME` names the wrong store.** The listing prints both paths it used, so the mistake is visible
   in the answer before anyone approves a deletion.
 - **The projection cache keeps a stale row.** Per-session projections under
