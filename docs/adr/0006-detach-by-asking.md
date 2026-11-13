@@ -35,13 +35,21 @@ person asked why the sessions they had just deleted were still listed.
 
 ## Decision
 
-Option 3, as a best-effort step after a successful deletion:
+Option 3, as a best-effort step after a deletion:
 
-- the registry is asked only for the ids the deletion actually removed;
+- the registry is asked for the ids the deletion removed, **and** for the ids the caller named whose log is
+  already gone — naming a ghost row is the person saying it should not be there, and every such id is
+  archived by construction, so nothing is detached that was not asked about;
 - the call happens after the files are gone and can never fail the deletion;
-- the answer says which of the three happened: detached, no registry mounted, or a detach that failed;
+- the answer says which of the three happened: detached, no registry mounted, or a detach that failed, and
+  how many of the ids had no log left to remove;
 - the archive set is not touched. It is the person's own record of what they hid, and the listing already
   explains an archived id with no directory as `already_gone`.
+
+> **Amended the same day, before release.** The first version asked only for the ids a call had just
+> removed, which left the rows orphaned by earlier deletions exactly where they were — the gap a person
+> hits the moment they upgrade: nothing left to delete, and the row still on screen. The second paragraph
+> above is that correction.
 
 ## Consequences
 

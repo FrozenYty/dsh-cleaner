@@ -311,6 +311,36 @@ test('a registry that refuses a detach cannot fail a deletion that already happe
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
 })
 
+test('naming an id whose log is already gone drops its ghost row too', async () => {
+  const calls = []
+  const workspace = {
+    sessionIds: ['session-archived-1'],
+    async detachSession(id) {
+      calls.push(id)
+      this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({ workspaces: { list: () => [workspace] } })
+
+  // First call removes the log; the row goes with it.
+  const first = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(first.removed_count, 1)
+  assert.deepEqual(first.workspace.orphans, [])
+  assert.deepEqual(workspace.sessionIds, [])
+
+  // Second call has nothing to remove — that is the state a person is left in after a cleanup, and the
+  // id they still see in the sidebar is exactly what they can name to be rid of the row.
+  workspace.sessionIds = ['session-archived-1']
+  const second = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(second.removed_count, 0)
+  assert.equal(second.removed_bytes, 0)
+  assert.deepEqual(second.workspace.orphans, ['session-archived-1'])
+  assert.deepEqual(workspace.sessionIds, [])
+  assert.deepEqual(calls, ['session-archived-1', 'session-archived-1'])
+  assert.match(text(tools.get('delete_archived_sessions'), second), /1 of the ids had no log left to remove/)
+  assert.doesNotMatch(text(tools.get('delete_archived_sessions'), second), /persistence backend/)
+})
+
 test('the running session is refused by name, not deleted', async () => {
   const tools = install()
   const value = await run(tools.get('delete_archived_sessions'), { session_ids: [CALLER] })

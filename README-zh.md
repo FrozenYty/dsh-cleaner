@@ -222,9 +222,9 @@ already gone 的原因——第二次运行看到的就是这个状态。
 宿主只在启动时读 bundle：`git pull` 更新的是文件，正在运行的窗口用的还是它加载时的代码和语言包。重启。
 
 **删掉的会话还在侧边栏里。**
-不该在。删除时会请 workspace registry 把刚删的 id 摘掉，答案里会说这一步成没成（`The workspace list
-dropped them…`）。如果答案说 registry 缺席，那是这个 profile 没挂 `workspaceRegistry`，那一行会在下次刷新时
-消失；如果答案点名了某个 id，说明那一条 detach 失败，那一行也要等到下次刷新。
+把那个 id 在 `delete_archived_sessions` 里再点一次名：日志已经不在的 id 仍然占着一行，点名就是让它消失的办法。
+答案会说 `The workspace list dropped them…`，并告诉你其中几个已经没有日志可删。如果答案说没挂 registry，
+那是这个 profile 没有 `workspaceRegistry`，那一行会在下次刷新时消失；如果点名了某个 id，说明那一条 detach 失败。
 
 ## 兼容性
 

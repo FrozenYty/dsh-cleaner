@@ -66,7 +66,11 @@ A release adds its section in the same pull request that writes the change, so t
   directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
   answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
   none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
-- Repository checks (`scripts/check.mjs`) and 43 fixture tests, both run by CI with Node 22 and Node 24
+- An id whose log is already gone still has a sidebar row, and naming it in `delete_archived_sessions`
+  now drops that row: the detach set covers the ids a call removed and the ghost ids it was given. That is
+  the state an update leaves behind — nothing left to delete, and a row on screen ([ADR 0006](docs/adr/0006-detach-by-asking.md),
+  amended before release).
+- Repository checks (`scripts/check.mjs`) and 44 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
