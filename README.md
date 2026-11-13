@@ -107,8 +107,8 @@ exchange, from the live run recorded in [Status](#status):
 list_archived_sessions {}
 ← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
-    session-36560858-…  182051 bytes (177.8 KiB)  3 file(s)  last write 2026-11-02T07:39:15.053Z
-    session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file(s)  last write 2026-11-03T02:14:07.060Z
+    session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
+    session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z
     …
   Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
   they approve.
@@ -116,7 +116,7 @@ list_archived_sessions {}
 > Delete the six you listed. Keep nothing.
 
 delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
-← Deleted 6 session directory(ies): 4169349 bytes (3.98 MiB) reclaimed.
+← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
   The session persistence backend no longer lists any of them.
 ```
 

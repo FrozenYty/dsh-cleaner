@@ -127,6 +127,10 @@ function formatBytes(bytes) {
   return `${bytes} bytes (${(bytes / (1024 * 1024)).toFixed(2)} MiB)`
 }
 
+/** Counted nouns the way a person writes them, because "1 file(s)" reads like a template leak. */
+const files = (count) => `${count} file${count === 1 ? '' : 's'}`
+const directories = (count) => `${count} session director${count === 1 ? 'y' : 'ies'}`
+
 /** A bounded enumeration: the count is the fact, the ids are the detail, and a long tail is marked. */
 function listIds(ids) {
   const shown = ids.slice(0, 10)
@@ -148,7 +152,7 @@ function renderList(value) {
   )
   for (const candidate of value.candidates) {
     lines.push(
-      `  ${candidate.id}  ${formatBytes(candidate.bytes)}  ${candidate.files.length} file(s)  `
+      `  ${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
       + `last write ${candidate.modified ?? 'unknown'}  ${candidate.path}`,
     )
   }
@@ -179,10 +183,10 @@ function renderDelete(value) {
   lines.push(
     value.removed.length === 0
       ? 'Deleted nothing: no archived session log on disk matched the ids given.'
-      : `Deleted ${value.removed.length} session directory(ies): ${formatBytes(value.removed_bytes)} reclaimed.`,
+      : `Deleted ${directories(value.removed.length)}: ${formatBytes(value.removed_bytes)} reclaimed.`,
   )
   for (const entry of value.removed) {
-    lines.push(`  ${entry.id}  ${formatBytes(entry.bytes)}  ${entry.files} file(s)  ${entry.path}`)
+    lines.push(`  ${entry.id}  ${formatBytes(entry.bytes)}  ${files(entry.files)}  ${entry.path}`)
   }
   for (const entry of value.failed) {
     lines.push(`Partially removed: ${entry.id} — ${entry.error} (${formatBytes(entry.bytes_freed)} freed)`)

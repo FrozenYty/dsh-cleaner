@@ -50,6 +50,8 @@ A release adds its section in the same pull request that writes the change, so t
 - The two tool descriptions say each fact once — the consent rule lives in the tool description, the
   value rule on the parameter, and the refusal list in the answer — which is 200 characters less text the
   model reads before it can act, measured on the definitions themselves.
+- Counts read the way a person writes them: "1 file", "3 files", "1 session directory", "6 session
+  directories" instead of the template's `file(s)` and `directory(ies)`.
 - Repository checks (`scripts/check.mjs`) and 32 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is

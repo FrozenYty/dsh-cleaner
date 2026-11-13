@@ -112,6 +112,8 @@ test('the listing tool deletes nothing and names the bytes it found', async () =
   assert.ok(rendered.includes('Nothing was deleted.'))
   assert.match(rendered, /The session store holds 4 directories/)
   assert.match(rendered, /last write \d{4}-\d{2}-\d{2}T/)
+  assert.match(rendered, /\b1 file\b/, 'a count of one reads as a person writes it')
+  assert.doesNotMatch(rendered, /file\(s\)/)
   for (const candidate of value.candidates) assert.ok(existsSync(candidate.path))
 })
 
@@ -151,6 +153,11 @@ test('the deleting tool removes only the ids it was given, and reports the bytes
   assert.equal(value.removed_bytes, 100)
   assert.deepEqual(value.failed, [])
   assert.deepEqual(value.refused, [])
+  assert.match(
+    text(tools.get('delete_archived_sessions'), value),
+    /Deleted 1 session directory: 100 bytes/,
+    'the singular is spelled out, not templated',
+  )
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), 'an id not given stays')
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
