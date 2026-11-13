@@ -115,6 +115,18 @@ test('the listing tool deletes nothing and names the bytes it found', async () =
   for (const candidate of value.candidates) assert.ok(existsSync(candidate.path))
 })
 
+test('a listing with nothing left to delete does not invite a deletion call', async () => {
+  const tools = install()
+  await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1', 'session-archived-2'] })
+  const value = await run(tools.get('list_archived_sessions'), {})
+  assert.deepEqual(value.candidates, [])
+
+  const rendered = text(tools.get('list_archived_sessions'), value)
+  assert.match(rendered, /there is nothing to delete/)
+  assert.match(rendered, /Already gone/)
+  assert.doesNotMatch(rendered, /call delete_archived_sessions/)
+})
+
 test('the deleting tool removes only the ids it was given, and reports the bytes', async () => {
   const tools = install()
   const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })

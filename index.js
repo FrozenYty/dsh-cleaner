@@ -150,10 +150,14 @@ function renderList(value) {
   }
   for (const entry of value.protected) lines.push(`Kept, protected: ${entry.id} — ${entry.reason}`)
   for (const entry of value.skipped) lines.push(`Not a candidate: ${entry.path} — ${entry.reason}`)
-  lines.push(
-    'Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids '
-    + 'they approve.',
-  )
+  // Only invite a deletion when there is something to approve: telling a model to call the deleting
+  // tool with approved ids, on an answer that listed none, is how a wasted call gets made.
+  if (value.candidates.length > 0) {
+    lines.push(
+      'Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids '
+      + 'they approve.',
+    )
+  }
   return lines.join('\n')
 }
 
@@ -255,8 +259,8 @@ export function apply(ctx) {
           type: 'array',
           items: { type: 'string' },
           description:
-            'Exact session ids from list_archived_sessions, as the person approved them. An id that is not '
-            + 'archived, or is no longer stored, is refused and reported rather than treated as an error.',
+            'Exact session ids from list_archived_sessions, as the person approved them — never an id '
+            + 'from memory.',
         },
       },
     },

@@ -29,7 +29,10 @@ A release adds its section in the same pull request that writes the change, so t
   rather than dropped from the count, and the traversal guard is covered by a property test over hostile
   ids: the escape always yields one inert path segment, and an archived id such as `../../outside` is
   reported as already gone without reaching anything outside the store.
-- Repository checks (`scripts/check.mjs`) and 28 fixture tests, both run by CI with Node 22 and Node 24
+- A listing that found nothing to delete no longer ends by inviting a deletion call: the "show this list
+  and pass the ids they approve" line appears only when there is something to approve, because telling a
+  model to call the deleting tool on an answer that listed none is how a wasted call gets made.
+- Repository checks (`scripts/check.mjs`) and 29 fixture tests, both run by CI with Node 22 and Node 24
   on Linux and Windows.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
