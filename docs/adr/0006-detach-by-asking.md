@@ -85,6 +85,15 @@ Option 3, as a best-effort step after a deletion:
 > even with every host-side record clean; a full restart of the app did, immediately. So the accurate advice
 > is a restart, not a reload, and the answer now says so: `a window that is already open keeps its own copy
 > of that list until the app restarts`.
+>
+> **Amended a sixth time: a restart is not required after all.** The client rewrites that view whenever it
+> re-orders a bucket from the members it actually has — `setOrderBy(mode, activeSessionOrders)` on a sort
+> change and `setSessionOrder(accountKey, order, activeSessionOrders)` on a drag both write the *reconciled*
+> order wholesale, while a page reload only rehydrates the saved one. Switching the sidebar's ordering away
+> from *manual* and back, or dragging a single session, is therefore enough, and it was measured: the
+> persisted view went from 11 stale ids to 0, with the buckets shrinking by exactly the deleted count
+> (11 → 7 in the project, 25 → 23 ungrouped). So the honest advice is the sort switch or the drag — no
+> restart, no page reload, no plugin reaching into browser storage.
 
 ## Consequences
 

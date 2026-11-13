@@ -66,11 +66,11 @@ A release adds its section in the same pull request that writes the change, so t
   directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
   answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
   none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
-- The last holder of a deleted session's row is named: the running window's own persisted sidebar view
-  (`localStorage["dsh.workspace.view.v5"]`), re-read on every start, which no host plugin can reach. With
-  the store, the project records, the archive set and the session list all clean, the README now says where
-  the row lives and what clears it — **a restart of the app, not a page reload**, which the fifth live run
-  settled ([ADR 0006](docs/adr/0006-detach-by-asking.md), fourth and fifth amendments).
+- The last holder of a deleted session's row is named, and so is the way out of it: the running window's own
+  persisted sidebar view (`localStorage["dsh.workspace.view.v5"]`), which is rewritten from the members the
+  window actually has when the sidebar re-orders — **a sort switch or a drag, no restart and no page
+  reload**. Measured on this machine: the persisted view went from 11 stale ids to 0, with the buckets
+  shrinking by exactly the deleted count ([ADR 0006](docs/adr/0006-detach-by-asking.md), sixth amendment).
 - The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
   project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not

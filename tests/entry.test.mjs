@@ -300,8 +300,9 @@ test('a deletion asks the workspace registry to forget the session it orphaned',
   assert.deepEqual(registry.archivedSessionIds, ['session-archived-2'])
   assert.deepEqual(workspace.sessionIds, ['session-archived-2'])
   assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace records dropped them \(1 detached, 1 unarchived\)/)
-  // A page reload proved not to be enough: the window's own copy is rebuilt at a restart.
-  assert.match(text(tools.get('delete_archived_sessions'), value), /until the app restarts/)
+  // A page reload proved not to be enough; the window rewrites its own copy on a sort switch or a drag,
+  // and a restart is the heavier way to the same end.
+  assert.match(text(tools.get('delete_archived_sessions'), value), /until it rewrites it \(a sort switch or a drag\) or restarts/)
 })
 
 test('a profile without a workspace registry still answers', async () => {

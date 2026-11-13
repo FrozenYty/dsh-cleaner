@@ -259,11 +259,11 @@ Name its id in one more `delete_archived_sessions` call. Three records keep a se
 log is gone: the project's membership, the archive set, and the window's own persisted sidebar view. The
 plugin asks the registry to drop the first two (the answer says `The workspace records dropped them…`), and
 the answer also tells you whether the host's session list still names the id. If it does not, and the row is
-still drawn, then the copy is `localStorage["dsh.workspace.view.v5"]` inside the running window — a
-`sessionOrderByAccount` map written by the client and re-read on every start. Clicking such a row shows
-`session/not-found`, which is the proof that nothing on the host still knows the session. No plugin can
-reach a browser storage key: **restart the app** and the row is gone — a page reload is not enough, and this
-was measured, not assumed.
+still drawn, the copy is the window's own view in `localStorage["dsh.workspace.view.v5"]` — a
+`sessionOrderByAccount` map of account to ordered Session ids, and clicking such a row shows
+`session/not-found`. **No restart is needed:** switch the sidebar's ordering away from *manual* and back, or
+drag one session, and the client rewrites that view from the members it actually has, which drops the
+stale ids. A page reload does not rewrite it, which is why a reload can leave the row in place.
 
 ## Compatibility
 
