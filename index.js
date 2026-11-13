@@ -174,12 +174,19 @@ async function forgetSessions(ctx, ids, stillListed = new Set()) {
   if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
   const detached = []
   const unarchived = []
-  const keptArchived = []
+  const kept = []
   const failed = []
   const fail = (id, error) => failed.push({ id, error: error instanceof Error ? error.message : String(error) })
   try {
     const archived = typeof workspaces.archivedSessionIds === 'object' ? workspaces.archivedSessionIds : []
     for (const id of ids) {
+      // A session the host still lists is one a window still draws a row for — the sidebar hides an
+      // archived row of a project, and shows the row of an ungrouped one. So for those ids both records
+      // stay exactly as they are: dropping either is what turns a hidden row into a visible one.
+      if (stillListed.has(id)) {
+        kept.push(id)
+        continue
+      }
       try {
         const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
         if (holder !== undefined) await holder.detachSession(id)
@@ -189,10 +196,6 @@ async function forgetSessions(ctx, ids, stillListed = new Set()) {
         continue
       }
       if (!archived.includes(id) || typeof workspaces.unarchiveSession !== 'function') continue
-      if (stillListed.has(id)) {
-        keptArchived.push(id)
-        continue
-      }
       try {
         await workspaces.unarchiveSession(id)
         unarchived.push(id)
@@ -203,7 +206,7 @@ async function forgetSessions(ctx, ids, stillListed = new Set()) {
   } catch (error) {
     return { registry, error: error instanceof Error ? error.message : String(error) }
   }
-  const answer = { registry, detached, unarchived, kept_archived: keptArchived }
+  const answer = { registry, detached, unarchived, kept_archived: kept }
   return failed.length === 0 ? answer : { ...answer, failed }
 }
 
@@ -289,17 +292,26 @@ function renderDelete(value) {
   } else if (value.workspace?.failed?.length > 0) {
     const ids = value.workspace.failed.map((entry) => entry.id)
     lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
-  } else if (value.workspace?.detached?.length > 0) {
+  } else if ((value.workspace?.detached?.length ?? 0) > 0) {
     const orphans = value.workspace.orphans?.length ?? 0
     const unarchived = value.workspace.unarchived?.length ?? 0
-    const keptArchived = value.workspace.kept_archived?.length ?? 0
     lines.push(
       `The workspace records dropped them (${value.workspace.detached.length} detached`
       + (unarchived > 0 ? `, ${unarchived} unarchived` : '')
-      + (keptArchived > 0 ? `, ${keptArchived} left archived because the host still lists them` : '')
       + '); a window that is already open keeps its own copy of that list until it rewrites it (a sort'
       + ' switch or a drag) or restarts.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
+    )
+  }
+  // A session the host still holds in memory keeps both its project and its archive entry, because the
+  // sidebar hides an archived row of a project and shows the row of an ungrouped one. That is the honest
+  // end state: the log is gone, the row is the archived one, and it disappears when the host lets go.
+  const kept = value.workspace?.kept_archived?.length ?? 0
+  if (kept > 0) {
+    lines.push(
+      `${kept} of the ids stayed where they were: the host still holds ${kept === 1 ? 'that session' : 'those sessions'}`
+      + ' in memory, so a window still draws a row for it, and an archived row of a project is the one the'
+      + ' sidebar hides. The row goes when the host releases the session — a restart does.',
     )
   }
   if (value.query?.still_listed?.length > 0) {
