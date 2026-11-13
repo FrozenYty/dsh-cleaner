@@ -255,10 +255,11 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-Name its id in one more `delete_archived_sessions` call: an id whose log is already gone still has a row,
-and naming it is what drops that row — the answer says `The workspace list dropped them…` and how many of
-the ids had no log left to remove. If the answer instead says no workspace registry is mounted, the profile
-has none and the row clears at the next refresh; if it names an id, that one detach failed.
+Its row is part of the session list the window fetched, and the harness publishes no "this log is gone"
+event to refresh that list with — so an open window keeps the row it already has. **A page reload is
+enough; a restart is not needed.** What the plugin can do, it does: naming the id in another
+`delete_archived_sessions` call drops it from the project's own records (the answer says
+`The workspace list dropped them…`), and a window that fetches the list after that no longer shows it.
 
 ## Compatibility
 
