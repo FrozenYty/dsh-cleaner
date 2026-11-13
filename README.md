@@ -150,7 +150,9 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
 The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
 no directory, which the listing reports as already gone. The project's session list is not written either:
 the registry detaches the deleted ids when asked, which is what makes their sidebar rows go away at once
-([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+([ADR 0006](docs/adr/0006-detach-by-asking.md)). The one copy no host-side step can reach is the window's
+own sidebar view, so the bundle carries a browser half that prunes it at every page load
+([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
 
 ## What it does not do
 
@@ -258,12 +260,13 @@ and the locale it loaded. Restart.
 Name its id in one more `delete_archived_sessions` call. Three records keep a session on screen after its
 log is gone: the project's membership, the archive set, and the window's own persisted sidebar view. The
 plugin asks the registry to drop the first two (the answer says `The workspace records dropped them…`), and
-the answer also tells you whether the host's session list still names the id. If it does not, and the row is
-still drawn, the copy is the window's own view in `localStorage["dsh.workspace.view.v5"]` — a
-`sessionOrderByAccount` map of account to ordered Session ids, and clicking such a row shows
-`session/not-found`. **No restart is needed:** switch the sidebar's ordering away from *manual* and back, or
-drag one session, and the client rewrites that view from the members it actually has, which drops the
-stale ids. A page reload does not rewrite it, which is why a reload can leave the row in place.
+the answer also tells you whether the host's session list still names the id. The third is the window's
+business, and the bundle's browser half repairs it: it drops the ids the view kept that the host no longer
+lists, at every page load and when the window regains focus, so **the row is gone the next time the page
+loads — nothing to click**. A page that is already open when the deletion happens keeps its copy until it
+loads again, because no host event rewrites a view the renderer already holds. To clear one immediately,
+switch the sidebar's ordering away from *manual* and back, or drag a session: the client then rewrites the
+view from the members it actually has.
 
 ## Compatibility
 

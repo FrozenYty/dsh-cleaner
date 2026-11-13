@@ -88,8 +88,17 @@ A release adds its section in the same pull request that writes the change, so t
 - An id whose log is gone is now handled whatever its archive state: naming it in `delete_archived_sessions`
   detaches it from its project, unarchives it when it is still archived, and has the session list asked
   about it — because an earlier deletion can leave a row whose session is no longer archived at all.
-- Repository checks (`scripts/check.mjs`) and 48 fixture tests, both run by CI with Node 22 and Node 24
-  on all three platforms.
+- The bundle now carries a **browser half** (`client.js`) that prunes the window's own sidebar view. After
+  a deletion, the last thing that could keep a row alive was `localStorage["dsh.workspace.view.v5"]`, which
+  the client re-reads on every start and nothing rewrote for a host-side fact. At every page load — and when
+  the window regains focus — the half asks the host for the session list and drops the ids a stored view
+  kept that the list no longer names, so the row is gone the next time the page loads with nothing to
+  click. It imports nothing, writes only when it actually dropped something, treats an unanswerable list
+  as nothing to do, and leaves one small mark (`dsh-cleaner.client.v1`) so the pass can be seen from
+  outside the page ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
+- Repository checks (`scripts/check.mjs`) and 56 fixture tests, both run by CI with Node 22 and Node 24
+  on all three platforms. The browser half is tested by evaluating the same file the page evaluates, so a
+  mistake in it fails a test instead of a person's sidebar.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
 - One line carries the plugin wherever a person meets it — the card in the plugin list, both READMEs,

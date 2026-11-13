@@ -34,11 +34,13 @@ bytes.
 Two layers, and they must not be confused:
 
 - **The bundle** (`package.json` and the files its `files` list publishes: `index.js`, `engine.js`,
-  `cordis.patch.yml`, `locale/en.json`, `locale/zh.json`, `icon.svg`) is what gets installed into a
-  profile. It is linked from this repository, so there is no build step.
+  `client.js`, `cordis.patch.yml`, `locale/en.json`, `locale/zh.json`, `icon.svg`) is what gets installed
+  into a profile. It is linked from this repository, so there is no build step.
 - **The engine** (`engine.js`) knows nothing about the Harness: it takes the session storage root and
   the workspace storage file as arguments, so every test runs against a fixture and the real `DSH_HOME`
   is never touched by a test.
+- **The browser half** (`client.js`) runs inside the window, where the sidebar's own view lives. It is a
+  script rather than a module: the page's loader evaluates it and it registers under the package name.
 - **The Harness** is the host. Its APIs are read from the installed asar, never from this repository.
 
 The load-bearing constraints, each with an ADR:
@@ -54,7 +56,9 @@ The load-bearing constraints, each with an ADR:
 - every guard is repeated against the live filesystem when a plan is executed, and the id is bound to the
   path it names ([ADR 0005](docs/adr/0005-re-verify-at-execution.md));
 - a deleted session is detached by asking the workspace registry, never by editing its store
-  ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+  ([ADR 0006](docs/adr/0006-detach-by-asking.md));
+- the bundle ships a browser half whose only job is to prune the window's own sidebar view, because that
+  view is the one record no host-side step can reach ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
 
 ## 3. Working principles
 
