@@ -1,0 +1,13 @@
+# dsh-cleaner bundle patch: insert this bundle's Host plugin.
+#
+# The row publishes two model-facing tools and has no browser half. Its id is the override target a
+# profile writes when it wants this row configured; keep it stable across releases for that reason.
+#
+# Nothing here schedules anything. The row adds the ability to delete, not a policy that deletes:
+# there is no timer, no interval and no age threshold in this plugin, and a profile cannot configure
+# one into it. Removal only ever happens inside a tool call the model makes after the person approved
+# the list (README, "The contract").
+- insert:
+    - id: cleaner
+      name: 'dsh-cleaner'
+      config: {}

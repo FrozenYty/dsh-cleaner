@@ -1,0 +1,47 @@
+{
+  "name": "dsh-cleaner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An archive hides a session; deleting it is a decision. Remove the logs of archived sessions in DeepSeek Harness on request: list them, delete the ids a person approved, and report the bytes reclaimed.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FrozenYty/dsh-cleaner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FrozenYty/dsh-cleaner/issues"
+  },
+  "homepage": "https://github.com/FrozenYty/dsh-cleaner#readme",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "session",
+    "cleanup",
+    "delete"
+  ],
+  "scripts": {
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "engine.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
