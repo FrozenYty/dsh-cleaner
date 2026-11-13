@@ -40,6 +40,16 @@ async function writeWorkspace(ids) {
   await writeFile(WORKSPACE, JSON.stringify({ global: { archivedSessionIds: ids }, tables: {} }))
 }
 
+/** The projection cache the runtime keeps beside the store, with only the row this plugin reads. */
+async function writeProjection(id, title) {
+  const dir = join(TMP, 'storages', 'session_projcache', 'sessions')
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    join(dir, `${id}.json`),
+    JSON.stringify({ version: 7, record: { rows: { title: { ver: 1, seq: 2, val: title } } } }),
+  )
+}
+
 /** A context with only what this plugin reaches for: the registry, `agents`, and the persistence seam. */
 function harness({ agents = [], persistence } = {}) {
   const tools = new Map()
@@ -203,6 +213,40 @@ test('the deletion answer names a partial removal and a backend it could not re-
   assert.match(rendered, /Partially removed: session-archived-2 — cannot be removed \(x\): EACCES \(40 bytes freed\)/)
   assert.match(rendered, /Kept: session-live-1 — not an archived session/)
   assert.match(rendered, /could not be re-read \(the backend went away\); the deletion above stands/)
+})
+
+test('a listing names the sessions the way a person does, and so does the receipt', async () => {
+  const tools = install()
+  await writeProjection('session-archived-1', '询问模型身份')
+  await writeProjection('session-archived-2', '  say   "hi"  ')
+
+  const value = await run(tools.get('list_archived_sessions'), {})
+  const rendered = text(tools.get('list_archived_sessions'), value)
+  assert.match(rendered, /"询问模型身份"  session-archived-1/)
+  // Whitespace collapses, and a quote in a title cannot break the line's quoting.
+  assert.match(rendered, /"say 'hi'"  session-archived-2/)
+
+  const report = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(report.removed[0].title, '询问模型身份')
+  assert.match(text(tools.get('delete_archived_sessions'), report), /"询问模型身份"  session-archived-1/)
+  assert.equal(report.removed_bytes, 100)
+})
+
+test('a projection that cannot be read costs a title, not the listing', async () => {
+  const tools = install()
+  const dir = join(TMP, 'storages', 'session_projcache', 'sessions')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'session-archived-1.json'), '{ this is not json')
+  // session-archived-2 has no projection file at all.
+
+  const value = await run(tools.get('list_archived_sessions'), {})
+  assert.equal(value.candidates.length, 2)
+  for (const candidate of value.candidates) assert.equal('title' in candidate, false)
+  assert.match(text(tools.get('list_archived_sessions'), value), /  session-archived-1  \d+ bytes/)
+
+  const report = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  assert.equal('title' in report.removed[0], false)
+  assert.equal(report.removed_bytes, 200)
 })
 
 test('the deleting tool removes only the ids it was given, and reports the bytes', async () => {

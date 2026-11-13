@@ -155,6 +155,34 @@ async function readDirectoryFiles(dir) {
 }
 
 /**
+ * The title a person gave a session, read from the runtime's projection cache.
+ *
+ * Decoration, never a decision: a missing file, an older record version or invalid JSON all mean "no
+ * title", and the listing answers without one. Nothing here is written, and no log is touched to get a
+ * title — the cache is the runtime's own derived record, and reading it is the only use this plugin makes
+ * of it.
+ * @param cacheDir - the projection cache's session directory.
+ * @param id - a session id.
+ * @returns the title, whitespace-collapsed and bounded, or undefined.
+ */
+async function readProjectionTitle(cacheDir, id) {
+  let text
+  try {
+    text = await readFile(join(cacheDir, `${encodeSegment(id)}.json`), 'utf8')
+  } catch {
+    return undefined
+  }
+  try {
+    const title = JSON.parse(text)?.record?.rows?.title?.val
+    if (typeof title !== 'string') return undefined
+    const trimmed = title.trim().replace(/\s+/g, ' ').replace(/"/g, "'")
+    return trimmed === '' ? undefined : trimmed.slice(0, 60)
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Every session-owned directory under the storage root, keyed by its on-disk directory name.
  *
  * The walk is two levels deep on purpose, because that is the backend's layout: a project key
@@ -235,12 +263,15 @@ export async function scanStoredSessions(sessionsRoot) {
  * @param options - `{ sessionsRoot, workspaceFile, protect, only }`.
  * @returns a JSON-serialisable plan, consumed by {@link applyCleanup}.
  */
-export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], only } = {}) {
+export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], only, projections } = {}) {
   if (typeof sessionsRoot !== 'string' || sessionsRoot.length === 0) {
     throw new Error('planCleanup: sessionsRoot must be a non-empty string')
   }
   if (typeof workspaceFile !== 'string' || workspaceFile.length === 0) {
     throw new Error('planCleanup: workspaceFile must be a non-empty string')
+  }
+  if (projections !== undefined && (typeof projections !== 'string' || projections.length === 0)) {
+    throw new Error('planCleanup: projections must be a non-empty string when given')
   }
   if (only !== undefined && (!Array.isArray(only) || only.some((id) => typeof id !== 'string' || id.length === 0))) {
     throw new Error('planCleanup: only must be an array of non-empty session ids')
@@ -273,6 +304,15 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
       continue
     }
     candidates.push({ id, path: entry.dir, bytes: entry.bytes, files: entry.files, modified: entry.modified })
+  }
+
+  // A title only for what a person is about to decide about, and only when one could be read: the
+  // listing is where ids have to be matched against the sessions someone remembers by name.
+  if (projections !== undefined) {
+    for (const candidate of candidates) {
+      const title = await readProjectionTitle(projections, candidate.id)
+      if (title !== undefined) candidate.title = title
+    }
   }
 
   // Every id the caller asked for must be accounted for, with a reason a person can act on. "Not
@@ -349,7 +389,11 @@ export async function applyCleanup(plan) {
   for (const candidate of plan.candidates) {
     const outcome = await removeCandidate(candidate, root, archived)
     if (outcome.kind === 'removed') {
-      removed.push({ id: outcome.id, path: outcome.path, files: outcome.files, bytes: outcome.bytes })
+      const entry = { id: outcome.id, path: outcome.path, files: outcome.files, bytes: outcome.bytes }
+      // The receipt names what was deleted the way the listing did, so a person can confirm the ids were
+      // the sessions they meant.
+      if (outcome.title !== undefined) entry.title = outcome.title
+      removed.push(entry)
       removedBytes += outcome.bytes
     } else if (outcome.kind === 'refused') {
       refused.push({ id: outcome.id, reason: outcome.reason })
@@ -434,5 +478,5 @@ async function removeCandidate(candidate, root, archived) {
   } catch (error) {
     return { kind: 'failed', id, path, error: `the directory could not be removed: ${error?.message ?? error}`, bytesFreed }
   }
-  return { kind: 'removed', id, path, files: count, bytes: bytesFreed }
+  return { kind: 'removed', id, path, files: count, bytes: bytesFreed, title: candidate.title }
 }

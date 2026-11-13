@@ -52,6 +52,11 @@ Read from the installed asar, not from memory. The JSONL backend stores one sess
   content-addressed store (`attachments/v1/objects`), shared between sessions; nothing in a session
   directory points at them, and finding a session's references would mean reading its log. That store is
   therefore out of scope by design, not by omission.
+- **The projection cache is read for one thing: a title.** `storages/session_projcache/sessions/<id>.json`
+  is the runtime's own derived record, and `record.rows.title.val` is the name a person sees in the
+  sidebar. The listing shows it beside the id so that "delete the six you listed" can be checked against
+  the sessions someone remembers by name — and nothing else is read from it, nothing is written to it, and
+  a missing or unreadable file costs the title and nothing more.
 
 The workspace storage file is read-only here: `global.archivedSessionIds` is the only field this plugin
 reads, and the plugin never writes the file. A deleted id stays in that list and becomes an id with no
@@ -155,6 +160,8 @@ model. `scripts/check.mjs` is what covers that half.
   deleting the reported one makes the other a candidate on the next run.
 - **`DSH_HOME` names the wrong store.** The listing prints both paths it used, so the mistake is visible
   in the answer before anyone approves a deletion.
-- **The projection cache keeps a stale row.** Per-session projections under
-  `storages/session_projcache/` are derived data owned by another subsystem; this plugin does not touch
-  them, and the runtime rewrites or drops them.
+- **The projection cache keeps a stale row, or changes its shape.** Per-session projections under
+  `storages/session_projcache/` are derived data owned by another subsystem; this plugin reads one row for
+  a title and never writes anything. A deleted session may keep a stale row and its cache file until the
+  runtime rewrites or drops it, and a record version that moves the title costs the listing its titles and
+  nothing else — no candidate, byte count or refusal depends on that file.

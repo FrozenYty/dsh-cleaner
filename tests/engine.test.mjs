@@ -532,6 +532,10 @@ test('the engine rejects arguments it cannot honour', async () => {
     () => planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, only: 'session-archived-1' }),
     /only must be an array of non-empty session ids/,
   )
+  await assert.rejects(
+    () => planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, projections: 42 }),
+    /projections must be a non-empty string when given/,
+  )
 })
 
 test('a plan that names a store that is not there fails loudly, and so does a malformed one', async () => {
