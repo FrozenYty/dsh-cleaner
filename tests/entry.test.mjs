@@ -50,8 +50,8 @@ async function writeProjection(id, title) {
   )
 }
 
-/** A context with only what this plugin reaches for: the registry, `agents`, the seam and the workspaces. */
-function harness({ agents = [], persistence, workspaces } = {}) {
+/** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
+function harness({ agents = [], persistence, workspaces, query } = {}) {
   const tools = new Map()
   const ctx = {
     tools: {
@@ -63,6 +63,7 @@ function harness({ agents = [], persistence, workspaces } = {}) {
     get: (name) => {
       if (name === 'agents') return { list: () => agents }
       if (name === 'sessionPersistence') return persistence
+      if (name === 'sessionQuery') return query
       if (name === 'workspaceRegistry') return workspaces
       return undefined
     },
@@ -359,6 +360,22 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   assert.deepEqual(calls, ['session-archived-1', 'session-archived-1'])
   assert.match(text(tools.get('delete_archived_sessions'), second), /1 of the ids had no log left to remove/)
   assert.doesNotMatch(text(tools.get('delete_archived_sessions'), second), /persistence backend/)
+})
+
+test('a session list that still names a deleted id is reported, because a row can outlive the log', async () => {
+  const tools = install({ query: { listSessions: async () => [{ sessionId: 'session-archived-2' }, { sessionId: 'session-archived-1' }] } })
+
+  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.deepEqual(value.query.still_listed, ['session-archived-1'])
+  assert.match(text(tools.get('delete_archived_sessions'), value), /The session list still names session-archived-1/)
+})
+
+test('a session list that no longer names them adds no noise', async () => {
+  const tools = install({ query: { listSessions: async () => [{ sessionId: 'some-other-session' }] } })
+
+  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.deepEqual(value.query.still_listed, [])
+  assert.doesNotMatch(text(tools.get('delete_archived_sessions'), value), /session list/)
 })
 
 test('the running session is refused by name, not deleted', async () => {

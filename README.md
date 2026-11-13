@@ -259,8 +259,9 @@ Name its id in one more `delete_archived_sessions` call. Two records keep a sess
 its log is gone: the project's membership and the archive set. The first makes the row render at all, the
 second is why it reappears under *ungrouped* when the first is removed. The plugin asks the registry to drop
 both (the answer says `The workspace records dropped them…`), and a window that is already open keeps its
-own copy of the list until it reloads. If a row survives that reload, nothing in this plugin can reach it:
-the copy belongs to the window.
+own copy of the list until it reloads. If a row survives that reload, the answer tells you where it lives:
+`The session list still names <id>` means the host's own session list still has it, and rebuilt is the only
+thing that clears it. Nothing else in this plugin can reach a copy the window keeps.
 
 ## Compatibility
 

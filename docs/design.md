@@ -125,6 +125,11 @@ read that throws, a registry that is absent and a detach that fails are each des
 `verify.backend: 'not-asked'` is what a call that removed nothing answers with, while the detach is still
 asked for the ids it was given.
 
+7. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
+   what a window draws its session rows from, and it is a different service from the persistence seam: a
+   session can be gone from the store and still be named there, which is why a row can outlive the log. The
+   answer reports it instead of promising a screen it cannot see.
+
 ## 6. Why files are unlinked one at a time
 
 `rm -r` on the directory would be shorter. It would also decide, on the plugin's behalf, what to do with
