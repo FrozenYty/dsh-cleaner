@@ -142,6 +142,19 @@ for (const match of entry?.matchAll(/async\s+execute\s*\(([^)]*)\)/g) ?? []) {
   }
 }
 
+// The tool names are a derived registry: whatever the entry registers, the README pair must name. A
+// renamed tool otherwise leaves the primary document describing a tool that no longer exists.
+const toolNames = [...(entry?.matchAll(/name:\s*'([a-z][a-z0-9_]+)'/g) ?? [])].map((match) => match[1])
+if (entry !== undefined && toolNames.length === 0) fail('index.js: no tool definition found')
+for (const name of toolNames) {
+  for (const document of ['README.md', 'README-zh.md']) {
+    const text = read(document)
+    if (text !== undefined && !text.includes(`\`${name}\``)) {
+      fail(`${document}: does not name the tool "${name}" that index.js registers`)
+    }
+  }
+}
+
 // A tool schema is validated by the Host, and a keyword outside its accepted subset does not fail one
 // tool: it fails the plugin. The accepted subset is type/oneOf/properties/required/
 // additionalProperties/items/enum/const plus annotations.
