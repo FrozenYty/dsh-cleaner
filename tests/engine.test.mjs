@@ -271,10 +271,47 @@ test('a session directory holding a nested directory is refused rather than remo
   const listing = await plan()
   assert.equal(listing.candidates.some((entry) => entry.id === 'session-archived-5'), false)
   assert.ok(listing.skipped.some((entry) => entry.path === nested && /non-file entry/.test(entry.reason)))
+  // The directory exists, so the log is not gone: reporting it as already deleted would be a lie about
+  // the disk. Its measurable bytes still belong to the store, so the total does not omit them.
+  assert.deepEqual(listing.already_gone, [])
+  assert.equal(listing.stored_bytes, ARCHIVED_BYTES + 777 + 12)
+
+  const asked = await plan({ only: ['session-archived-5'] })
+  assert.equal(asked.requested.length, 1)
+  assert.match(
+    asked.requested[0].reason,
+    /^archived, but its directory is not a candidate: holds a non-file entry \(artifacts\)/,
+  )
 
   const report = await applyCleanup(listing)
   assert.ok(existsSync(join(nested, 'artifacts', 'part.bin')), 'nothing inside the refused directory was removed')
   assert.equal(report.removed.length, 3)
+})
+
+test('a session directory that cannot be read is reported, and its id is not called already gone', {
+  // POSIX denies a directory listing with the mode bits; Windows has no equivalent that does not need
+  // an ACL, so the case runs where it can.
+  skip: process.platform === 'win32' ? 'chmod cannot deny a directory read on Windows' : false,
+}, async () => {
+  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-2')
+  await chmod(dir, 0o000)
+
+  try {
+    const listing = await plan({ only: ['session-archived-2'] })
+    assert.deepEqual(listing.candidates, [])
+    assert.deepEqual(listing.already_gone, [])
+    assert.ok(listing.skipped.some((entry) => entry.path === dir && /cannot be listed/.test(entry.reason)))
+
+    assert.equal(listing.requested.length, 1)
+    assert.match(listing.requested[0].reason, /^archived, but its directory is not a candidate: cannot be listed/)
+
+    const report = await applyCleanup(listing)
+    assert.deepEqual(report.removed, [])
+    assert.deepEqual(report.refused, [])
+    assert.ok(existsSync(dir), 'the unreadable directory is still there')
+  } finally {
+    await chmod(dir, 0o755)
+  }
 })
 
 test('the directory name is the backend escape, so an id that needs one is still found', async () => {
