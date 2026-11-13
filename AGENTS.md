@@ -83,7 +83,7 @@ nothing.
 
 - Branch names, commit format and PR rules live in `CONTRIBUTING.md`. Follow them; they are not
   repeated here.
-- **Never force-push.** Never push to `main` directly.
+- **Never force-push.** Never rewrite `main`'s history; it is what people clone.
 - **Never delete anything on disk outside `tests/` while running a command in this repository**, except
   in a tool call the person asked for, against ids they approved.
 - **An accepted ADR is closed.** To change a decision, write a new ADR that supersedes it.

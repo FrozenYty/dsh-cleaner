@@ -14,14 +14,18 @@ This is a plugin whose whole job is to delete files. Two rules come before every
 
 ## 2. Branching
 
-`main` is protected. Work happens on short-lived branches, lowercase, hyphen-separated, prefixed by
-type:
+`main` is the only long-lived branch and the default. This repository is written by one person and one
+assistant, so a change lands on `main` when every check is green — with one exception: a change to what
+the plugin **promises** (the candidate rule, the protection rule, the deletion path, a tool name or a
+result field) goes through a pull request, so the diff, the reasoning and the green run sit in one
+reviewable place. Branch names for that case are lowercase, hyphen-separated and prefixed by type:
 
 ```
 feat/engine-refuse-reflinks    fix/listing-byte-count    docs/design-pair
 ```
 
-Merge through a pull request, then delete the branch.
+Merge with **squash** and delete the branch. Never force-push `main`: the history there is what people
+clone.
 
 ## 3. Commits
 
