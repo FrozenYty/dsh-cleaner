@@ -69,11 +69,16 @@ out — it is never a candidate by construction, because nothing looks it up.
 | yes | absent | any | `already_gone`: reported with the id, nothing removed. This is the second-run state. |
 | yes | a real directory of regular files | yes | `protected`: reported with the reason, kept |
 | yes | a real directory of regular files | no | `candidate`: listed with its bytes; removed when named |
-| yes | a link, or a directory holding anything but regular files | any | `skipped`: reported with the path and the reason; never entered, never removed |
+| yes | a link, or a directory holding anything but regular files | any | `skipped`: reported with the path and the reason; never entered, never removed — and **not** `already_gone`, because the log is still there |
 
 Two consequences worth stating: an archived id with no directory is not an error, and a directory this
 plugin refuses to touch is not a failure — both are ordinary answers, because a deletion run has to be
 able to say "nothing to do" and "I will not touch that" without pretending either is a crash.
+
+The third state is the one that has to be kept apart from the second: "no directory at all" and "a
+directory I would not touch" both produce no candidate, and only the first is evidence that the log is
+gone. `already_gone` therefore means *the disk holds nothing under that id*, and a refused directory
+still contributes the bytes that could be measured to the store total.
 
 `protected` is filled by the bundle entry, not the engine: the Session running the command
 (`exec.agent.session.id`) and every Session a live agent holds (`ctx.agents.list()`). The caller is
@@ -135,8 +140,13 @@ model. `scripts/check.mjs` is what covers that half.
   names: the listing reports `0 candidates`, every archived id as `already_gone`, and `stored_sessions`
   greater than zero. Safe — nothing is deleted — and visible in the answer, but silent in the sense that
   no error is raised. This is the one coupling to another package in the repository.
-- **A session directory gains a nested directory.** It is refused and reported rather than removed, and
-  the listing says why. A human decides what it is.
+- **A session directory gains a nested directory.** It is refused and reported rather than removed, the
+  listing says why, and the id is not called `already_gone`: the log is still on disk. A human decides
+  what it is.
+- **A session directory cannot be read.** Permissions, a broken ACL, a restored backup. Same answer as
+  the previous case — `skipped` with the reason, never `already_gone`, never a candidate — except that
+  nothing could be measured, so the store total does not include it. The skipped line is the only part of
+  the answer that knows the directory exists, which is why it is printed rather than counted.
 - **Two deletions run at once.** The second finds the files gone or unlink fails; both are reported, and
   nothing outside the candidate set is touched.
 - **The workspace file is corrupt.** Listing and deletion throw before removing anything.

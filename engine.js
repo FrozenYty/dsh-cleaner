@@ -120,28 +120,37 @@ async function readDirectoryFiles(dir) {
   try {
     entries = await readdir(dir, { withFileTypes: true })
   } catch (error) {
-    return { ok: false, reason: `cannot be listed: ${error?.message ?? error}` }
+    return { ok: false, reason: `cannot be listed: ${error?.message ?? error}`, bytes: 0, files: 0 }
   }
   const files = []
   let bytes = 0
   let newest = 0
+  // The first refusal decides why this directory is not a candidate, but the walk does not stop there:
+  // every regular file it can measure still belongs to the store, and a total that silently omits them
+  // would be smaller than what the person sees on disk. Entries that are not regular files are never
+  // measured — that is the same rule as never following them.
+  let refusal
   for (const entry of entries) {
     if (!entry.isFile()) {
-      return { ok: false, reason: `holds a non-file entry (${entry.name}); a link or a nested directory is refused, not followed` }
+      refusal ??= `holds a non-file entry (${entry.name}); a link or a nested directory is refused, not followed`
+      continue
     }
     let info
     try {
       info = await lstat(join(dir, entry.name))
     } catch (error) {
-      return { ok: false, reason: `cannot be read (${entry.name}): ${error?.message ?? error}` }
+      refusal ??= `cannot be read (${entry.name}): ${error?.message ?? error}`
+      continue
     }
     if (!info.isFile()) {
-      return { ok: false, reason: `holds a non-file entry (${entry.name}); a link or a nested directory is refused, not followed` }
+      refusal ??= `holds a non-file entry (${entry.name}); a link or a nested directory is refused, not followed`
+      continue
     }
     files.push(entry.name)
     bytes += info.size
     newest = Math.max(newest, info.mtimeMs)
   }
+  if (refusal !== undefined) return { ok: false, reason: refusal, bytes }
   return { ok: true, files, bytes, modified: newest === 0 ? null : new Date(newest).toISOString() }
 }
 
@@ -151,18 +160,29 @@ async function readDirectoryFiles(dir) {
  * The walk is two levels deep on purpose, because that is the backend's layout: a project key
  * directory, then one directory per session. Neither level is entered when the entry is not a real
  * directory, so a junction or symlink is reported rather than followed.
+ *
+ * `refused` is the part that keeps the rest of the answer honest: a session directory that exists but
+ * was refused is not a candidate, and it is not *gone* either. The ids it holds must not be reported as
+ * already deleted, or the listing would claim a log is gone while it sits there taking space.
  * @param sessionsRoot - absolute path of the session storage root.
- * @returns `{ stored: Map<directoryName, {dir, files, bytes, modified}>, skipped: [{path, reason}] }`.
+ * @returns `{ stored, skipped, refused, refusedBytes }`.
  */
 export async function scanStoredSessions(sessionsRoot) {
   const stored = new Map()
   const skipped = []
+  const refused = new Map()
+  let refusedBytes = 0
   let projects
   try {
     projects = await readdir(sessionsRoot, { withFileTypes: true })
   } catch (error) {
     if (error?.code === 'ENOENT') {
-      return { stored, skipped: [{ path: sessionsRoot, reason: 'the session storage root does not exist' }] }
+      return {
+        stored,
+        skipped: [{ path: sessionsRoot, reason: 'the session storage root does not exist' }],
+        refused,
+        refusedBytes,
+      }
     }
     throw new Error(`cannot read the session storage root ${sessionsRoot}: ${error?.message ?? error}`)
   }
@@ -188,6 +208,8 @@ export async function scanStoredSessions(sessionsRoot) {
       const reading = await readDirectoryFiles(dir)
       if (!reading.ok) {
         skipped.push({ path: dir, reason: reading.reason })
+        refused.set(entry.name, reading.reason)
+        refusedBytes += reading.bytes
         continue
       }
       // One session id should live in one project directory, but a moved cwd or a copied tree can leave
@@ -200,7 +222,7 @@ export async function scanStoredSessions(sessionsRoot) {
       stored.set(entry.name, { dir, files: reading.files, bytes: reading.bytes, modified: reading.modified })
     }
   }
-  return { stored, skipped }
+  return { stored, skipped, refused, refusedBytes }
 }
 
 /**
@@ -229,7 +251,7 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
   }
 
   const archived = await readArchivedIds(workspaceFile)
-  const { stored, skipped } = await scanStoredSessions(sessionsRoot)
+  const { stored, skipped, refused, refusedBytes } = await scanStoredSessions(sessionsRoot)
   const requested = new Set(only ?? [])
   const candidates = []
   const alreadyGone = []
@@ -237,11 +259,13 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
 
   for (const id of archived) {
     if (requested.size > 0 && !requested.has(id)) continue
-    const entry = stored.get(encodeSegment(id))
-    // An archived id that is not on disk is not a failure: it is exactly what a second run finds
-    // after the first one worked. Reported on every run, so "0 candidates" is explained, not bare.
+    const encoded = encodeSegment(id)
+    const entry = stored.get(encoded)
     if (entry === undefined) {
-      alreadyGone.push(id)
+      // Not a candidate. "Already gone" is a claim about the disk, so a directory that exists but was
+      // refused — unreadable, or holding something this plugin will not touch — is not gone at all; the
+      // skipped list already names it, and claiming the log had been deleted would be a lie.
+      if (!refused.has(encoded)) alreadyGone.push(id)
       continue
     }
     if (protectedReason.has(id)) {
@@ -265,7 +289,9 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
           ? 'not an archived session; archive it first to make it a candidate'
           : 'not an archived session, and no log is stored under that id'
       } else if (!stored.has(encoded)) {
-        reason = 'archived, but no session directory is stored; already deleted'
+        reason = refused.has(encoded)
+          ? `archived, but its directory is not a candidate: ${refused.get(encoded)}`
+          : 'archived, but no session directory is stored; already deleted'
       } else {
         // Archived, stored and skipped above: protection is the only reason left.
         reason = protectedReason.get(id) ?? 'protected'
@@ -280,8 +306,9 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     archived_ids: archived.length,
     stored_sessions: stored.size,
     // Everything the store holds, not only what is reclaimable: a listing that says "4 MiB" without
-    // saying "of 84 MiB" leaves the person unable to judge whether the cleanup is worth it.
-    stored_bytes: [...stored.values()].reduce((sum, entry) => sum + entry.bytes, 0),
+    // saying "of 84 MiB" leaves the person unable to judge whether the cleanup is worth it. A refused
+    // directory contributes the bytes that could be measured before the refusal.
+    stored_bytes: [...stored.values()].reduce((sum, entry) => sum + entry.bytes, refusedBytes),
     candidates,
     total_bytes: candidates.reduce((sum, candidate) => sum + candidate.bytes, 0),
     already_gone: alreadyGone,
