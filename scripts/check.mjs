@@ -96,6 +96,14 @@ if (manifest !== undefined) {
   for (const required of ['index.js', 'engine.js']) {
     if (!(manifest.files ?? []).some((entry) => entry === required)) fail(`package.json: files must include ${required}`)
   }
+  // The published set is the bundle, not the repository: tests, documents and the gate are for whoever
+  // works here, and shipping them in the tarball would be a silent expansion of what a profile installs.
+  for (const entry of manifest.files ?? []) {
+    const top = entry.split('/')[0]
+    if (['tests', 'docs', 'scripts', '.github'].includes(top)) {
+      fail(`package.json: files must not publish "${entry}"; the bundle ships what the Host needs, not CI`)
+    }
+  }
 }
 
 // 2. Host half: no Harness import, no bare specifier, and the entry exports the plugin face.

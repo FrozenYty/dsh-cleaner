@@ -143,6 +143,24 @@ no directory, which the listing reports as already gone.
 - **No log repair.** A corrupt or unreadable log is still deleted when its session is archived: this
   plugin is the cleanup path of last resort, so it must not depend on the log being parseable.
 
+## Where this fits
+
+Three ways to make a session's log go away, and what each one actually refuses to do. The middle column
+was read from `dsh-session-cleaner` v1.0.2's published code, not from its summary.
+
+| | this plugin | `dsh-session-cleaner` | doing it by hand |
+|---|---|---|---|
+| surface | two model-facing tools | a web UI menu item and an HTTP route | a shell |
+| what it will delete | archived ids only, named by a person | any session with no attached agent | whatever the glob matches |
+| the running session | refused by id, always | refused while its agent is running | not refused — the glob does not know |
+| what it reports | candidates, bytes, last write, store total, per-id result | detach / workspace / file counts | nothing |
+| writes the workspace records | never | yes, it detaches the session | no |
+| survives a wrong id | refuses it and says why | n/a — it takes one id from a menu | deletes the wrong session |
+
+Neither tool is a superset of the other: `dsh-session-cleaner` deletes *any* session and cleans up the
+workspace records, which is what a person clicking a menu item wants. This plugin deletes only what is
+already hidden, and its whole design is about being unable to delete anything else.
+
 ## Questions
 
 **I archived a session by mistake — is it gone?**

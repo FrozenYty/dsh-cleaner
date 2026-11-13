@@ -8,6 +8,7 @@ on:
 
 jobs:
   check:
+    name: check ${{ matrix.os }} node ${{ matrix.node }}
     strategy:
       # Both platforms, because the deletion engine is filesystem code: it walks directories, resolves
       # links and unlinks files, and the two families disagree about all three. Both Node majors,
