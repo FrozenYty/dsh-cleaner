@@ -108,10 +108,17 @@ first, because that is the one the contract names.
    `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
    be judged.
 5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
+6. Ask the workspace registry to detach the ids that were removed, so the sidebar drops their rows now
+   rather than at the next refresh. The plugin never edits the workspace store: `detachSession` runs on
+   the registry's own mutation chain, and the workspace controller's `follow()` stream is what carries the
+   durable change to the client. Why this is the one place the plugin touches another subsystem's records,
+   and what the alternatives were: [ADR 0006](adr/0006-detach-by-asking.md).
 
-The last step is the only use this plugin makes of the seam. It is a report and not a gate: the seam
-cannot delete, so it must not be able to veto a deletion either. A profile without the service, or a
-backend read that throws, is described in the answer; neither fails a call whose files are already gone.
+Both of the last two steps are reports about a deletion that already happened, and neither can veto one.
+The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a
+read that throws, a registry that is absent and a detach that fails are each described in the answer — and
+`verify.backend: 'not-asked'` / `workspace.registry: 'not-asked'` is what a call that removed nothing
+answers with.
 
 ## 6. Why files are unlinked one at a time
 
@@ -158,6 +165,9 @@ model. `scripts/check.mjs` is what covers that half.
 - **A session id has two directories** — a moved cwd, a copied tree, a restored backup. The scan keeps
   one as the candidate and reports the other as skipped, so the store total is not silently short;
   deleting the reported one makes the other a candidate on the next run.
+- **The workspace registry is absent, or refuses a detach.** The files are already gone, so the answer
+  reports which of the three happened and the sidebar row clears at the next refresh instead of at once.
+  Nothing about the deletion itself depends on that call — [ADR 0006](adr/0006-detach-by-asking.md).
 - **`DSH_HOME` names the wrong store.** The listing prints both paths it used, so the mistake is visible
   in the answer before anyone approves a deletion.
 - **The projection cache keeps a stale row, or changes its shape.** Per-session projections under

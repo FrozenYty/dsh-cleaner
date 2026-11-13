@@ -61,7 +61,12 @@ A release adds its section in the same pull request that writes the change, so t
   projection cache the harness already keeps: a list of opaque ids is hard to approve, and the name in
   the sidebar is the handle a person actually has. Read-only, fail-soft — a missing or older cache file
   costs the title and nothing else, and no log is opened to find a name.
-- Repository checks (`scripts/check.mjs`) and 40 fixture tests, both run by CI with Node 22 and Node 24
+- A deletion now asks the workspace registry to detach the ids it removed, so the row leaves the sidebar
+  when the call returns instead of at the next restart — the registry keeps a session's place while its
+  directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
+  answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
+  none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+- Repository checks (`scripts/check.mjs`) and 43 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.

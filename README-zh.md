@@ -105,6 +105,7 @@ list_archived_sessions {}
 delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
+  The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.
   The session persistence backend no longer lists any of them.
 ```
 
@@ -131,11 +132,14 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
   旁边，好让一串 id 能对上你记得名字的那些会话。文件缺失、版本更旧或读不出来，只损失标题，别的都不受影响。
 
 workspace 文件永远不写。删掉的 id 会留在归档表里，只是变成一个“没有目录的 id”，清单会把它报成
-already gone。
+already gone。项目里的会话列表也不是插件写的：它**请** registry 把这些 id 摘掉，这样侧边栏那一行才会立刻消失
+（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
 
 ## 它不做什么
 
-- **不取消归档、不重新归档、不 pin。** 它只删日志；归档表和 workspace 记录归 harness 管。
+- **不取消归档、不重新归档、不 pin。** 它只删日志。唯一碰过的记录是项目里的会话列表，而且是**请**它动的：
+  workspace registry 会把刚删掉的 id detach 掉，这样那一行不用等重启就会从侧边栏消失。插件自己一个 workspace
+  记录都不写（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
 - **不清投影缓存。** harness 把每个会话的投影放在 `storages/session_projcache/`，本插件只从里面读一行
   ——显示在 id 旁边的标题——什么都不写：删掉的会话可能留一条陈旧投影和缓存文件，直到运行时自己改写或丢弃。
   那是派生数据、会自愈，也比为了一个名字去解析日志便宜。
@@ -159,7 +163,7 @@ already gone。
 | 会删什么 | 只有已归档、且被人点名的 id | 任何没有挂 agent 的会话 | glob 匹配到什么就删什么 |
 | 正在跑的会话 | 按 id 永远拒绝 | agent 在跑时拒绝 | 不拒绝——glob 不认识它 |
 | 报告什么 | 候选、字节、最后写入、存储总量、逐 id 结果 | detach / workspace / 文件数 | 什么都不报 |
-| 是否写 workspace 记录 | 从不 | 会，它把会话从记录里摘掉 | 不写 |
+| 是否写 workspace 记录 | 请 registry 摘掉刚删的会话，自己从不写这个文件 | 会，它把会话从记录里摘掉 | 不写 |
 | id 写错时 | 拒绝并说明原因 | 不适用——id 来自菜单 | 删错会话 |
 
 两者不是包含关系：`dsh-session-cleaner` 删的是“任何会话”并顺手清理 workspace 记录，这正是点菜单的人想要
@@ -216,6 +220,11 @@ already gone 的原因——第二次运行看到的就是这个状态。
 
 **更新之后卡片还是旧的描述。**
 宿主只在启动时读 bundle：`git pull` 更新的是文件，正在运行的窗口用的还是它加载时的代码和语言包。重启。
+
+**删掉的会话还在侧边栏里。**
+不该在。删除时会请 workspace registry 把刚删的 id 摘掉，答案里会说这一步成没成（`The workspace list
+dropped them…`）。如果答案说 registry 缺席，那是这个 profile 没挂 `workspaceRegistry`，那一行会在下次刷新时
+消失；如果答案点名了某个 id，说明那一条 detach 失败，那一行也要等到下次刷新。
 
 ## 兼容性
 

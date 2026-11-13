@@ -50,8 +50,8 @@ async function writeProjection(id, title) {
   )
 }
 
-/** A context with only what this plugin reaches for: the registry, `agents`, and the persistence seam. */
-function harness({ agents = [], persistence } = {}) {
+/** A context with only what this plugin reaches for: the registry, `agents`, the seam and the workspaces. */
+function harness({ agents = [], persistence, workspaces } = {}) {
   const tools = new Map()
   const ctx = {
     tools: {
@@ -63,6 +63,7 @@ function harness({ agents = [], persistence } = {}) {
     get: (name) => {
       if (name === 'agents') return { list: () => agents }
       if (name === 'sessionPersistence') return persistence
+      if (name === 'workspaceRegistry') return workspaces
       return undefined
     },
   }
@@ -266,6 +267,48 @@ test('the deleting tool removes only the ids it was given, and reports the bytes
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), 'an id not given stays')
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
+})
+
+test('a deletion asks the workspace registry to drop the row it just orphaned', async () => {
+  const calls = []
+  const workspace = {
+    sessionIds: ['session-archived-1', 'session-archived-2'],
+    async detachSession(id) {
+      calls.push(id)
+      this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({ workspaces: { list: () => [workspace] } })
+
+  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(value.removed_count, 1)
+  assert.deepEqual(calls, ['session-archived-1'], 'the registry is asked, so the row can go now')
+  assert.deepEqual(value.workspace.detached, ['session-archived-1'])
+  assert.deepEqual(workspace.sessionIds, ['session-archived-2'])
+  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace list dropped them/)
+})
+
+test('a profile without a workspace registry still answers', async () => {
+  const tools = install()
+  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+
+  assert.equal(value.removed_count, 1)
+  assert.equal(value.workspace.registry, 'absent')
+  assert.match(text(tools.get('delete_archived_sessions'), value), /No workspace registry is mounted/)
+})
+
+test('a registry that refuses a detach cannot fail a deletion that already happened', async () => {
+  const workspaces = {
+    list: () => [{ sessionIds: ['session-archived-1'], detachSession: async () => { throw new Error('the registry refused') } }],
+  }
+  const tools = install({ workspaces })
+
+  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  assert.equal(value.removed_count, 1)
+  assert.equal(value.removed_bytes, 100)
+  assert.deepEqual(value.workspace.failed, [{ id: 'session-archived-1', error: 'the registry refused' }])
+  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace list kept session-archived-1/)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
 })
 
 test('the running session is refused by name, not deleted', async () => {

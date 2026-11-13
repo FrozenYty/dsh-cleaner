@@ -117,6 +117,7 @@ list_archived_sessions {}
 delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
+  The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.
   The session persistence backend no longer lists any of them.
 ```
 
@@ -147,12 +148,16 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
   name. A missing, older or unreadable file costs the title and changes nothing else.
 
 The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
-no directory, which the listing reports as already gone.
+no directory, which the listing reports as already gone. The project's session list is not written either:
+the registry detaches the deleted ids when asked, which is what makes their sidebar rows go away at once
+([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 
 ## What it does not do
 
-- **No unarchive, no re-archive, no pinning.** It removes logs and nothing else; the archive list and
-  the workspace records belong to the harness.
+- **No unarchive, no re-archive, no pinning.** It removes logs and nothing else. The one record it touches
+  is the project's session list, and it touches it by asking: the workspace registry detaches the ids it
+  just deleted, so their rows leave the sidebar instead of waiting for a restart. The plugin writes no
+  workspace record itself ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 - **No projection cache eviction.** The harness keeps per-session projections under
   `storages/session_projcache/`, and this plugin reads one row from them — the title it shows beside an
   id — and writes nothing: a deleted session may keep a stale row and its cache file until the runtime
@@ -179,7 +184,7 @@ was read from `dsh-session-cleaner` v1.0.2's published code, not from its summar
 | what it will delete | archived ids only, named by a person | any session with no attached agent | whatever the glob matches |
 | the running session | refused by id, always | refused while its agent is running | not refused — the glob does not know |
 | what it reports | candidates, bytes, last write, store total, per-id result | detach / workspace / file counts | nothing |
-| writes the workspace records | never | yes, it detaches the session | no |
+| writes the workspace records | asks the registry to detach the deleted session; never edits the store | yes, it detaches the session | no |
 | survives a wrong id | refuses it and says why | n/a — it takes one id from a menu | deletes the wrong session |
 
 Neither tool is a superset of the other: `dsh-session-cleaner` deletes *any* session and cleans up the
@@ -248,6 +253,12 @@ simply be run again.
 **The card still shows an older description after an update.**
 The host reads the bundle when it starts: `git pull` updates the files, but a running window keeps the code
 and the locale it loaded. Restart.
+
+**A deleted session is still in the sidebar.**
+It should not be: the deletion asks the workspace registry to detach the ids it removed, and the answer
+says whether that worked (`The workspace list dropped them…`). If the answer says the registry was absent,
+the profile mounted no `workspaceRegistry` and the row clears at the next refresh; if it names an id, that
+one detach failed and the row stays until then.
 
 ## Compatibility
 
