@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, rmdir, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, beforeEach, test } from 'node:test'
@@ -114,6 +114,11 @@ test('the listing tool deletes nothing and names the bytes it found', async () =
   assert.match(rendered, /last write \d{4}-\d{2}-\d{2}T/)
   assert.match(rendered, /\b1 file\b/, 'a count of one reads as a person writes it')
   assert.doesNotMatch(rendered, /file\(s\)/)
+  assert.match(
+    rendered,
+    /Kept, protected: session-caller — the session running this command/,
+    'the listing names what it kept, not only what it would delete',
+  )
   for (const candidate of value.candidates) assert.ok(existsSync(candidate.path))
 })
 
@@ -127,6 +132,23 @@ test('a listing with nothing left to delete does not invite a deletion call', as
   assert.match(rendered, /there is nothing to delete/)
   assert.match(rendered, /Already gone/)
   assert.doesNotMatch(rendered, /call delete_archived_sessions/)
+})
+
+test('a directory the walk refused is named in the listing, with the reason', async () => {
+  const tools = install()
+  const link = join(ROOT, '--D-LINKED--')
+  await symlink(join(ROOT, '--D-ALPHA--'), link, process.platform === 'win32' ? 'junction' : 'dir')
+
+  try {
+    const value = await run(tools.get('list_archived_sessions'), {})
+    assert.equal(value.skipped.length, 1)
+
+    const rendered = text(tools.get('list_archived_sessions'), value)
+    assert.match(rendered, /Not a candidate: .*--D-LINKED-- — not a directory; a link at this level is not followed/)
+  } finally {
+    // Removed as a link, never descended into: a junction is a directory entry, not a directory tree.
+    await rmdir(link)
+  }
 })
 
 test('a long list of already-deleted ids is counted and marked, not printed whole', async () => {
