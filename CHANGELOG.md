@@ -70,6 +70,11 @@ A release adds its section in the same pull request that writes the change, so t
   now drops that row: the detach set covers the ids a call removed and the ghost ids it was given. That is
   the state an update leaves behind — nothing left to delete, and a row on screen ([ADR 0006](docs/adr/0006-detach-by-asking.md),
   amended before release).
+- The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
+  project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
+  the session list it fetched and the row leaves only when that list is fetched again — a page reload, not
+  a restart. [ADR 0006](docs/adr/0006-detach-by-asking.md) records the second amendment, and the answer,
+  README and design say what actually happens.
 - Repository checks (`scripts/check.mjs`) and 44 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is

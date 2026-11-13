@@ -244,7 +244,8 @@ function renderDelete(value) {
   } else if (value.workspace?.detached?.length > 0) {
     const orphans = value.workspace.orphans?.length ?? 0
     lines.push(
-      'The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.'
+      'The workspace list dropped them; a window that is already open keeps its own copy of that list '
+      + 'until it reloads, and then the rows are gone.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
     )
   }

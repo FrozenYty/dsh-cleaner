@@ -50,6 +50,15 @@ Option 3, as a best-effort step after a deletion:
 > removed, which left the rows orphaned by earlier deletions exactly where they were — the gap a person
 > hits the moment they upgrade: nothing left to delete, and the row still on screen. The second paragraph
 > above is that correction.
+>
+> **Amended again after the first live run of the feature.** The detach worked and the client applied it at
+> once — the rows left their project and reappeared under *ungrouped*. They did not disappear, and this
+> decision cannot make them: the sidebar's rows come from the session list the window fetched
+> (`sessionQuery.listSessions`), and nothing in the harness publishes "this log is gone" — there is no
+> deletion API to publish it in the first place ([ADR 0001](0001-out-of-band-deletion.md)). So what the
+> detach buys is real but bounded: the project's records no longer name a session that cannot be opened,
+> and the row leaves when the window next fetches its list — a page reload, not a restart. The answer says
+> that instead of implying the row vanishes on screen.
 
 ## Consequences
 
