@@ -33,3 +33,7 @@ A release adds its section in the same pull request that writes the change, so t
   on Linux and Windows.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
+- First live run, recorded because it is this release's evidence: installed into a desktop profile, both
+  tools appeared, and the six archived logs on this machine were listed and then deleted through the
+  tools — 4,169,349 bytes reclaimed, the mounted persistence backend confirming the removal, and an
+  independent directory count agreeing (36 session directories before, 30 after).

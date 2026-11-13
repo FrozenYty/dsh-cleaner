@@ -19,19 +19,18 @@
 ## 状态
 
 - 当前版本：v0.1.0。
-- **对着真实存储跑过，但没有装进 profile**：一次 dry-run 列出 6 个已归档日志，与独立手工清点一致
-  （8 个文件、4,169,349 字节）；随后在真实存储的**副本**上完整排练了一次删除——删前 36 个会话目录，
-  删后 30 个，失败 0、拒绝 0。真实存储全程没有被写过，36 个目录一个不少。这一条**不包含**一次真实的
-  模型调用：每一层能证明什么，见[验证](#验证)。
+- **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
+  `list_archived_sessions` 列出 6 个已归档日志，`delete_archived_sessions` 只删掉这 6 个目录——回收
+  4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
+  候选、6 个全部报成 already gone；独立清点目录也一致：删前 36 个会话目录，删后 30 个，正在跑的会话没被动。
 - **用宿主自己的 schema 校验器验过**（从已安装的 `0.2.2-rc.1` asar 里取出）：两个输出 schema 通过
   `assertSupportedJsonSchema`——这正是 `tools.register()` 在工具存在之前会跑的检查；两个参数 schema 通过更
   严格的 object-root 断言，并且只接受工具文档里写的那种调用形状（多一个参数、该给数组却给了字符串、缺必填
-  字段，都会被拒）；两个真实返回值也都通过了针对其声明输出 schema 的 `validateJsonSchemaValue`。这仍然
-  **不是**激活证明：没有任何 profile 加载过这个插件。
-- **只有单元测试，未在 profile 里跑过**：两个工具包装在真实 Host 下的调用、`sessionPersistence` 核对
-  步骤接真实后端的样子，以及所有和“能否激活”有关的事。`tests/` 就是存在的清单。
-- **这里根本证明不了**：`scripts/check.mjs` 从不加载 Harness，所以本仓库没有任何东西能证明插件会激活。
-  只有装一次才能，而装一次有真实副作用，所以每次都该由人决定。
+  字段，都会被拒）；两个真实返回值也都通过了针对其声明输出 schema 的 `validateJsonSchemaValue`。单靠 schema
+  校验器不构成激活证明——上面那次真实运行才是。
+- **还没覆盖的**：删除中途失败、真实会话目录里出现链接、以及存储布局与 `0.2.2-rc.1` 不同的 harness 版本。
+  前两项有 fixture 测试；第三项失败方向是安全的（0 个候选），见 [docs/design.md](docs/design.md) §8。
+- `scripts/check.mjs` 从不加载 Harness，也不该加载：激活是 profile 才能显示的事实，不是仓库能证明的东西。
 - 版本列表：[CHANGELOG.md](CHANGELOG.md)。机制与候选状态矩阵：[docs/design.md](docs/design.md)。
   决策记录：[ADR](docs/adr/)。
 

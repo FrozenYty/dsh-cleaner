@@ -19,23 +19,23 @@ they approve, and reports the bytes reclaimed. No schedule, no age threshold, no
 ## Status
 
 - Current version: v0.1.0.
-- **Exercised against a real store, without being installed**: a dry run listed the six archived logs
-  and matched an independent hand count (8 files, 4,169,349 bytes), and a full deletion rehearsal on a
-  *copy* of that store removed exactly those six directories — 36 session directories before, 30 after,
-  0 failed, 0 refused. The live store was never written; it still holds its 36 directories. What that
-  does **not** cover is a live model call: see [Verify](#verify) for what each layer proves.
+- **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
+  tools appeared, `list_archived_sessions` reported the six archived logs, and `delete_archived_sessions`
+  removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
+  `sessionPersistence` backend confirmed it no longer lists them, a second listing reported zero
+  candidates with all six explained as already gone, and an independent directory count agreed: 36
+  session directories before, 30 after, with the running session untouched.
 - **Checked with the Host's own schema validator**, taken out of the installed `0.2.2-rc.1` asar: both
   output schemas pass `assertSupportedJsonSchema`, the check `tools.register()` runs before a tool exists
   at all; both parameter schemas pass the stricter object-root assertion and accept exactly the argument
   shapes the tools document (an invented argument, a string where an array belongs, or a missing required
   field is rejected); and both real results pass `validateJsonSchemaValue` against the output schema they
-  declare. What that still does not prove is activation — no profile has loaded this plugin.
-- **Unit-tested only, never exercised in a profile**: the two tool wrappers against a live Host, the
-  `sessionPersistence` verification step with a real backend, and everything about activation.
-  `tests/` is the list of what exists.
-- **Not proven here at all**: `scripts/check.mjs` never loads the Harness, so nothing in this
-  repository can show that the plugin activates. Only an install can, and a fresh install has a real
-  side effect, so it is the owner's decision every time.
+  declare. The schema check alone is not activation — the live run above is what proves that.
+- **Not covered yet**: a deletion that fails partway, a link inside a real session directory, and a
+  Harness build whose storage layout differs from `0.2.2-rc.1`. The first two are fixture-tested; the
+  third fails safely (zero candidates) and is described in [docs/design.md](docs/design.md) §8.
+- `scripts/check.mjs` never loads the Harness, and it is not meant to: activation is what a profile
+  shows, not what a repository can prove.
 - Release list: [CHANGELOG.md](CHANGELOG.md). Mechanism and state matrix:
   [docs/design.md](docs/design.md). Decisions: [the ADRs](docs/adr/).
 
