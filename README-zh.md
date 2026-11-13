@@ -142,6 +142,9 @@ already gone。项目里的会话列表也不是插件写的：它**请** regist
 - **不取消归档、不重新归档、不 pin。** 它只删日志。唯一碰过的记录是项目里的会话列表，而且是**请**它动的：
   workspace registry 会把刚删掉的 id detach 掉，这样那一行不用等重启就会从侧边栏消失。插件自己一个 workspace
   记录都不写（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
+- **绝不删正在干活的会话。** 执行这条命令的会话永远保留；任何 agent 还在忙的会话也保留，而且拒绝里会写明状态
+  （`a live agent holds this session (status: running)`），这样这个理由是人能处理的信息。agent 只是**驻留**在内存里
+  （归档的活已经停了）不构成阻塞（[ADR 0008](docs/adr/0008-busy-not-resident.md)）。
 - **不清投影缓存。** harness 把每个会话的投影放在 `storages/session_projcache/`，本插件只从里面读一行
   ——显示在 id 旁边的标题——什么都不写：删掉的会话可能留一条陈旧投影和缓存文件，直到运行时自己改写或丢弃。
   那是派生数据、会自愈，也比为了一个名字去解析日志便宜。

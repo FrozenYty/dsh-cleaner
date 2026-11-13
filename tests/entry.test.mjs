@@ -433,6 +433,20 @@ test('a live agent’s session is refused too', async () => {
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
 })
 
+test('an idle agent does not block a deletion, a busy one does, and the answer says which', async () => {
+  // The busy case runs first: the idle case is the one that actually removes the directory.
+  const busy = install({ agents: [{ id: 'session-archived-2', status: 'running' }] })
+  const kept = await run(busy.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  assert.deepEqual(kept.removed, [])
+  assert.deepEqual(kept.refused, [{ id: 'session-archived-2', reason: 'a live agent holds this session (status: running)' }])
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
+
+  const idle = install({ agents: [{ id: 'session-archived-2', status: 'idle' }] })
+  const removed = await run(idle.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  assert.equal(removed.removed_count, 1, 'a resident agent is not a writer')
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), false)
+})
+
 test('an unarchived or already-deleted id is refused in the answer, not thrown', async () => {
   const tools = install()
   const value = await run(tools.get('delete_archived_sessions'), {

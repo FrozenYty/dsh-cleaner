@@ -96,7 +96,15 @@ A release adds its section in the same pull request that writes the change, so t
   click. It imports nothing, writes only when it actually dropped something, treats an unanswerable list
   as nothing to do, and leaves one small mark (`dsh-cleaner.client.v1`) so the pass can be seen from
   outside the page ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
-- Repository checks (`scripts/check.mjs`) and 56 fixture tests, both run by CI with Node 22 and Node 24
+- A resident agent no longer blocks a deletion, and a refusal now says which state it saw. The protection
+  used to be "any agent the registry lists for that session", which refused a session whose work had
+  stopped but whose agent the harness still kept in memory — a refusal a person cannot act on. Now the
+  caller is always kept, another session is kept only while its agent's status is something other than
+  `idle` (an agent reporting none counts as busy), and the reason carries the status:
+  `a live agent holds this session (status: running)` ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
+  Verified live: a session reported `status: idle` was deleted — 49,720 bytes, the store going from 30
+  directories to 29 — and nothing recreated its log.
+- Repository checks (`scripts/check.mjs`) and 57 fixture tests, both run by CI with Node 22 and Node 24
   on all three platforms. The browser half is tested by evaluating the same file the page evaluates, so a
   mistake in it fails a test instead of a person's sidebar.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is

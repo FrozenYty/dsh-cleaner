@@ -92,7 +92,12 @@ function protections(ctx, exec) {
     if (agent?.id === undefined) continue
     const id = String(agent.id)
     if (protect.some((entry) => entry.id === id)) continue
-    protect.push({ id, reason: 'a live agent holds this session' })
+    // An idle agent is resident only: nothing is being written, and an archived session cannot start a
+    // model step anyway (the Host's archive gate refuses one), so its log is not going to be appended to
+    // under this call. A busy one is being written right now, and that is the case this guards.
+    if (agent.status === 'idle') continue
+    const status = typeof agent.status === 'string' ? ` (status: ${agent.status})` : ''
+    protect.push({ id, reason: `a live agent holds this session${status}` })
   }
   return protect
 }

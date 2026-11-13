@@ -58,7 +58,9 @@ The load-bearing constraints, each with an ADR:
 - a deleted session is detached by asking the workspace registry, never by editing its store
   ([ADR 0006](docs/adr/0006-detach-by-asking.md));
 - the bundle ships a browser half whose only job is to prune the window's own sidebar view, because that
-  view is the one record no host-side step can reach ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
+  view is the one record no host-side step can reach ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md));
+- a loaded agent does not block a deletion — a **busy** one does, and the refusal names the status
+  ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
 
 ## 3. Working principles
 

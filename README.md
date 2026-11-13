@@ -160,6 +160,11 @@ own sidebar view, so the bundle carries a browser half that prunes it at every p
   is the project's session list, and it touches it by asking: the workspace registry detaches the ids it
   just deleted, so their rows leave the sidebar instead of waiting for a restart. The plugin writes no
   workspace record itself ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+- **Never a session whose work is running.** The session executing the command is always kept, and so is
+  any session whose agent is busy; the refusal names the status (`a live agent holds this session (status:
+  running)`) so the reason is something to act on. An agent that is merely resident — archived work has
+  stopped, the harness still keeps the object in memory — does not block the deletion
+  ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
 - **No projection cache eviction.** The harness keeps per-session projections under
   `storages/session_projcache/`, and this plugin reads one row from them — the title it shows beside an
   id — and writes nothing: a deleted session may keep a stale row and its cache file until the runtime
