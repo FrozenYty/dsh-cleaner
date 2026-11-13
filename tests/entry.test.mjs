@@ -168,6 +168,43 @@ test('a long list of already-deleted ids is counted and marked, not printed whol
   assert.doesNotMatch(rendered, /session-gone-14/, 'the tail is marked, not printed')
 })
 
+test('a megabyte-sized number is reported in MiB, not only in bytes', () => {
+  const tools = install()
+  const value = {
+    sessions_root: '/store',
+    workspace_file: '/store/workspace.json',
+    archived_ids: 0,
+    stored_sessions: 0,
+    stored_bytes: 1572864,
+    candidates: [],
+    total_bytes: 0,
+    already_gone: [],
+    protected: [],
+    skipped: [],
+    requested: [],
+  }
+
+  assert.match(text(tools.get('list_archived_sessions'), value), /1572864 bytes \(1\.50 MiB\) in all/)
+})
+
+test('the deletion answer names a partial removal and a backend it could not re-read', () => {
+  const tools = install()
+  const value = {
+    sessions_root: '/store',
+    removed: [{ id: 'session-archived-1', path: '/store/a', files: 1, bytes: 100 }],
+    removed_count: 1,
+    removed_bytes: 100,
+    failed: [{ id: 'session-archived-2', path: '/store/b', error: 'cannot be removed (x): EACCES', bytes_freed: 40 }],
+    refused: [{ id: 'session-live-1', reason: 'not an archived session' }],
+    verify: { backend: 'sessionPersistence', error: 'the backend went away' },
+  }
+
+  const rendered = text(tools.get('delete_archived_sessions'), value)
+  assert.match(rendered, /Partially removed: session-archived-2 — cannot be removed \(x\): EACCES \(40 bytes freed\)/)
+  assert.match(rendered, /Kept: session-live-1 — not an archived session/)
+  assert.match(rendered, /could not be re-read \(the backend went away\); the deletion above stands/)
+})
+
 test('the deleting tool removes only the ids it was given, and reports the bytes', async () => {
   const tools = install()
   const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })

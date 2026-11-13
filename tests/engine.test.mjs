@@ -482,6 +482,32 @@ test('a file that cannot be unlinked is reported, and the session stays a candid
   }
 })
 
+test('the engine rejects arguments it cannot honour', async () => {
+  assert.throws(() => encodeSegment(''), /non-empty string/)
+  assert.throws(() => encodeSegment(42), /non-empty string/)
+
+  await writeWorkspace([7])
+  await assert.rejects(() => readArchivedIds(WORKSPACE), /every archived session id must be a non-empty string/)
+
+  await assert.rejects(() => planCleanup({}), /sessionsRoot must be a non-empty string/)
+  await assert.rejects(() => planCleanup({ sessionsRoot: ROOT }), /workspaceFile must be a non-empty string/)
+  await assert.rejects(
+    () => planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, only: 'session-archived-1' }),
+    /only must be an array of non-empty session ids/,
+  )
+})
+
+test('a plan that names a store that is not there fails loudly, and so does a malformed one', async () => {
+  // A stale plan is a real risk: the store can move between the listing and the deletion. Failing here
+  // is the point — reporting "nothing removed" for a store that is not there would be a lie.
+  await assert.rejects(() => applyCleanup(null), /pass the plan returned by planCleanup/)
+  await assert.rejects(() => applyCleanup({ candidates: [] }), /the plan must name its session storage root/)
+  await assert.rejects(
+    () => applyCleanup({ candidates: [], sessions_root: join(TMP, 'gone'), workspace_file: WORKSPACE }),
+    /cannot resolve the session storage root/,
+  )
+})
+
 test('the scanner reports what it found without deciding anything', async () => {
   const { stored, skipped } = await scanStoredSessions(ROOT)
   assert.deepEqual([...stored.keys()].sort(), [
