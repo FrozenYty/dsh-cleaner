@@ -128,16 +128,20 @@ function formatBytes(bytes) {
 /** Every line a listing answers with, including the ones that explain an empty result. */
 function renderList(value) {
   const lines = []
-  if (value.candidates.length === 0) {
-    lines.push('No archived session log is on disk: there is nothing to delete.')
-  } else {
+  lines.push(
+    value.candidates.length === 0
+      ? 'No archived session log is on disk: there is nothing to delete.'
+      : `Archived session logs on disk: ${value.candidates.length} of ${value.archived_ids} archived ids, `
+        + `${formatBytes(value.total_bytes)}.`,
+  )
+  lines.push(
+    `The session store holds ${value.stored_sessions} directories, ${formatBytes(value.stored_bytes)} in all.`,
+  )
+  for (const candidate of value.candidates) {
     lines.push(
-      `Archived session logs on disk: ${value.candidates.length} of ${value.archived_ids} archived ids, `
-      + `${formatBytes(value.total_bytes)}.`,
+      `  ${candidate.id}  ${formatBytes(candidate.bytes)}  ${candidate.files.length} file(s)  `
+      + `last write ${candidate.modified ?? 'unknown'}  ${candidate.path}`,
     )
-    for (const candidate of value.candidates) {
-      lines.push(`  ${candidate.id}  ${formatBytes(candidate.bytes)}  ${candidate.files.length} file(s)  ${candidate.path}`)
-    }
   }
   if (value.already_gone.length > 0) {
     lines.push(`Already gone (archived, but no directory is stored): ${value.already_gone.length} — ${value.already_gone.join(', ')}`)
@@ -183,14 +187,15 @@ function renderDelete(value) {
 const LIST_VALUE = {
   type: 'object',
   required: [
-    'sessions_root', 'workspace_file', 'archived_ids', 'stored_sessions', 'candidates', 'total_bytes',
-    'already_gone', 'protected', 'skipped', 'requested',
+    'sessions_root', 'workspace_file', 'archived_ids', 'stored_sessions', 'stored_bytes', 'candidates',
+    'total_bytes', 'already_gone', 'protected', 'skipped', 'requested',
   ],
   properties: {
     sessions_root: { type: 'string' },
     workspace_file: { type: 'string' },
     archived_ids: { type: 'number' },
     stored_sessions: { type: 'number' },
+    stored_bytes: { type: 'number' },
     candidates: { type: 'array', items: { type: 'object' } },
     total_bytes: { type: 'number' },
     already_gone: { type: 'array', items: { type: 'string' } },
@@ -219,10 +224,10 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'list_archived_sessions',
     description:
-      'List the archived DeepSeek Harness sessions whose logs are still on disk, with the bytes each one holds. '
-      + 'Archiving only hides a session: its log stays on disk until something removes it, and nothing does. '
-      + 'This tool deletes nothing and takes no argument, so calling it can never be a mistake. Show the list to '
-      + 'the person, and call delete_archived_sessions with the ids they approve.',
+      'List the archived DeepSeek Harness sessions whose logs are still on disk: each one\'s bytes, when it last '
+      + 'wrote, and what the store holds in total. Archiving only hides a session: its log stays on disk until '
+      + 'something removes it, and nothing does. This tool deletes nothing and takes no argument, so calling it can '
+      + 'never be a mistake. Show the list to the person, and call delete_archived_sessions with the ids they approve.',
     parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: { schema: LIST_VALUE, render: (_args, value) => [{ type: 'text', text: renderList(value) }] },
     async execute(_args, exec) {

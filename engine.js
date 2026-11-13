@@ -108,8 +108,12 @@ export async function readArchivedIds(workspaceFile) {
  * The files directly inside one session directory, or the reason it cannot be removed safely.
  * Only regular files count: a link or a nested directory would need a decision this plugin does not
  * make, so the directory is reported to the caller instead of being deleted.
+ *
+ * `modified` is the newest file's write time — for a session log that is the last time the session
+ * appended anything, which is the fact a person needs to decide whether an old session still matters.
+ * An empty directory has no write time and reports `null`.
  * @param dir - a candidate session directory.
- * @returns `{ ok: true, files, bytes }` or `{ ok: false, reason }`.
+ * @returns `{ ok: true, files, bytes, modified }` or `{ ok: false, reason }`.
  */
 async function readDirectoryFiles(dir) {
   let entries
@@ -120,6 +124,7 @@ async function readDirectoryFiles(dir) {
   }
   const files = []
   let bytes = 0
+  let newest = 0
   for (const entry of entries) {
     if (!entry.isFile()) {
       return { ok: false, reason: `holds a non-file entry (${entry.name}); a link or a nested directory is refused, not followed` }
@@ -135,8 +140,9 @@ async function readDirectoryFiles(dir) {
     }
     files.push(entry.name)
     bytes += info.size
+    newest = Math.max(newest, info.mtimeMs)
   }
-  return { ok: true, files, bytes }
+  return { ok: true, files, bytes, modified: newest === 0 ? null : new Date(newest).toISOString() }
 }
 
 /**
@@ -146,7 +152,7 @@ async function readDirectoryFiles(dir) {
  * directory, then one directory per session. Neither level is entered when the entry is not a real
  * directory, so a junction or symlink is reported rather than followed.
  * @param sessionsRoot - absolute path of the session storage root.
- * @returns `{ stored: Map<directoryName, {dir, files, bytes}>, skipped: [{path, reason}] }`.
+ * @returns `{ stored: Map<directoryName, {dir, files, bytes, modified}>, skipped: [{path, reason}] }`.
  */
 export async function scanStoredSessions(sessionsRoot) {
   const stored = new Map()
@@ -184,7 +190,7 @@ export async function scanStoredSessions(sessionsRoot) {
         skipped.push({ path: dir, reason: reading.reason })
         continue
       }
-      stored.set(entry.name, { dir, files: reading.files, bytes: reading.bytes })
+      stored.set(entry.name, { dir, files: reading.files, bytes: reading.bytes, modified: reading.modified })
     }
   }
   return { stored, skipped }
@@ -235,7 +241,7 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
       protectedSessions.push({ id, path: entry.dir, bytes: entry.bytes, reason: protectedReason.get(id) })
       continue
     }
-    candidates.push({ id, path: entry.dir, files: entry.files, bytes: entry.bytes })
+    candidates.push({ id, path: entry.dir, bytes: entry.bytes, files: entry.files, modified: entry.modified })
   }
 
   // Every id the caller asked for must be accounted for. The reasons are checked in the order a
@@ -256,6 +262,9 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     workspace_file: workspaceFile,
     archived_ids: archived.length,
     stored_sessions: stored.size,
+    // Everything the store holds, not only what is reclaimable: a listing that says "4 MiB" without
+    // saying "of 84 MiB" leaves the person unable to judge whether the cleanup is worth it.
+    stored_bytes: [...stored.values()].reduce((sum, entry) => sum + entry.bytes, 0),
     candidates,
     total_bytes: candidates.reduce((sum, candidate) => sum + candidate.bytes, 0),
     already_gone: alreadyGone,

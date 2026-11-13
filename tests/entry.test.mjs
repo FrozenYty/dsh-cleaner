@@ -107,7 +107,11 @@ test('the listing tool deletes nothing and names the bytes it found', async () =
 
   assert.deepEqual(value.candidates.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
   assert.equal(value.total_bytes, 300)
-  assert.ok(text(tools.get('list_archived_sessions'), value).includes('Nothing was deleted.'))
+  assert.equal(value.stored_bytes, 300 + 999 + 50)
+  const rendered = text(tools.get('list_archived_sessions'), value)
+  assert.ok(rendered.includes('Nothing was deleted.'))
+  assert.match(rendered, /The session store holds 4 directories/)
+  assert.match(rendered, /last write \d{4}-\d{2}-\d{2}T/)
   for (const candidate of value.candidates) assert.ok(existsSync(candidate.path))
 })
 

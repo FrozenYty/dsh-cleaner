@@ -86,6 +86,8 @@ test('a dry run lists exactly the archived sessions on disk, counts their bytes,
   assert.equal(listing.total_bytes, ARCHIVED_BYTES)
   assert.equal(listing.archived_ids, 3)
   assert.equal(listing.stored_sessions, 5)
+  // 15845 archived + 777 live; the empty session directory adds nothing.
+  assert.equal(listing.stored_bytes, ARCHIVED_BYTES + 777)
   assert.deepEqual(listing.already_gone, [])
   assert.deepEqual(listing.protected, [])
   // The listing describes 3 files in the first directory and 1 in each of the others.
@@ -93,6 +95,11 @@ test('a dry run lists exactly the archived sessions on disk, counts their bytes,
     listing.candidates.map((candidate) => candidate.files.length).sort(),
     [1, 1, 2],
   )
+  // The last write is a real timestamp, because it is what a person uses to judge an old session.
+  for (const candidate of listing.candidates) {
+    assert.match(candidate.modified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    assert.ok(Date.now() - Date.parse(candidate.modified) < 60 * 60 * 1000)
+  }
 
   for (const candidate of listing.candidates) assert.ok(existsSync(candidate.path), `${candidate.path} must survive a dry run`)
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id, 'session.v4.jsonl.zstd')))
@@ -286,6 +293,68 @@ test('an unreadable archive list is an error, and a missing one is simply an emp
   const report = await applyCleanup(listing)
   assert.deepEqual(report.removed, [])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), 'nothing was deleted')
+})
+
+test('an empty archived session directory is a candidate with zero bytes and no write time', async () => {
+  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-6')
+  await mkdir(dir, { recursive: true })
+  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), 'session-archived-6'])
+
+  const listing = await plan()
+  assert.deepEqual(listing.candidates.find((entry) => entry.id === 'session-archived-6'), {
+    id: 'session-archived-6',
+    path: dir,
+    bytes: 0,
+    files: [],
+    modified: null,
+  })
+
+  const report = await applyCleanup(listing)
+  assert.equal(existsSync(dir), false)
+  assert.equal(report.removed.find((entry) => entry.id === 'session-archived-6').bytes, 0)
+})
+
+test('a candidate that vanished between the listing and the deletion is refused, not failed', async () => {
+  const listing = await plan()
+  await rm(join(ROOT, '--D-BETA--', 'session-archived-3'), { recursive: true })
+
+  const report = await applyCleanup(listing)
+
+  assert.deepEqual(report.removed.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
+  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'already deleted; nothing to remove' }])
+  assert.deepEqual(report.failed, [])
+})
+
+test('a candidate replaced by a file between the listing and the deletion is refused', async () => {
+  const target = join(ROOT, '--D-ALPHA--', 'session-archived-1')
+  const listing = await plan()
+  await rm(target, { recursive: true })
+  await writeFile(target, 'not a directory')
+
+  const report = await applyCleanup(listing)
+
+  assert.deepEqual(report.refused, [{ id: 'session-archived-1', reason: 'not a real directory; a link is not followed' }])
+  assert.equal(report.removed.length, 2)
+  assert.ok(existsSync(target), 'the replacement file is untouched')
+})
+
+test('a tampered plan cannot delete outside the session storage root', async () => {
+  await mkdir(OUTSIDE, { recursive: true })
+  await writeFile(join(OUTSIDE, 'keep.bin'), Buffer.alloc(64, 3))
+  const listing = await plan()
+  // The plan is a description of the past, and this one says the session lives somewhere else.
+  const tampered = {
+    ...listing,
+    candidates: [{ id: 'session-archived-1', path: OUTSIDE, bytes: 64, files: ['keep.bin'], modified: null }],
+  }
+
+  const report = await applyCleanup(tampered)
+
+  assert.deepEqual(report.removed, [])
+  assert.equal(report.refused.length, 1)
+  assert.match(report.refused[0].reason, /resolves outside the session storage root/)
+  assert.deepEqual(report.failed, [])
+  assert.ok(existsSync(join(OUTSIDE, 'keep.bin')))
 })
 
 test('the scanner reports what it found without deciding anything', async () => {
