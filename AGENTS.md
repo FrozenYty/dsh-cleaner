@@ -66,7 +66,9 @@ The load-bearing constraints, each with an ADR:
   ([ADR 0009](docs/adr/0009-two-records-two-cases.md));
 - archiving is not a precondition: the store is the index, and a session is a candidate when its directory
   is under the storage root, well formed and unprotected
-  ([ADR 0010](docs/adr/0010-no-archive-precondition.md)).
+  ([ADR 0010](docs/adr/0010-no-archive-precondition.md));
+- the listing and the deletion each have one implementation behind two callers — the tool and the `/clean`
+  command — so their wording cannot drift ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
 
 ## 3. Working principles
 

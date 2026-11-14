@@ -110,6 +110,11 @@ tell "wait for its work" apart from "the harness merely has it loaded".
 
 ## 5. The deletion path
 
+Two callers reach this path and none of them is special: the deleting tool, and the `/clean` command the
+composer runs through the host's command registry. Both end in `deleteLogs()` — one implementation, so the
+two cannot report different things about the same deletion
+([ADR 0011](adr/0011-one-operation-two-callers.md)).
+
 1. Resolve the session storage root once (`realpath`). A root that is itself a link is followed to its
    target on purpose; containment is then measured against that target, so nothing escapes it. There is
    no archive read here any more: since [ADR 0010](adr/0010-no-archive-precondition.md) no candidate

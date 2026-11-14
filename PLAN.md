@@ -28,15 +28,14 @@ Written after a night of live failures, which are the reason each item exists.
      *"archiving is not a gate"*, entry test *"an id that is already deleted is refused…"*).
    - Met: `not an archived session; archive it first to make it a candidate` no longer exists anywhere.
 
-2. **A human command surface, so the model is optional.**
-   The harness documents the shape: implement the operation once as a host service method, expose it as a
-   session command the client can run through `ctx.remote.commands.execute(...)`, and expose the same
-   operation as an agent tool ([`references/user-actions.md`] in the plugin-development skill).
-   - Acceptance: typing the command lists candidates; typing it with ids deletes them; the wording equals
-     the tool's answer for the same call, because both call one implementation.
-   - Files: a new module for the operation plus `ctx.commands.register`; `index.js`'s tools call the same
-     module.
-   - Test that fails without it: the command's result for a given id equals the tool's result for it.
+2. **A human command surface, so the model is optional.** — **done** (v0.2.0,
+   [ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
+   `/clean` lists and `/clean <id> <id>` deletes through the host's command registry, which runs the
+   handler without sending anything to the model. Registration is an effect, so an unloaded plugin leaves
+   no command behind, and a profile without the service still registers its tools.
+   - Met: the command's answer for a given id equals the tool's answer for it, from a fresh fixture
+     (entry test *"the command and the tool answer the same thing for the same ids"*).
+   - Met: `/clean` deletes nothing; `/clean <caller>` is refused with the caller's reason.
 
 3. **The row always goes.** Finish what ADR 0009 started and prove it live:
    - a session the host has let go: delete → the host list drops it → the browser half prunes the view at

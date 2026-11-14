@@ -160,15 +160,16 @@ for (const match of entry?.matchAll(/async\s+execute\s*\(([^)]*)\)/g) ?? []) {
   }
 }
 
-// The tool names are a derived registry: whatever the entry registers, the README pair must name. A
-// renamed tool otherwise leaves the primary document describing a tool that no longer exists.
-const toolNames = [...(entry?.matchAll(/name:\s*'([a-z][a-z0-9_]+)'/g) ?? [])].map((match) => match[1])
-if (entry !== undefined && toolNames.length === 0) fail('index.js: no tool definition found')
-for (const name of toolNames) {
+// The registered names are a derived registry: whatever the entry registers — a tool or a human command —
+// the README pair must name. A renamed surface otherwise leaves the primary document describing something
+// that no longer exists.
+const registeredNames = [...(entry?.matchAll(/name:\s*'([a-z][a-z0-9_]+)'/g) ?? [])].map((match) => match[1])
+if (entry !== undefined && registeredNames.length === 0) fail('index.js: no tool definition found')
+for (const name of registeredNames) {
   for (const document of ['README.md', 'README-zh.md']) {
     const text = read(document)
     if (text !== undefined && !text.includes(`\`${name}\``)) {
-      fail(`${document}: does not name the tool "${name}" that index.js registers`)
+      fail(`${document}: does not name "${name}", which index.js registers`)
     }
   }
 }

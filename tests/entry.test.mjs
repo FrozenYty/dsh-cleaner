@@ -51,8 +51,10 @@ async function writeProjection(id, title) {
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
-function harness({ agents = [], persistence, workspaces, query } = {}) {
+function harness({ agents = [], persistence, workspaces, query, commands = true } = {}) {
   const tools = new Map()
+  const registered = new Map()
+  const disposed = []
   const ctx = {
     tools: {
       register: (definition) => {
@@ -60,21 +62,35 @@ function harness({ agents = [], persistence, workspaces, query } = {}) {
         return () => tools.delete(definition.name)
       },
     },
+    effect: (callback) => {
+      const disposer = callback()
+      disposed.push(disposer)
+      return () => disposer?.()
+    },
     get: (name) => {
       if (name === 'agents') return { list: () => agents }
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
       if (name === 'workspaceRegistry') return workspaces
+      if (name === 'commands') {
+        if (!commands) return undefined
+        return {
+          register: (definition) => {
+            registered.set(definition.name, definition)
+            return () => registered.delete(definition.name)
+          },
+        }
+      }
       return undefined
     },
   }
-  return { ctx, tools }
+  return { ctx, tools, commands: registered, disposed }
 }
 
 const install = (options) => {
-  const { ctx, tools } = harness(options)
+  const { ctx, tools, commands, disposed } = harness(options)
   apply(ctx)
-  return tools
+  return Object.assign(tools, { commands, disposed })
 }
 
 const caller = { session: { id: CALLER } }
@@ -82,18 +98,29 @@ const run = (tool, args, exec = { agent: caller }) => tool.execute(args, exec)
 const text = (tool, value) => tool.output.render({}, value)
   .map((block) => block.text)
   .join('\n')
-
-before(async () => {
-  process.env.DSH_HOME = TMP
+/** Run the human command the way the command registry does, and answer with its result. */
+const command = (tools, rawInput) => tools.commands.get('clean').handler({
+  commandId: 'command-1',
+  agent: caller,
+  rawInput,
+  attachments: [],
+  signal: new AbortController().signal,
 })
 
-beforeEach(async () => {
+/** The store this suite reads: three archived sessions and one that was never archived, plus the caller. */
+async function buildFixture() {
   await rm(TMP, { recursive: true, force: true })
   for (const session of ARCHIVED) await writeSession(session)
   await writeSession(LIVE)
   await writeSession({ id: CALLER, project: '--D-ALPHA--', bytes: 999 })
   await writeWorkspace([...ARCHIVED.map((entry) => entry.id), CALLER])
+}
+
+before(async () => {
+  process.env.DSH_HOME = TMP
 })
+
+beforeEach(buildFixture)
 
 after(async () => {
   await rm(TMP, { recursive: true, force: true })
@@ -553,4 +580,77 @@ test('a persistence backend that throws cannot fail a deletion that already happ
   assert.equal(value.removed_count, 1)
   assert.deepEqual(value.verify, { backend: 'sessionPersistence', error: 'backend is gone' })
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
+})
+
+test('the human command is registered with the shape the command registry requires', () => {
+  const tools = install()
+  const definition = tools.commands.get('clean')
+
+  assert.ok(definition, 'a profile with the commands service gets one command')
+  assert.equal(definition.name, 'clean', 'the name is given without a slash')
+  assert.match(definition.description, /logs/)
+  assert.equal(definition.input.hint.length > 0, true)
+  assert.equal(typeof definition.handler, 'function')
+  // The registry owns the definition's lifetime; the plugin registers it as an effect.
+  assert.equal(tools.disposed.length, 1)
+  tools.disposed[0]()
+  assert.deepEqual([...tools.commands.keys()], [])
+})
+
+test('the command lists without deleting, and deletes only what it is given', async () => {
+  const tools = install()
+
+  const listed = await command(tools, '')
+  assert.equal(listed.kind, 'success')
+  assert.match(listed.text, /Session logs on disk: 3, 350 bytes \(2 of them archived\)/)
+  assert.match(listed.text, /Name the ids to delete: \/clean <id>/)
+  // A listing is not a deletion, whatever the command does next.
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')))
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', CALLER)))
+
+  const deleted = await command(tools, 'session-archived-1, session-archived-2')
+  assert.equal(deleted.kind, 'success')
+  assert.match(deleted.text, /Deleted 2 session directories/)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), false)
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), 'an id the command did not name stays')
+
+  // Unarchived sessions are a command away too, because the rule is the same one the tool follows.
+  const unarchived = await command(tools, LIVE.id)
+  assert.match(unarchived.text, /Deleted 1 session directory/)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), false)
+})
+
+test('the command and the tool answer the same thing for the same ids', async () => {
+  const tools = install()
+  const toolValue = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
+  const toolText = text(tools.get('delete_session_logs'), toolValue)
+
+  // The same ids against the same store, from a fresh fixture: one implementation, two callers.
+  await buildFixture()
+  const tools2 = install()
+  const commandValue = await command(tools2, 'session-archived-1')
+
+  // One implementation, two callers: the wording cannot drift, because both render the same value.
+  assert.equal(commandValue.text, toolText)
+})
+
+test('the command refuses in the answer instead of throwing, and keeps the caller', async () => {
+  const tools = install()
+  const gone = await command(tools, 'session-never-existed')
+  assert.equal(gone.kind, 'success', 'a refusal is an answer, not a failed command')
+  assert.match(gone.text, /Deleted nothing/)
+  assert.match(gone.text, /Kept: session-never-existed — no session directory is stored under that id/)
+
+  const itself = await command(tools, CALLER)
+  assert.match(itself.text, /Kept: session-caller — the session running this command/)
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', CALLER)))
+})
+
+test('a profile without the commands service still registers its tools', () => {
+  const tools = install({ commands: false })
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'])
+  assert.equal(tools.commands.size, 0)
+  assert.deepEqual(tools.disposed, [], 'nothing was registered, so nothing needs disposing')
 })
