@@ -104,10 +104,6 @@ window.__ModuleLoader__.load({
           } catch {
             // The mark is a courtesy; losing it costs nothing.
           }
-          // Warm the command question with the first session the host named, so the menu can hide the row
-          // immediately on a host that has no `clean` — the answer is representative because the command is
-          // registered globally, and a scoped shadow would only cost one click.
-          askAbout([...live][0])
         }
 
         /** The menu label in the language the window is showing, without a dictionary to register. */
@@ -122,49 +118,23 @@ window.__ModuleLoader__.load({
         }
 
         /**
-         * Whether the host has the command this row runs — asked in the background, never waited for.
-         *
-         * A row that runs a command the host does not know is worse than no row: the click does nothing and
-         * the person reads a failure for a deletion that never happened. That is the state of a window whose
-         * host half is older, because this half reloads with the page and the host half only with the
-         * process.
-         *
-         * The check cannot be *awaited inside* the menu's `resolve`, though: if the call never settles, the
-         * row never appears at all — which is exactly what happened when this was first written, in the one
-         * state where the answer mattered most. So the answer is a cache that is filled in the background
-         * (and by the click itself, which learns from an `undefined` execution), and `resolve` only *reads*
-         * it: a definite "no" hides the row, and anything else offers it. The cost of being wrong is one
-         * click that does nothing, and that click records the truth for the next menu.
-         */
-        const knownCommands = new Map()
-        const asked = new Set()
-        const askAbout = (sessionId) => {
-          if (asked.has(sessionId)) return
-          asked.add(sessionId)
-          void Promise.resolve(ctx.remote.commands.list(sessionId))
-            .then((answer) => {
-              const items = Array.isArray(answer) ? answer : answer?.items
-              if (!Array.isArray(items)) return
-              knownCommands.set(sessionId, items.some((entry) => entry?.name === 'clean'))
-            })
-            .catch(() => {
-              // No answer is no evidence: the row stays, and the first click will report the truth.
-            })
-        }
-
-        /**
          * Run the deletion for one session: the same command the tool and the composer run.
          *
-         * `execute` answers `undefined` when the host does not know the command, and that answer is used: the
-         * session is remembered as having none, so the row stops being offered instead of failing again.
-         * The command answers in the transcript, so a caller here has nothing to show.
+         * No render-time ask, no guard, no cache: the row is plain data and this is its only call. That is
+         * deliberate. Three earlier versions asked the host whether the command existed before offering the
+         * row, and every one of them cost more than it bought — a call that does not settle hides the row on
+         * exactly the host where it works, and a synchronous throw in a menu's `resolve` takes the whole
+         * popup down (`操作失败，请重试`). A click whose worst case is "nothing happens" is the cheaper trade.
+         *
+         * Every failure mode here is silent by design: an unknown command answers `undefined`, a missing
+         * namespace throws inside the `try`, and the person sees no row… no, sees the row and nothing else.
          */
         const runClean = (sessionId) => {
-          void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, []))
-            .then((execution) => {
-              if (execution === undefined) knownCommands.set(sessionId, false)
-            })
-            .catch(() => {})
+          try {
+            void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
+          } catch {
+            // A client without the command namespace has nothing to run, and nothing to report.
+          }
         }
 
         /**
@@ -174,6 +144,10 @@ window.__ModuleLoader__.load({
          * half needs no renderer and no stylesheet. It calls the command rather than a host method of its
          * own so that everything a person can do to a log goes through one implementation
          * (docs/adr/0011-one-operation-two-callers.md).
+         *
+         * `resolve` is **synchronous and asks nothing**: the row is a constant plus the window's language,
+         * and the only call this contribution makes happens when it is clicked. Every version that asked the
+         * host something while the menu was opening found a way to take the menu down with it.
          *
          * Presentation, in the product's own vocabulary:
          * - `order: 9000` sorts it after every other session action this build registers (pin 100, rename
@@ -195,10 +169,6 @@ window.__ModuleLoader__.load({
             resolve: (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
-              askAbout(sessionId)
-              // Only a definite "no" hides the row: an unanswered question must not cost the person a row
-              // that works — that mistake is what the first version of this guard made.
-              if (knownCommands.get(sessionId) === false) return []
               return [{
                 id: 'dsh-cleaner.delete-log',
                 label: label(),

@@ -63,7 +63,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent } = {}) {
+function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent, throwing } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -96,6 +96,7 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
           return commands
         },
         execute: async (sessionId, line, attachments) => {
+          if (throwing) throw new Error('the host refused the call')
           executed.push({ sessionId, line, attachments })
           // A host that does not know the command answers `undefined`, exactly as the registry does.
           return silent ? undefined : { commandId: 'command-1', result: { kind: 'success' } }
@@ -316,27 +317,9 @@ test('the menu label is Chinese when the window is', async () => {
   assert.equal(item.label, '删除会话')
 })
 
-test('a host that has no clean command stops offering the row', async () => {
-  // The window half reloads with the page and the host half only reloads with the process, so this is the
-  // normal state right after an update. The question is asked in the background — it must not be awaited
-  // inside `resolve`, because a call that never settles would hide the row forever — and a definite "no"
-  // hides it from the next menu on.
-  const { registered, executed, listed } = mount({
-    views: {},
-    answer: [],
-    menus: true,
-    commands: [{ name: 'compact', description: 'some other command' }],
-  })
-
-  const entry = registered[0]
-  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1, 'the question is still in flight')
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 0, 'the host answered, and it has no clean')
-  assert.deepEqual(listed, ['session-1'], 'the host was asked which commands it has')
-  assert.deepEqual(executed, [], 'and nothing was executed')
-})
-
-test('the command list is asked once per session, and an unreadable list keeps the row', async () => {
+test('the row is offered without asking the host anything', async () => {
+  // The lesson of three failed guards: a contribution that asks a question while the menu opens can lose the
+  // menu, and one that awaits can lose the row. This one asks nothing; the only call it makes is the click.
   const asked = []
   const { registered } = mount({
     views: {},
@@ -349,46 +332,31 @@ test('the command list is asked once per session, and an unreadable list keeps t
   })
 
   const entry = registered[0]
-  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
-  assert.deepEqual(asked, ['session-1'], 'the same session is asked about once')
-
-  // A second session is its own question: scoped commands shadow globals per agent.
-  await entry.resolve({ sessionId: 'session-2' })
-  assert.deepEqual(asked.slice(0, 2), ['session-1', 'session-2'])
-
-  // A list call that throws is no evidence against the command, so the row stays: hiding a row that works
-  // is the mistake the first version of this guard made.
-  const failing = mount({
-    views: {},
-    answer: [],
-    menus: true,
-    commands: () => { throw new Error('gateway down') },
-  })
-  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
+  assert.equal(typeof entry.resolve({ sessionId: 'session-1' })?.then, 'undefined', 'resolve is synchronous')
+  assert.equal(entry.resolve({ sessionId: 'session-1' }).length, 1)
+  assert.deepEqual(asked, [], 'opening the menu asked the host nothing')
 })
 
-test('a click that reaches a host without the command stops offering the row', async () => {
-  // The guard reads the command list, but the host can still answer `undefined` — a race, or a build whose
-  // list endpoint lies. Then the row is withdrawn for that session rather than failing a second time.
-  const { registered, executed } = mount({
+test('a host without the command costs a silent click, not a failure', async () => {
+  // `execute` answers `undefined` for a name the host does not know, and a client without the namespace
+  // throws instead. Neither is reported to the person: the row simply did nothing.
+  const silent = mount({
     views: {},
     answer: [],
     menus: true,
-    commands: [{ name: 'clean', description: 'stub' }],
+    commands: [{ name: 'compact', description: 'some other command' }],
     silent: true,
   })
-  const entry = registered[0]
-  const [item] = await entry.resolve({ sessionId: 'session-1' })
-  assert.equal(typeof item.run, 'function', 'the list said the command exists, so the row is offered')
-
+  const [item] = silent.registered[0].resolve({ sessionId: 'session-1' })
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(executed.length, 1)
-  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 0, 'the host answered nothing, so no second try')
+  assert.equal(silent.executed.length, 1, 'the click was attempted')
+  assert.equal(silent.registered[0].resolve({ sessionId: 'session-1' }).length, 1, 'and the row is still there')
+
+  // A call that throws — a namespace that is not there, a transport that refuses — must not escape either.
+  const broken = mount({ views: {}, answer: [], menus: true, throwing: true })
+  broken.registered[0].resolve({ sessionId: 'session-2' })[0].run()
+  await new Promise((resolve) => setImmediate(resolve))
 })
 
 test('a registration the host refuses costs the row and nothing else', async () => {
