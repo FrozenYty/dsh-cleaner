@@ -37,13 +37,15 @@ Written after a night of live failures, which are the reason each item exists.
      (entry test *"the command and the tool answer the same thing for the same ids"*).
    - Met: `/clean` deletes nothing; `/clean <caller>` is refused with the caller's reason.
 
-3. **The row always goes.** Finish what ADR 0009 started and prove it live:
-   - a session the host has let go: delete → the host list drops it → the browser half prunes the view at
-     the next page load → no row;
-   - a session archived in the same run: delete → both records stay → the row is the archived one, hidden
-     in its project;
-   - Acceptance: after each deletion, one page load leaves no row for the deleted session, with nothing
-     clicked and nothing restarted.
+3. **The row always goes.** — **implemented** (v0.2.1,
+   [ADR 0012](docs/adr/0012-archive-never-unarchive.md)); the live proof is the last open item.
+   The deletion detaches the id from its project **and archives it**, and never unarchives: the sidebar's
+   default filter is `!archived.has(id)`, and the workspace feed publishes the change to every open window,
+   so the row disappears the moment the call returns.
+   - Met in tests: an unarchived session is archived by the deletion (the case that used to leave a visible
+     row); an already-archived one is not archived again; a wide `unarchiveSession` that throws is never
+     called.
+   - Not yet met in a real window: one deletion, watched live, with no reload.
 
 4. **The browser half must be seen running.** It is tested against a fake page and has never been observed
    in the real window.

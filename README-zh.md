@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.2.0。
+- 当前版本：v0.2.1。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -119,7 +119,8 @@ list_session_logs {}
 delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace records dropped them (6 detached, 6 unarchived).
+  The workspace records dropped them (6 detached): an archived session is hidden by the sidebar, so
+  the rows are gone from every open window without a reload.
   The session persistence backend no longer lists any of them.
 ```
 
@@ -148,19 +149,19 @@ delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-�
 - `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` —— 只读，只为一行：会话标题。它显示在 id
   旁边，好让一串 id 能对上你记得名字的那些会话。文件缺失、版本更旧或读不出来，只损失标题，别的都不受影响。
 
-workspace 文件永远不写。删掉的 id 会留在归档表里，只是变成一个“没有目录的 id”，清单会把它报成
-already gone。项目里的会话列表也不是插件写的：它**请** registry 把这些 id 摘掉，这样侧边栏那一行才会立刻消失
-（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。这两处记录动不动，是按 id 分别决定的：先问宿主自己的会话清单，
-因为宿主仍握在内存里的会话，窗口仍然会画出它那一行
-（[ADR 0009](docs/adr/0009-two-records-two-cases.md)）。唯一宿主侧碰不到的那份副本是窗口自己的侧边栏视图，
-所以 bundle 里带了一个浏览器半边，每次页面加载都会把它清一遍
-（[ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)）。
+workspace 文件永远不写，项目里的会话列表也不是插件写的：它**请** registry 把这些 id 从项目里摘掉，并且
+**归档**它们——这才是让那一行消失的开关（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。侧边栏不画任何已归档
+会话，而 registry 会把这次改动推送给每个打开的窗口，所以**那一行当场就没了：不用刷新、不用重启、不用切排序**
+（[ADR 0012](docs/adr/0012-archive-never-unarchive.md)）。**绝不取消归档**是关键：那个调用属于“恢复”，也正是它
+过去把已删会话的那一行重新摆回屏幕上。唯一宿主事件碰不到的那份副本是窗口自己持久化的侧边栏视图，bundle 的浏览器
+半边会在每次页面加载时清一遍（[ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)）。
 
 ## 它不做什么
 
-- **不取消归档、不重新归档、不 pin。** 它只删日志。唯一碰过的记录是项目里的会话列表，而且是**请**它动的：
-  workspace registry 会把刚删掉的 id detach 掉，这样那一行不用等重启就会从侧边栏消失。插件自己一个 workspace
-  记录都不写（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
+- **不取消归档、不重新归档、不 pin。** 它只删日志，然后请 registry 做两件让那一行消失的记录改动：把会话从
+  项目里摘掉、把它归档。第二条就是“删除不需要刷新”的原因——侧边栏不画已归档的行
+  （[ADR 0012](docs/adr/0012-archive-never-unarchive.md)）。插件自己一个 workspace 记录都不写
+  （[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
 - **绝不删正在干活的会话。** 执行这条命令的会话永远保留；任何 agent 还在忙的会话也保留，而且拒绝里会写明状态
   （`a live agent holds this session (status: running)`），这样这个理由是人能处理的信息。agent 只是**驻留**在内存里
   （归档的活已经停了）不构成阻塞（[ADR 0008](docs/adr/0008-busy-not-resident.md)）。
@@ -248,12 +249,12 @@ directory is stored under that id`——同样的 id 又调了一次，或者这
 宿主只在启动时读 bundle：`git pull` 更新的是文件，正在运行的窗口用的还是它加载时的代码和语言包。重启。
 
 **删掉的会话还在侧边栏里。**
-日志消失之后，有三处记录还能让它留在界面上：项目里的归属、归档集，以及窗口自己持久化的侧边栏视图。前两处插件
-会处理——答案里写了它做了什么——第三处归窗口自己管，插件的浏览器半边会修：它把“视图里留着、但宿主已经不再
-列出”的 id 删掉，每次页面加载和窗口重新获得焦点时都做一次，所以**下一次页面加载时那一行就没了，你什么都不用
-点**。有一种情况是说明而不是修好的：宿主仍握在内存里的会话，窗口就还会画出它那一行，任何插件都驱逐不了它，
-只能等宿主释放（重启一定会释放）；答案会在这种情况下直说（`the host still holds that session in memory`）。
-想立刻清掉这样一行，就把侧边栏排序从“手动”切走再切回，或者拖动一个会话。
+不该还在：插件在删除的同时把会话**归档**了，而侧边栏从不画已归档的会话，所以 registry 的改动到达窗口的那一刻
+那一行就没了——那是实时推送，不是刷新。留下的是记录，不是行：归档表里有一个“没有目录的 id”，清单会把它报成
+already gone，只有你把归档筛选切到 *显示* 或 *只看* 时它才会出现。如果确实还画着一行，说明窗口留的是改动之前
+的副本：刷新页面会顺带清掉窗口自己持久化的视图，重启则会重建客户端的会话列表。有一种情况是说明而不是修好的：
+宿主仍握在内存里的会话，会一直留在客户端那份列表的**名字**里，直到宿主释放它（重启会；没有任何插件 API 能），
+答案在这种情况下会直说（`the host holds that session in memory`）。
 
 ## 兼容性
 
@@ -309,6 +310,13 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么是两个工具，为什么必须点名 id？ | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | 为什么链接和不规则目录只拒绝、不跟随？ | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | 为什么执行时还要把 plan 再核一遍？ | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
+| 为什么删掉的会话是“请” registry 摘掉，而不是自己改 workspace 文件？ | [ADR 0006](docs/adr/0006-detach-by-asking.md) |
+| 为什么 bundle 里带一个浏览器半边？ | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md) |
+| 为什么 agent 忙就拒绝、只是驻留就不拒绝？ | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
+| 一次删除会碰哪些 workspace 记录？ | [ADR 0009](docs/adr/0009-two-records-two-cases.md)（已被取代） |
+| 为什么删掉的那一行会当场消失？ | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
+| 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
+| 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |
 | 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |

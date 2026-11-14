@@ -1,6 +1,6 @@
 {
   "name": "dsh-cleaner",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Deletes stored logs, never a live session. List what is still on disk, delete the ids a person approved, and report the bytes reclaimed.",

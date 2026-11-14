@@ -132,23 +132,20 @@ two cannot report different things about the same deletion
    be judged.
 4. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
 5. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
-   is gone, archived or not, because a ghost row is exactly what a person is looking at when they name it
-   and an earlier deletion may already have unarchived it. The plugin never edits the workspace store:
-   `detachSession` runs on the registry's own mutation chain, and the workspace controller's `follow()`
-   stream is what carries the durable change to the client. Why this is the one place the plugin touches
-   another subsystem's records, and what the alternatives were: [ADR 0006](adr/0006-detach-by-asking.md).
-   What this can and cannot do: it changes the project's records at once, so the session leaves its
-   project — but a window that is already open keeps the session list it fetched, and the row leaves the
-   sidebar only when that list is fetched again. The harness has no "this log is gone" event to publish,
-   which is the same absence that makes this plugin necessary.
+   is gone — and to **archive** them. Archiving is the step that makes a row disappear: the sidebar's
+   default filter is `!archived.has(id)`, so an archived session is never drawn, and the workspace feed
+   publishes the change to every open window at once. Unarchiving is never asked for, because it is what a
+   *restore* is for and it makes a hidden row visible again
+   ([ADR 0012](adr/0012-archive-never-unarchive.md)). The plugin never edits the workspace store:
+   `detachSession` and `archiveSession` run on the registry's own mutation chain. Why this is the one place
+   the plugin touches another subsystem's records: [ADR 0006](adr/0006-detach-by-asking.md). What is left
+   on screen: nothing — a window that is already open applies the archive change the moment it arrives.
 
 6. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
-   what a window draws its session rows from, and it is a different service from the persistence seam: a
-   session can be gone from the store and still be named there, which is why a row can outlive the log. The
-   answer reports it instead of promising a screen it cannot see — and the *same* answer decides step 5: an
-   id the list still names keeps both its project membership and its archive entry, because the sidebar
-   hides an archived row of a project and shows the row of an ungrouped one
-   ([ADR 0009](adr/0009-two-records-two-cases.md)).
+   a different service from the persistence seam: a session can be gone from the store and still be named
+   there, which happens whenever the host still holds the agent in memory. The answer reports it instead of
+   promising a screen it cannot see; it no longer changes step 5, because archiving hides the row whether
+   or not the host still names it.
 
 The last three steps are reports about a deletion that already happened, and none of them can veto one.
 The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a
@@ -158,13 +155,12 @@ asked for the ids it was given.
 
 Where the promise stops: the sidebar also renders from a view the window persists for itself
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
-and it is re-read on every start. The browser half prunes that view against the host's list at every page
-load, so a deleted session's row is gone the next time the page loads — no gesture, no restart. What the
-plugin still cannot do is take the row off a page that is *already* open: the view lives in the renderer's
-own memory once hydrated, nothing in the harness publishes "this log is gone" for it to re-render on, and
-reloading somebody's conversation to hide a row would be the worse trade. The heavier manual repair, if a
-page must be clean before it loads again, is a sort switch or a drag — measured: 11 stale ids to 0, because
-the client then rewrites the view from the members it actually has.
+which it re-reads on every start and which no host event rewrites. That copy does not decide visibility —
+the archive filter does, and step 5 already made the row hidden — so it only matters to a later page load,
+and the browser half prunes it then: the ids it kept that the host no longer lists are dropped. One
+consequence worth stating: a session the host still holds in memory keeps its *name* in the client's
+session list until that list is rebuilt, so the row exists in the window's data and is merely not drawn. A
+restart is what ends that, and nothing a plugin can call does.
 
 ## 6. Why files are unlinked one at a time
 

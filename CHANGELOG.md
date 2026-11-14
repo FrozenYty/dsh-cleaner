@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.1] - 2026-11-14
+
+- **A deleted session's row is gone at once.** The deletion now asks the workspace registry to *archive* the
+  ids it removed, and never to unarchive them: the sidebar draws no archived session, and the registry
+  publishes the change to every open window, so the row disappears the moment the call returns — no page
+  reload, no restart, no sort switch. Unarchiving was the bug: it belongs to a restore, and it turned the
+  hidden row of a deleted session into a visible ungrouped one
+  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md), superseding ADR 0009).
+- The workspace records are the same for every session now, host-held or not. Whether the host still names
+  the session is a fact the answer reports, not a decision it makes.
+
 ## [0.2.0] - 2026-11-14
 
 - **Archiving is no longer a precondition.** The store is the index: every session whose log is on disk is

@@ -303,9 +303,9 @@ test('the deleting tool removes only the ids it was given, and reports the bytes
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
 })
 
-test('a deletion asks the workspace registry to forget the session it orphaned', async () => {
+test('a deletion asks the workspace registry to detach and archive, so the row goes at once', async () => {
   const detachment = []
-  const unarchived = []
+  const archivedCalls = []
   const workspace = {
     sessionIds: ['session-archived-1', 'session-archived-2'],
     async detachSession(id) {
@@ -314,11 +314,17 @@ test('a deletion asks the workspace registry to forget the session it orphaned',
     },
   }
   const registry = {
-    archivedSessionIds: ['session-archived-1', 'session-archived-2'],
+    // session-archived-1 is NOT in the archive set: the person never archived it, and it is still a
+    // candidate. Archiving it is what hides the row, because the sidebar's default filter is
+    // `!archived.has(id)`.
+    archivedSessionIds: ['session-archived-2'],
     list: () => [workspace],
-    async unarchiveSession(id) {
-      unarchived.push(id)
-      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    async archiveSession(id) {
+      archivedCalls.push(id)
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
+    },
+    async unarchiveSession() {
+      throw new Error('unarchiving a deleted session is what used to make its row reappear')
     },
   }
   const tools = install({ workspaces: registry })
@@ -327,15 +333,15 @@ test('a deletion asks the workspace registry to forget the session it orphaned',
   assert.equal(value.removed_count, 1)
   assert.deepEqual(detachment, ['session-archived-1'], 'the registry is asked, so the row can go now')
   assert.deepEqual(value.workspace.detached, ['session-archived-1'])
-  // The archive set is what still names a session with no log, and the client renders that identity.
-  assert.deepEqual(unarchived, ['session-archived-1'])
-  assert.deepEqual(value.workspace.unarchived, ['session-archived-1'])
-  assert.deepEqual(registry.archivedSessionIds, ['session-archived-2'])
+  // The archive entry is the lever the window reacts to: an archived session is never drawn.
+  assert.deepEqual(archivedCalls, ['session-archived-1'])
+  assert.deepEqual(value.workspace.archived, ['session-archived-1'])
+  assert.deepEqual(registry.archivedSessionIds, ['session-archived-2', 'session-archived-1'])
   assert.deepEqual(workspace.sessionIds, ['session-archived-2'])
-  assert.match(text(tools.get('delete_session_logs'), value), /The workspace records dropped them \(1 detached, 1 unarchived\)/)
-  // A page reload proved not to be enough; the window rewrites its own copy on a sort switch or a drag,
-  // and a restart is the heavier way to the same end.
-  assert.match(text(tools.get('delete_session_logs'), value), /until it rewrites it \(a sort switch or a drag\) or restarts/)
+
+  const rendered = text(tools.get('delete_session_logs'), value)
+  assert.match(rendered, /The workspace records dropped them \(1 detached, 1 archived\)/)
+  assert.match(rendered, /the rows are gone from every open window without a reload/)
 })
 
 test('a profile without a workspace registry still answers', async () => {
@@ -373,8 +379,8 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   const registry = {
     archivedSessionIds: ['session-archived-1'],
     list: () => [workspace],
-    async unarchiveSession(id) {
-      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    async archiveSession(id) {
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
     },
   }
   const tools = install({ workspaces: registry })
@@ -409,8 +415,8 @@ test('an unarchived id with no log is still dropped, and the session list is sti
         this.sessionIds = this.sessionIds.filter((entry) => entry !== id)
       },
     }],
-    async unarchiveSession(id) {
-      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    async archiveSession(id) {
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
     },
   }
   const tools = install({
@@ -420,18 +426,19 @@ test('an unarchived id with no log is still dropped, and the session list is sti
 
   const first = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(first.removed_count, 1)
-  // The state a person is in after an earlier cleanup: no log left, no archive entry, and a row still
-  // drawn. Detaching is all that is left to ask for, and the session list is the answer that says where
-  // the row still lives.
+  // The state a person is in after an earlier cleanup: no log left, and a row still drawn. Detaching and
+  // archiving is what the plugin can still ask for, and the session list is the answer that says where the
+  // row's identity still lives.
   registry.list()[0].sessionIds = ['session-archived-1']
   const again = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(again.removed_count, 0)
-  assert.deepEqual(again.workspace.unarchived, [])
+  assert.deepEqual(again.workspace.detached, ['session-archived-1'])
+  assert.deepEqual(again.workspace.archived, [], 'it is already archived, so nothing to hide')
   assert.deepEqual(again.query.still_listed, ['session-archived-1'])
   assert.match(text(tools.get('delete_session_logs'), again), /The session list still names session-archived-1/)
 })
 
-test('an id the host still lists keeps both records, because a window still draws a row for it', async () => {
+test('an id the host still lists is hidden the same way, and the name is reported', async () => {
   const calls = []
   const workspace = {
     sessionIds: ['session-archived-1'],
@@ -441,32 +448,32 @@ test('an id the host still lists keeps both records, because a window still draw
     },
   }
   const registry = {
-    archivedSessionIds: ['session-archived-1'],
+    archivedSessionIds: [],
     list: () => [workspace],
-    async unarchiveSession(id) {
-      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    async archiveSession(id) {
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
     },
   }
   const tools = install({
     workspaces: registry,
-    // The host still holds the session in memory, so its list still names it: the sidebar draws a row for
-    // it, and an archived row of a project is the one it hides. Dropping either record is what turns a
-    // hidden row into a visible one, so neither is dropped.
+    // The host still holds the session in memory, so its list still names it. That does not change what
+    // hides the row — the archive set does — so the record treatment is the same, and the answer says the
+    // one thing the plugin cannot do: make the host forget the name.
     query: { listSessions: async () => [{ sessionId: 'session-archived-1' }] },
   })
 
   const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 1, 'the log still goes')
-  assert.deepEqual(value.workspace.detached, [])
-  assert.deepEqual(value.workspace.unarchived, [])
-  assert.deepEqual(value.workspace.kept_archived, ['session-archived-1'])
-  assert.deepEqual(calls, [], 'nothing asked the registry to detach it')
-  assert.deepEqual(workspace.sessionIds, ['session-archived-1'])
+  assert.deepEqual(value.workspace.detached, ['session-archived-1'])
+  assert.deepEqual(value.workspace.archived, ['session-archived-1'], 'archived is what hides the row')
+  assert.deepEqual(calls, ['session-archived-1'])
+  assert.deepEqual(workspace.sessionIds, [])
   assert.deepEqual(registry.archivedSessionIds, ['session-archived-1'])
+  assert.deepEqual(value.query.still_listed, ['session-archived-1'])
   const rendered = text(tools.get('delete_session_logs'), value)
-  assert.match(rendered, /1 of the ids stayed where they were/)
-  assert.match(rendered, /the host still holds that session in memory/)
-  assert.doesNotMatch(rendered, /The workspace records dropped them/)
+  assert.match(rendered, /The workspace records dropped them \(1 detached, 1 archived\)/)
+  assert.match(rendered, /the host holds that session in memory/)
+  assert.match(rendered, /a restart does, and nothing a plugin can call does/)
 })
 
 test('a session list that still names a deleted id is reported, because a row can outlive the log', async () => {
