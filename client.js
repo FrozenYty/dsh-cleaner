@@ -120,25 +120,24 @@ window.__ModuleLoader__.load({
         /**
          * Whether the host actually has the command this row runs.
          *
-         * A row that runs a command the host does not know is worse than no row at all: the click is
-         * admitted as ordinary text, the session's own agent answers instead, and the person reads a
-         * failure for a deletion that never happened. That is exactly what a window shows when the browser
-         * half is newer than the loaded bundle — which is the normal state right after an update, because
-         * this half reloads with the page and the host half only reloads with the process.
+         * A row that runs a command the host does not know is worse than no row at all: the click either does
+         * nothing or surfaces a failure for a deletion that never happened. That is exactly what a window
+         * shows when the browser half is newer than the loaded bundle — the normal state right after an
+         * update, because this half reloads with the page and the host half only reloads with the process.
          *
-         * Asked once per session and remembered; a list that cannot be read fails **open**, because a row
-         * that works is better than a row that hides.
+         * Asked once per session and remembered. A list that cannot be read counts as **absent**: a row that
+         * cannot be verified must not be offered, because the alternative is offering a click that fails.
          */
         const knownCommands = new Map()
         const commandExists = async (sessionId) => {
           if (knownCommands.has(sessionId)) return knownCommands.get(sessionId)
-          let known = true
+          let known = false
           try {
             const answer = await ctx.remote.commands.list(sessionId)
             const items = Array.isArray(answer) ? answer : answer?.items
             known = (Array.isArray(items) ? items : []).some((entry) => entry?.name === 'clean')
           } catch {
-            // No answer means no evidence against it: keep the row.
+            // No answer is not evidence that the command exists: hide the row rather than offer it.
           }
           knownCommands.set(sessionId, known)
           return known
@@ -146,11 +145,17 @@ window.__ModuleLoader__.load({
 
         /**
          * Run the deletion for one session: the same command the tool and the composer run.
-         * The command answers in the transcript, so a caller here has nothing to show and a rejected promise
-         * would be an unhandled rejection with no reader.
+         *
+         * `execute` answers `undefined` when the host does not know the command, and that answer is used: the
+         * session is remembered as having none, so the row stops being offered instead of failing again.
+         * The command answers in the transcript, so a caller here has nothing to show.
          */
         const runClean = (sessionId) => {
-          void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
+          void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, []))
+            .then((execution) => {
+              if (execution === undefined) knownCommands.set(sessionId, false)
+            })
+            .catch(() => {})
         }
 
         /**

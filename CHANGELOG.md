@@ -7,6 +7,14 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.8] - 2026-11-14
+
+- **A row that cannot be verified is not offered.** The command check used to fail *open* — an unreadable
+  command list kept the row — which is exactly how a stale window ends up offering a click that fails. It
+  fails **closed** now, and a click that reaches a host answering `undefined` remembers that for the session
+  and withdraws the row instead of offering a second failing click. The rule: a missing row is a smaller
+  surprise than a click that reports a failure for something that never happened.
+
 ## [0.2.7] - 2026-11-14
 
 - **`danger` is back**, so the row reads exactly like *删除工作区*: the product's destructive colour with the
