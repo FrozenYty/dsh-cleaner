@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.4] - 2026-11-14
+
+- **The row is the last thing in the menu, and it has a key.** `order: 9000` sorts it after every session
+  action this build registers (pin 100, rename 200, fork 300, copy-id 450, archive 600) instead of into the
+  footer group, which renders before the built-in rows. **Ctrl+Shift+D** (⌘⇧D on macOS) now deletes the
+  session the window is looking at: the binding is registered in the product's own default table, so it
+  appears in the shortcut settings and is remappable there, and the row points at it with `commandId`, which
+  is what prints the keys beside the label the way the product prints them for its own actions. The key uses
+  the same guard as the row — a host without `clean` receives nothing rather than a line of text
+  ([ADR 0011](docs/adr/0011-one-operation-two-callers.md), amendment).
+
 ## [0.2.3] - 2026-11-14
 
 - **The menu row appears only when the command it runs exists.** A window half reloads with the page and
