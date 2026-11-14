@@ -131,15 +131,19 @@ two cannot report different things about the same deletion
    `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
    be judged.
 4. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
-5. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
-   is gone — and to **archive** them. Archiving is the step that makes a row disappear: the sidebar's
-   default filter is `!archived.has(id)`, so an archived session is never drawn, and the workspace feed
-   publishes the change to every open window at once. Unarchiving is never asked for, because it is what a
-   *restore* is for and it makes a hidden row visible again
-   ([ADR 0012](adr/0012-archive-never-unarchive.md)). The plugin never edits the workspace store:
-   `detachSession` and `archiveSession` run on the registry's own mutation chain. Why this is the one place
-   the plugin touches another subsystem's records: [ADR 0006](adr/0006-detach-by-asking.md). What is left
-   on screen: nothing — a window that is already open applies the archive change the moment it arrives.
+5. **Before** the files go, ask the workspace registry to detach the ids from their project and to
+   **archive** them. Archiving is the step that makes a row disappear: the sidebar's default filter is
+   `!archived.has(id)`, so an archived session is never drawn, and the workspace feed publishes the change
+   to every open window at once. The order is forced — `archiveSession` throws
+   `WorkspaceUnknownSessionError` for a session that is neither live nor in persistence, so it has to run
+   while the log still exists — and a removal that then fails has its archive entry dropped again, so a
+   session whose log is still on disk never stays hidden
+   ([ADR 0012](adr/0012-archive-never-unarchive.md)). An id whose log is already gone gets the detach and
+   nothing else, because the registry cannot archive a session it cannot find. The plugin never edits the
+   workspace store: `detachSession` and `archiveSession` run on the registry's own mutation chain. Why this
+   is the one place the plugin touches another subsystem's records:
+   [ADR 0006](adr/0006-detach-by-asking.md). What is left on screen: nothing — a window that is already
+   open applies the archive change the moment it arrives.
 
 6. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
    a different service from the persistence seam: a session can be gone from the store and still be named

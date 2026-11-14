@@ -29,17 +29,25 @@ plugin making a hidden row visible and then asking everybody to reload.
 dropped, because the id names nothing there any more; the archive entry is kept or created, because it is
 exactly what makes the row invisible.
 
-- `forgetSessions` detaches each dropped id from its project, then asks the registry to `archiveSession(id)`
-  unless the archive set already names it. `unarchiveSession` is not called anywhere, ever — that call is
-  what a *restore* is for, and this plugin only deletes.
+- The records are asked for **before** the files are removed, and that order is forced: `archiveSession`
+  throws `WorkspaceUnknownSessionError` for a session that is "neither live nor in session persistence", so
+  an archive attempted after the unlink is refused and the row would stay. `unarchiveSession` runs no such
+  check (dropping an id cannot introduce an unknown one), which is what makes the repair below possible.
+- `hideSessions` detaches each id from its project and archives it unless the archive set already names it
+  (that case is a no-op in the registry). Nothing is called for an id whose log is already gone except the
+  detach: the registry cannot archive a session it cannot find.
+- If a removal does not happen — a file that cannot be unlinked, a directory that became a file — the
+  archive entry this call added is dropped again (`restoreSessions`). A session whose log is still on disk
+  must not be hidden, and a session the person had already archived keeps the state they chose.
 - This is the same treatment for every session, host-held or not. ADR 0009's two cases collapse: what hides
   a row is the archive set, not whether the host still lists the session. The host's list is now only a
   *report* — "the name stays until the host releases it, and nothing a plugin can call does that".
 - The window hides the row **at once**, because the archive change travels the workspace feed to every open
   window and the sidebar's filter is the thing that decides visibility. No reload, no restart, no sort
   switch, no drag.
-- Archiving an id whose log is gone is the same kind of act as detaching it: a request to the registry that
-  owns the record, never an edit of the workspace file ([ADR 0006](0006-detach-by-asking.md)).
+- Archiving an id whose log is about to go is the same kind of act as detaching it: a request to the
+  registry that owns the record, never an edit of the workspace file
+  ([ADR 0006](0006-detach-by-asking.md)).
 - The browser half keeps its two jobs and stops being load-bearing for this: it prunes the window's own
   persisted view at a page load (that copy is not fed by the stream), and its ⋯ menu row runs the same
   command.

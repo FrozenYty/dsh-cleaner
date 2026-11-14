@@ -547,6 +547,67 @@ test('an id that is already deleted is refused in the answer, not thrown', async
   assert.doesNotMatch(text(tools.get('delete_session_logs'), again), /persistence backend/)
 })
 
+test('the archive is asked for while the log is still there, because the registry refuses a gone session', async () => {
+  const order = []
+  const registry = {
+    archivedSessionIds: [],
+    list: () => [{
+      sessionIds: ['session-archived-1'],
+      async detachSession() {},
+    }],
+    async archiveSession(id) {
+      // The real registry throws WorkspaceUnknownSessionError for a session it can neither see live nor in
+      // persistence, so an archive after the unlink would fail and the row would stay.
+      assert.ok(existsSync(join(ROOT, '--D-ALPHA--', id)), 'the log must still exist when the archive is asked for')
+      order.push(id)
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
+    },
+    async unarchiveSession() {
+      throw new Error('nothing failed, so nothing may be put back')
+    },
+  }
+  const tools = install({ workspaces: registry })
+
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
+  assert.deepEqual(order, ['session-archived-1'])
+  assert.deepEqual(value.workspace.archived, ['session-archived-1'])
+  assert.deepEqual(value.workspace.restored, [])
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
+})
+
+test('a removal that fails gives the archive state back', {
+  // POSIX refuses to remove an entry from a directory it may not write to; Windows has no portable way to
+  // hold an unlink open, so this runs where it can (CI covers Linux and macOS).
+  skip: process.platform === 'win32' ? 'no portable way to deny an unlink on Windows' : false,
+}, async () => {
+  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-1')
+  await chmod(dir, 0o500)
+  const registry = {
+    archivedSessionIds: [],
+    list: () => [{ sessionIds: ['session-archived-1'], async detachSession() {} }],
+    async archiveSession(id) {
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
+    },
+    async unarchiveSession(id) {
+      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    },
+  }
+  try {
+    const tools = install({ workspaces: registry })
+    const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
+
+    // The log is still there, so the session must not stay hidden: the row has to be where it was.
+    assert.equal(value.removed_count, 0)
+    assert.equal(value.failed.length, 1)
+    assert.deepEqual(value.workspace.archived, [])
+    assert.deepEqual(value.workspace.restored, ['session-archived-1'])
+    assert.deepEqual(registry.archivedSessionIds, [])
+    assert.match(text(tools.get('delete_session_logs'), value), /their archive state was put back/)
+  } finally {
+    await chmod(dir, 0o755)
+  }
+})
+
 test('a call without a calling Agent, or with no ids, is rejected before anything is touched', async () => {
   const tools = install()
   const tool = tools.get('delete_session_logs')
