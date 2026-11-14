@@ -63,7 +63,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent, throwing } = {}) {
+function mount({ views, list, answer, menus, locale, commands, silent, throwing } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -71,13 +71,11 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
     addEventListener: (name, handler) => listeners.set(name, handler),
     removeEventListener: (name) => listeners.delete(name),
   }
-  if (current !== undefined) store.setItem('dsh.sessions.current', JSON.stringify({ sessionId: current }))
   const calls = []
   const cleanup = []
   const executed = []
   const listed = []
   const registered = []
-  const registeredShortcuts = []
   const registrations = new Map()
   const ctx = {
     remote: {
@@ -121,15 +119,6 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
           },
         }
       }
-      if (name === 'shortcuts') {
-        if (!shortcuts) return undefined
-        return {
-          register: (definition) => {
-            registeredShortcuts.push(definition)
-            return () => {}
-          },
-        }
-      }
       if (name === 'locale') {
         return { getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }) }
       }
@@ -151,7 +140,6 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
     registered,
     registrations,
     listed,
-    shortcuts: registeredShortcuts,
   }
 }
 
