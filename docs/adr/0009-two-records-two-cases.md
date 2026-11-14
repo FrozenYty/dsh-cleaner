@@ -1,6 +1,6 @@
 # 0009 — Two records, two cases: what a deletion leaves in the workspace
 
-- **Status:** Accepted
+- **Status:** Superseded by [0012](0012-archive-never-unarchive.md)
 - **Date:** 2026-11-14
 - **Supersedes:** —
 

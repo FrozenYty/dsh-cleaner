@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.0.
+- Current version: v0.2.1.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -135,7 +135,8 @@ list_session_logs {}
 delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace records dropped them (6 detached, 6 unarchived).
+  The workspace records dropped them (6 detached): an archived session is hidden by the sidebar, so
+  the rows are gone from every open window without a reload.
   The session persistence backend no longer lists any of them.
 ```
 
@@ -169,21 +170,23 @@ delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-�
   title, shown beside the id so a list of ids can be matched against the sessions someone remembers by
   name. A missing, older or unreadable file costs the title and changes nothing else.
 
-The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
-no directory, which the listing reports as already gone. The project's session list is not written either:
-the registry detaches the deleted ids when asked, which is what makes their sidebar rows go away at once
-([ADR 0006](docs/adr/0006-detach-by-asking.md)). Which of those two records is touched is decided per id by
-asking the host's own session list first, because a session it still holds in memory is still drawn by a
-window ([ADR 0009](docs/adr/0009-two-records-two-cases.md)). The one copy no host-side step can reach is the
-window's own sidebar view, so the bundle carries a browser half that prunes it at every page load
-([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
+The workspace file is never written, and neither is the project's session list: the plugin **asks** the
+registry to detach the deleted ids from their project and to archive them, which is what makes the row go
+away ([ADR 0006](docs/adr/0006-detach-by-asking.md)). Archiving is the lever, not a tidiness step: the
+sidebar draws no archived session, and the registry publishes the change to every open window, so **the row
+disappears at once — no reload, no restart, no sort switch**
+([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). Never unarchiving is the point: that call belongs
+to a restore, and it is what used to put a deleted session's row back on screen. The one copy no host event
+reaches is the window's own persisted sidebar view, and the bundle's browser half prunes it at every page
+load ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
 
 ## What it does not do
 
-- **No unarchive, no re-archive, no pinning.** It removes logs and nothing else. The one record it touches
-  is the project's session list, and it touches it by asking: the workspace registry detaches the ids it
-  just deleted, so their rows leave the sidebar instead of waiting for a restart. The plugin writes no
-  workspace record itself ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+- **No unarchive, no re-archive, no pinning.** It removes logs and nothing else, then asks for the two
+  record changes that make the row disappear: detach it from its project, archive it. The second one is
+  why a deletion needs no reload — an archived session is never drawn
+  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). The plugin writes no workspace record itself
+  ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 - **Never a session whose work is running.** The session executing the command is always kept, and so is
   any session whose agent is busy; the refusal names the status (`a live agent holds this session (status:
   running)`) so the reason is something to act on. An agent that is merely resident — archived work has
@@ -290,15 +293,15 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-Three records keep a session on screen after its log is gone: the project's membership, the archive set,
-and the window's own persisted sidebar view. The plugin handles the first two — the answer says which —
-and the bundle's browser half repairs the third: it drops the ids the view kept that the host no longer
-lists, at every page load and when the window regains focus, so **the row is gone the next time the page
-loads — nothing to click**. One case is stated rather than fixed: a session the host still holds in memory
-is still drawn by a window, and no plugin can evict it, so its row stays until the host releases it, which
-a restart does. The answer says so when it happens (`the host still holds that session in memory`). To
-clear such a row immediately, switch the sidebar's ordering away from *manual* and back, or drag a
-session.
+It should not be: the plugin archives the session as part of the deletion, and the sidebar never draws an
+archived session, so the row goes the moment the registry change reaches the window — that is a live
+stream, not a reload. What is left is a record, not a row: the archive set names an id with no directory,
+which the listing reports as `already_gone`, and which appears only if you switch the archived filter to
+*show* or *only*. If a row really is still drawn, the window kept a copy from before the change: a page
+load also prunes the window's own persisted view, and a restart rebuilds the client's session list. One
+case is stated rather than fixed: a session the host still holds in memory keeps its *name* in that list
+until the host releases it (a restart does; no plugin API can), and the answer says so when it happens
+(`the host holds that session in memory`).
 
 ## Compatibility
 
@@ -361,7 +364,8 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does it detach a deleted session instead of editing the workspace file? | [ADR 0006](docs/adr/0006-detach-by-asking.md) |
 | Why does the bundle carry a browser half? | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md) |
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
-| Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) |
+| Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
+| Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | Why is there a command as well as a tool? | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
