@@ -7,6 +7,15 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.2] - 2026-11-14
+
+- The session menu row now reads how a person describes the act: **删除会话** / *Delete session* (it was
+  *Delete log*). It is drawn with `danger: true` in the product's own red, carries the trash glyph the
+  workspace plugin already registered in the shared `contextMenu.icon` slot — borrowed rather than
+  re-drawn, so it looks like its neighbours without this bundle resolving a package it cannot — and is
+  placed with `afterContent: true`, which puts it **after** 归档会话 (Archive) instead of between the
+  ordinary actions ([ADR 0011](docs/adr/0011-one-operation-two-callers.md), amendment).
+
 ## [0.2.1] - 2026-11-14
 
 - **A deleted session's row is gone at once.** The deletion now asks the workspace registry to *archive* the

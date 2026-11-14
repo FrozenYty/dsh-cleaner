@@ -114,7 +114,7 @@ window.__ModuleLoader__.load({
           } catch {
             // A locale service that cannot answer costs the language, never the item.
           }
-          return active.toLowerCase().startsWith('zh') ? '删除日志' : 'Delete log'
+          return active.toLowerCase().startsWith('zh') ? '删除会话' : 'Delete session'
         }
 
         /**
@@ -124,6 +124,16 @@ window.__ModuleLoader__.load({
          * half needs no renderer and no stylesheet. It calls the command rather than a host method of its
          * own so that everything a person can do to a log goes through one implementation
          * (docs/adr/0011-one-operation-two-callers.md).
+         *
+         * Three presentation choices, all made from the product's own vocabulary:
+         * - `afterContent` puts the row **after** the built-in rows, which is where 归档会话 (Archive) sits;
+         *   an ordinary action renders before them, and a destructive item next to the commonest one is a
+         *   mis-click waiting to happen.
+         * - `danger` gets the red treatment the product gives its own destructive actions.
+         * - the icon key is the workspace plugin's own trash glyph, registered in the shared
+         *   `contextMenu.icon` slot — borrowing it is what makes the row look like its neighbours without
+         *   this bundle resolving an `@deepseek-ai` package it cannot resolve. If that plugin is absent the
+         *   key resolves to nothing and the row simply has no icon.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -131,8 +141,7 @@ window.__ModuleLoader__.load({
           return menus.register({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
-            // After the shipped actions (pin 100, rename 200, …) and before nothing: a destructive item
-            // belongs where a hand reaches last.
+            // Only sorts against other contributions; `afterContent` is what decides the group.
             order: 500,
             resolve: (target) => {
               const sessionId = target?.sessionId
@@ -140,6 +149,9 @@ window.__ModuleLoader__.load({
               return [{
                 id: 'dsh-cleaner.delete-log',
                 label: label(),
+                icon: { key: 'workspace.delete' },
+                danger: true,
+                afterContent: true,
                 run: () => {
                   // The command answers in the transcript; this item has nothing to show, and a rejected
                   // promise here would be an unhandled rejection with no reader.
