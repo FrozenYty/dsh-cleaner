@@ -22,6 +22,7 @@ window.__ModuleLoader__.load({
     const VIEW_PREFIX = 'dsh.workspace.view.'
     const ACCOUNT_KEY = 'sessionOrderByAccount'
     const MARK_KEY = 'dsh-cleaner.client.v1'
+    const SHORTCUT_ID = 'session.delete-log'
 
     /**
      * The ids a session-list answer names, whichever field its records carry.
@@ -145,6 +146,33 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * Run the deletion for one session: the same command the tool and the composer run.
+         * The command answers in the transcript, so a caller here has nothing to show and a rejected promise
+         * would be an unhandled rejection with no reader.
+         */
+        const runClean = (sessionId) => {
+          void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
+        }
+
+        /**
+         * The session the window is looking at, read from the sidebar's own persisted selection.
+         *
+         * A shortcut is global and has no target of its own, so it needs the session the person is in — and
+         * the window is the only place that knows it: the sidebar keeps the selection under this key so a
+         * reload reopens the same conversation. Read defensively; a shape this does not recognise means no
+         * session, and the shortcut says so instead of guessing.
+         */
+        const currentSessionId = () => {
+          try {
+            const parsed = JSON.parse(window.localStorage.getItem('dsh.sessions.current'))
+            const id = parsed?.sessionId ?? parsed?.id ?? parsed?.state?.sessionId ?? parsed?.value?.sessionId
+            return typeof id === 'string' && id.length > 0 ? id : undefined
+          } catch {
+            return undefined
+          }
+        }
+
+        /**
          * The same operation as the tool and the command, from the sidebar: one row in a session's own menu.
          *
          * A data contribution, not a component — `resolve` returns the item and `run` is the click, so this
@@ -152,15 +180,15 @@ window.__ModuleLoader__.load({
          * own so that everything a person can do to a log goes through one implementation
          * (docs/adr/0011-one-operation-two-callers.md).
          *
-         * Three presentation choices, all made from the product's own vocabulary:
-         * - `afterContent` puts the row **after** the built-in rows, which is where 归档会话 (Archive) sits;
-         *   an ordinary action renders before them, and a destructive item next to the commonest one is a
-         *   mis-click waiting to happen.
-         * - `danger` gets the red treatment the product gives its own destructive actions.
-         * - the icon key is the workspace plugin's own trash glyph, registered in the shared
-         *   `contextMenu.icon` slot — borrowing it is what makes the row look like its neighbours without
-         *   this bundle resolving an `@deepseek-ai` package it cannot resolve. If that plugin is absent the
-         *   key resolves to nothing and the row simply has no icon.
+         * Presentation, in the product's own vocabulary:
+         * - `order: 9000` sorts it after every other session action this build registers (pin 100, rename
+         *   200, fork 300, copy-id 450, archive 600), so it is the last contribution in the menu.
+         * - `danger` gets the red treatment the product gives its own destructive actions, and the icon key
+         *   is the workspace plugin's own trash glyph from the shared `contextMenu.icon` slot — borrowing it
+         *   is what makes the row look like its neighbours without this bundle resolving an
+         *   `@deepseek-ai` package it cannot resolve.
+         * - `commandId` ties the row to the shortcut registered below, which is what prints the keys beside
+         *   the label the way the product prints them for its own actions.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -168,8 +196,7 @@ window.__ModuleLoader__.load({
           return menus.register({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
-            // Only sorts against other contributions; `afterContent` is what decides the group.
-            order: 500,
+            order: 9000,
             resolve: async (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
@@ -177,15 +204,51 @@ window.__ModuleLoader__.load({
               return [{
                 id: 'dsh-cleaner.delete-log',
                 label: label(),
+                commandId: SHORTCUT_ID,
                 icon: { key: 'workspace.delete' },
                 danger: true,
-                afterContent: true,
-                run: () => {
-                  // The command answers in the transcript; this item has nothing to show, and a rejected
-                  // promise here would be an unhandled rejection with no reader.
-                  void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
-                },
+                run: () => runClean(sessionId),
               }]
+            },
+          })
+        }
+
+        /**
+         * The keyboard path to the same act: Ctrl+Shift+D (⌘⇧D on macOS) deletes the session the window is
+         * looking at, which is the session the sidebar would target for its own shortcuts.
+         *
+         * Registered with the product's own default table rather than a global key listener, so the binding
+         * shows up in the shortcut settings, is remappable there, and collides with nothing by accident.
+         */
+        const registerShortcut = () => {
+          const shortcuts = ctx.get('shortcuts')
+          if (shortcuts === undefined || typeof shortcuts.register !== 'function') return undefined
+          const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
+          return shortcuts.register({
+            id: SHORTCUT_ID,
+            label,
+            aliases: ['delete session'],
+            defaults: {
+              'desktop:macos': binding,
+              'desktop:windows': binding,
+              'desktop:linux': binding,
+              'web:macos': binding,
+              'web:windows': binding,
+              'web:linux': binding,
+            },
+            resolve: () => {
+              const sessionId = currentSessionId()
+              if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
+              return {
+                status: 'handled',
+                // Same guard as the menu row: a host that has no `clean` command must not receive the line
+                // as text, because that reads as a failure that never happened.
+                run: () => {
+                  void commandExists(sessionId).then((known) => {
+                    if (known) runClean(sessionId)
+                  })
+                },
+              }
             },
           })
         }
@@ -196,9 +259,11 @@ window.__ModuleLoader__.load({
           const onFocus = () => void prune()
           window.addEventListener('focus', onFocus)
           const unregisterMenu = registerMenu()
+          const unregisterShortcut = registerShortcut()
           return () => {
             window.removeEventListener('focus', onFocus)
             unregisterMenu?.()
+            unregisterShortcut?.()
           }
         })
       },

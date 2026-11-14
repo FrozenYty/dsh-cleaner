@@ -98,3 +98,22 @@ beats a row that hides.
 
 The alternative — showing the row and disabling it — was rejected because a disabled row explains nothing
 about *why*, and this plugin's whole surface is about saying what is true.
+
+### Amendment — last in the menu, and a key of its own (same day, after the second look)
+
+Two more requests, both answered from the product's tables rather than from taste:
+
+- **Position.** The row now sorts with `order: 9000`, above every session action this build registers
+  (pin 100, rename 200, fork 300, copy-id 450, archive 600). `afterContent` was the wrong tool: it moves a
+  contribution into the menu's footer group, which the overlay renders *before* the component rows — that
+  is why the row sat above 在文件夹显示 with a group separator over it. Plain ordering keeps it in the same
+  group as the actions it belongs with, so there is no separator to explain.
+- **Ctrl+Shift+D.** Registered through `ctx.shortcuts.register` with the product's own platform table
+  (`desktop:windows|macos|linux`, `web:*`), so the binding appears in the shortcut settings, is remappable
+  there, and cannot collide by accident. The menu row carries `commandId` = that shortcut's id, which is how
+  the overlay prints the keys beside a label; the association never dispatches anything, so the row still
+  runs its own captured callback for the session it was opened on. The key itself acts on the session the
+  window is looking at, read from the sidebar's own persisted selection (`dsh.sessions.current`) because a
+  global shortcut has no target — and when that cannot be read the shortcut reports `blocked` rather than
+  guessing. It runs through the same command guard as the row: a host without `clean` receives nothing at
+  all, instead of a line of text that reads as a failure.
