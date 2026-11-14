@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.11.
+- Current version: v0.2.12.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -83,9 +83,12 @@ decision you have already made. Both callers end in one implementation, so a per
 calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
 
 A session's own **⋯ menu** carries the same thing as one row — *删除会话* / *Delete session*, in the window's
-language, drawn in the same red as 删除工作区, with the trash glyph the product registers for it, sorted last of every session action. It is a data
-contribution to the menu, not a renderer: the bundle supplies the label, the icon key and the click, and the
-sidebar draws it like its own actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the click.
+language, drawn in the same red as 删除工作区, with the trash glyph the product registers for it, seated
+directly after 分叉会话 and before 复制 Session ID (`order: 350`). It is a data contribution to the menu, not a
+renderer: the bundle supplies the label, the icon key and the click, and the sidebar draws it like its own
+actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the
+click. **Ctrl+Shift+D** (⌘⇧D on macOS) does the same for the session the window is showing — a real binding in
+the product's shortcut table, so it appears in the shortcut settings and can be remapped there.
 
 ## Install
 
@@ -373,6 +376,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
+
 
 
 

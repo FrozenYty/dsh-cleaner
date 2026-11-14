@@ -63,7 +63,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale, commands, silent, throwing } = {}) {
+function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent, throwing } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -71,11 +71,13 @@ function mount({ views, list, answer, menus, locale, commands, silent, throwing 
     addEventListener: (name, handler) => listeners.set(name, handler),
     removeEventListener: (name) => listeners.delete(name),
   }
+  if (current !== undefined) store.setItem('dsh.sessions.current', JSON.stringify({ sessionId: current }))
   const calls = []
   const cleanup = []
   const executed = []
   const listed = []
   const registered = []
+  const registeredShortcuts = []
   const registrations = new Map()
   const ctx = {
     remote: {
@@ -119,6 +121,22 @@ function mount({ views, list, answer, menus, locale, commands, silent, throwing 
           },
         }
       }
+      if (name === 'shortcuts') {
+        if (!shortcuts) return undefined
+        if (shortcuts === 'refuse') {
+          return {
+            register: () => {
+              throw new Error('the shortcut registry refused this definition')
+            },
+          }
+        }
+        return {
+          register: (definition) => {
+            registeredShortcuts.push(definition)
+            return () => {}
+          },
+        }
+      }
       if (name === 'locale') {
         return { getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }) }
       }
@@ -140,6 +158,7 @@ function mount({ views, list, answer, menus, locale, commands, silent, throwing 
     registered,
     registrations,
     listed,
+    shortcuts: registeredShortcuts,
   }
 }
 
@@ -274,11 +293,12 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(item.label, 'Delete session', 'the label follows the window language')
   assert.equal(typeof item.run, 'function')
   // Presentation: the same pair 删除工作区 uses — the product's destructive treatment and the trash glyph the
-  // workspace plugin registered in the shared icon slot — sorted last, in the ordinary group.
+  // workspace plugin registered in the shared icon slot — seated right after 分叉会话 (fork 300).
   assert.equal(item.danger, true, 'the colour 删除工作区 has')
-  assert.equal(entry.order, 9000, 'after every session action the build registers, Archive (600) included')
+  assert.equal(entry.order, 350, 'after fork (300), before copy-id (450)')
   assert.equal(item.afterContent, undefined, 'the footer group renders before the component rows')
   assert.equal(item.icon.key, 'workspace.delete')
+  assert.equal(item.commandId, undefined, 'no catalogue coupling: the keys print only once that can be verified')
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
@@ -359,6 +379,51 @@ test('a registration the host refuses costs the row and nothing else', async () 
 
   assert.deepEqual(registered, [], 'the contribution was refused')
   assert.equal(store.getItem('dsh.workspace.view.v5').includes('session-gone-1'), false, 'the view is still pruned')
+})
+
+test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the window shows', async () => {
+  const { shortcuts, executed } = mount({
+    views: {},
+    answer: [],
+    shortcuts: true,
+    current: 'session-live-1',
+  })
+
+  assert.equal(shortcuts.length, 1)
+  const [shortcut] = shortcuts
+  assert.equal(shortcut.id, 'session.delete-log')
+  assert.equal(typeof shortcut.label, 'function')
+  assert.equal(shortcut.label(), 'Delete session')
+  for (const platform of ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:windows', 'web:macos', 'web:linux']) {
+    // Serialised, because the definition was built in the page's realm: its objects are not this realm's.
+    assert.equal(
+      JSON.stringify(shortcut.defaults[platform]),
+      JSON.stringify({ code: 'KeyD', modifiers: ['primary', 'shift'] }),
+      platform,
+    )
+  }
+
+  const resolved = shortcut.resolve()
+  assert.equal(resolved.status, 'handled')
+  resolved.run()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(executed.length, 1)
+  assert.equal(executed[0].sessionId, 'session-live-1')
+  assert.equal(executed[0].line, '/clean session-live-1')
+})
+
+test('the shortcut says why it cannot act instead of guessing a session', () => {
+  const { shortcuts } = mount({ views: {}, answer: [], shortcuts: true })
+  const resolved = shortcuts[0].resolve()
+  assert.equal(resolved.status, 'blocked')
+  assert.equal(resolved.reason, 'no session is open')
+})
+
+test('a shortcuts registry that refuses the definition costs the key, not the row', () => {
+  // The 0.2.4 lesson: a contribution the product cannot render is every session's menu broken. Each
+  // registration is isolated now, so this one may fail alone.
+  const { registered } = mount({ views: {}, answer: [], menus: true, shortcuts: 'refuse' })
+  assert.equal(registered.length, 1, 'the row is still contributed')
 })
 
 test('a page without the menus service still prunes the view', async () => {
