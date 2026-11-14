@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.16] - 2026-11-14
+
+- **The label comes from the product's dictionary service.** The window half now contributes
+  `ctx.locale.register('dsh-cleaner', { en, zh })` and reads it back with `ctx.locale.bind`, instead of
+  guessing the language from `getLocale().active` and hard-coding two literals. Any language we do not
+  translate now lands on `en` through the product's own fallback chain, and the guess is gone.
+- **[docs/seams.md](docs/seams.md)**: every seam this plugin uses, everything it owns because no seam exists,
+  and the risks it accepts with the reason — written so the next change starts from the map instead of from
+  memory. The audit found no other bespoke path: the tools, the command, the menu row, the shortcut, the
+  archive/detach, the busy check and the window half's report all run through product interfaces.
+
 ## [0.2.15] - 2026-11-14
 
 - **The window half now says what it managed to do, and a listing prints it.** A browser half that loads but

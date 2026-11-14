@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.2.15。
+- 当前版本：v0.2.16。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -320,6 +320,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | 助手在这里要守什么规则？ | [AGENTS.md](AGENTS.md) |
+
 
 
 

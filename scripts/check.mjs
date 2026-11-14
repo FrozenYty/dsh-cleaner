@@ -266,6 +266,11 @@ const SINGLE_LANGUAGE_DOCS = new Map([
     'the maintainer-facing account of the mechanism; the user-facing translation is README-zh.md, and a '
     + 'second copy of the state matrix would be a second thing to keep in step',
   ],
+  [
+    'seams.md',
+    'an audit of product interfaces against this bundle, read while changing the code; the user-facing '
+    + 'account of the same surfaces is the README pair, and duplicating the table would drift',
+  ],
 ])
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
 const LATIN_WORD = /[A-Za-z]{4,}/

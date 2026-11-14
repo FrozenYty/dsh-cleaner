@@ -82,6 +82,8 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
   const registeredShortcuts = []
   const registrations = new Map()
   let pendingInject
+  // One dictionary registry per page, like the real service: `get` must hand back the same store each time.
+  const dictionaries = new Map()
   const shortcutService = () => ({
     register: (definition) => {
       registeredShortcuts.push(definition)
@@ -152,7 +154,23 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
         return shortcutService()
       }
       if (name === 'locale') {
-        return { getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }) }
+        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
+        // the product's own fallback (an untranslated language lands on `en`).
+        return {
+          register: (ns, dicts) => {
+            dictionaries.set(ns, dicts)
+            return () => dictionaries.delete(ns)
+          },
+          bind: (ns) => (key) => {
+            const chain = [String(locale ?? 'en').slice(0, 2).toLowerCase(), 'en']
+            for (const language of chain) {
+              const value = dictionaries.get(ns)?.[language]?.[key]
+              if (typeof value === 'string') return value
+            }
+            return key
+          },
+          getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }),
+        }
       }
       return undefined
     },
