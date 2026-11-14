@@ -8,8 +8,8 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { mkdir, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
+import { existsSync, rmSync } from 'node:fs'
+import { chmod, mkdir, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, beforeEach, test } from 'node:test'
@@ -606,6 +606,31 @@ test('a removal that fails gives the archive state back', {
   } finally {
     await chmod(dir, 0o755)
   }
+})
+
+test('a candidate that vanishes before the sweep gets its archive state back too', async () => {
+  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-1')
+  const registry = {
+    archivedSessionIds: [],
+    list: () => [{ sessionIds: ['session-archived-1'], async detachSession() {} }],
+    async archiveSession(id) {
+      // A test cannot stage something between the plan and the sweep, but the archive call runs before the
+      // sweep, so that is the moment to make the log disappear — the same end state a racing deletion leaves.
+      rmSync(dir, { recursive: true, force: true })
+      this.archivedSessionIds = [...this.archivedSessionIds, id]
+    },
+    async unarchiveSession(id) {
+      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
+    },
+  }
+  const tools = install({ workspaces: registry })
+
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
+  assert.equal(value.removed_count, 0)
+  assert.deepEqual(value.refused, [{ id: 'session-archived-1', reason: 'already deleted; nothing to remove' }])
+  assert.deepEqual(value.workspace.archived, [], 'nothing stays hidden for a session that was not removed here')
+  assert.deepEqual(value.workspace.restored, ['session-archived-1'])
+  assert.deepEqual(registry.archivedSessionIds, [])
 })
 
 test('a call without a calling Agent, or with no ids, is rejected before anything is touched', async () => {
