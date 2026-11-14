@@ -7,6 +7,18 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.14] - 2026-11-14
+
+- **The shortcut waits for its service, which is why the keycap was missing.** Registering it read
+  `ctx.get('shortcuts')` once while the browser half loaded; a client service that mounts after this plugin
+  is simply not there yet, so the registration was skipped **silently** — the row and the pruning kept
+  working, the catalogue never held the id, and the hint therefore had nothing to print. The registration
+  now goes through `ctx.inject(['shortcuts'], …)` (the Core API the host half already uses for the command
+  registry), so it lands whenever the service arrives, and it is disposed with the plugin. A Context without
+  `inject` falls back to the one-shot lookup and says so on the console instead of staying quiet.
+- The fake page in the tests grew the two states that matter: a service that mounts late (the binding is
+  delivered when it does) and a catalogue that is unreadable (the hint is withheld, nothing throws).
+
 ## [0.2.13] - 2026-11-14
 
 - **The keycap prints beside the label.** `commandId` is set — but only when the shortcut catalogue really

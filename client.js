@@ -229,31 +229,38 @@ window.__ModuleLoader__.load({
          *
          * Registered with the product's own default table, so the binding appears in the shortcut settings
          * and is remappable there — a global key listener would have been invisible and unconfigurable.
-         * Isolated like every contribution: a registry that refuses this definition costs the key, never the
-         * row or the view pruning.
+         *
+         * The registration **waits for the service** instead of reading `ctx.get('shortcuts')` once while this
+         * half loads: that is the same trap the host half had, and it is how the keycap went missing while the
+         * row and everything else kept working — a client service that mounts after this plugin is simply not
+         * there yet, the registration is skipped, and nothing says so. `ctx.inject` holds the callback until
+         * the service exists, and the child scope is disposed with this plugin.
          */
-        const registerShortcut = () => {
-          const shortcuts = ctx.get('shortcuts')
-          if (shortcuts === undefined || typeof shortcuts.register !== 'function') return undefined
+        const registerShortcut = (scope) => {
           const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
-          return shortcuts.register({
-            id: SHORTCUT_ID,
-            label,
-            aliases: ['delete session'],
-            defaults: {
-              'desktop:macos': binding,
-              'desktop:windows': binding,
-              'desktop:linux': binding,
-              'web:macos': binding,
-              'web:windows': binding,
-              'web:linux': binding,
-            },
-            resolve: () => {
-              const sessionId = currentSessionId()
-              if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
-              return { status: 'handled', run: () => runClean(sessionId) }
-            },
-          })
+          try {
+            scope.effect(() => scope.shortcuts.register({
+              id: SHORTCUT_ID,
+              label,
+              aliases: ['delete session'],
+              defaults: {
+                'desktop:macos': binding,
+                'desktop:windows': binding,
+                'desktop:linux': binding,
+                'web:macos': binding,
+                'web:windows': binding,
+                'web:linux': binding,
+              },
+              resolve: () => {
+                const sessionId = currentSessionId()
+                if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
+                return { status: 'handled', run: () => runClean(sessionId) }
+              },
+            }))
+          } catch (error) {
+            // Isolated like every contribution: a registry that refuses this definition costs the key only.
+            console.error('dsh-cleaner: the shortcut was refused', error)
+          }
         }
 
         return ctx.effect(() => {
@@ -265,25 +272,22 @@ window.__ModuleLoader__.load({
           // must cost that one thing, never the rest. The rule was learned the hard way — a contribution the
           // popup could not render took every session's menu down with it once.
           let unregisterMenu
-          let unregisterShortcut
           try {
             unregisterMenu = registerMenu()
           } catch (error) {
             console.error('dsh-cleaner: the session menu row was refused', error)
           }
-          try {
-            unregisterShortcut = registerShortcut()
-          } catch (error) {
-            console.error('dsh-cleaner: the shortcut was refused', error)
-          }
+          // The key waits for its service, so it is registered through `inject` (disposed with this plugin);
+          // the fallback is for a Context without that Core API, where the service must already be there.
+          if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
+          else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
+          else console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
           return () => {
             window.removeEventListener('focus', onFocus)
-            for (const unregister of [unregisterMenu, unregisterShortcut]) {
-              try {
-                unregister?.()
-              } catch {
-                // A disposer that throws must not stop the rest of the cleanup.
-              }
+            try {
+              unregisterMenu?.()
+            } catch {
+              // A disposer that throws must not stop the rest of the cleanup.
             }
           }
         })
