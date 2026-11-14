@@ -7,6 +7,19 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.11] - 2026-11-14
+
+- **The human command now registers even when the command registry mounts after this bundle.** The
+  registration read `ctx.get('commands')` once while the plugin loaded; when the registry was not up yet the
+  lookup returned nothing and the command was skipped **silently**, which is how the sidebar row ended up
+  running a command the host had never heard of: the row appeared, the click did nothing, and nothing said
+  why. The registration now waits for the service (`ctx.inject(['commands'], …)`) and its disposal still
+  removes the command with the plugin.
+- **Every listing reports whether the command is registered.** `human_command` in the value and one line in
+  the rendered text (`Human command: /clean — registered`), because that fact lives in a registry rather than
+  on disk and it is the difference between a row that deletes and a row that does nothing. This is the
+  diagnostic that would have found the bug in one call.
+
 ## [0.2.10] - 2026-11-14
 
 - **The guard is gone, and the row asks the host nothing.** Three releases tried to answer "does the host

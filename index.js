@@ -265,6 +265,7 @@ function listIds(ids) {
  */
 function listLogs(ctx, exec) {
   return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
+    .then((plan) => ({ ...plan, human_command: humanCommand }))
 }
 
 /**
@@ -342,6 +343,9 @@ function renderList(value) {
   lines.push(
     `The session store holds ${value.stored_sessions} directories, ${formatBytes(value.stored_bytes)} in all.`,
   )
+  // The one fact about this plugin that lives in a registry rather than on disk, and the one that failed
+  // silently once: whether the human command is actually registered in the profile that is running.
+  lines.push(`Human command: /clean — ${value.human_command}`)
   for (const candidate of value.candidates) {
     lines.push(
       `  ${title(candidate)}${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
@@ -436,7 +440,7 @@ const LIST_VALUE = {
   type: 'object',
   required: [
     'sessions_root', 'workspace_file', 'archived_ids', 'stored_sessions', 'stored_bytes', 'candidates',
-    'total_bytes', 'already_gone', 'protected', 'skipped', 'requested',
+    'total_bytes', 'already_gone', 'protected', 'skipped', 'requested', 'human_command',
   ],
   properties: {
     sessions_root: { type: 'string' },
@@ -450,6 +454,7 @@ const LIST_VALUE = {
     protected: { type: 'array', items: { type: 'object' } },
     skipped: { type: 'array', items: { type: 'object' } },
     requested: { type: 'array', items: { type: 'object' } },
+    human_command: { type: 'string' },
   },
 }
 
@@ -521,26 +526,55 @@ export function apply(ctx) {
   // handler and the tool above both end in the same function, so a person who types the command and a model
   // that calls the tool cannot drift apart. The command runs *without* the model: `execute` resolves it and
   // no turn is started, which is what makes a deletion possible with zero tokens spent on deciding.
-  const commands = ctx.get('commands')
-  if (commands !== undefined && typeof commands.register === 'function') {
-    ctx.effect(() => commands.register({
-      name: 'clean',
-      description: 'List the sessions whose logs are on disk, or delete the ones you name.',
-      input: { hint: 'no input lists every log; ids (space or comma separated) delete them' },
-      handler: async ({ agent, rawInput }) => {
-        const exec = { agent }
-        if (agent === undefined) {
-          return { kind: 'error', text: 'clean needs the Session it was run from: without one the running session cannot be protected' }
-        }
-        const named = rawInput.split(/[\s,]+/).map((token) => token.trim()).filter((token) => token.length > 0)
-        if (named.length === 0) {
-          const listing = await listLogs(ctx, exec)
-          // No tool to call from here, so the one line the listing cannot say itself: how to act on it.
-          return { kind: 'success', text: `${renderList(listing)}\n\nName the ids to delete: /clean <id> <id> …` }
-        }
-        const report = await deleteLogs(ctx, exec, named)
-        return { kind: 'success', text: renderDelete(report) }
-      },
-    }))
+  //
+  // The registration **waits for the registry** instead of reading `ctx.get('commands')` once while this
+  // bundle loads: the registry may mount after us, and a miss there is silent — which cost a whole debugging
+  // session, because the row in the sidebar then ran a command the host had never heard of. `ctx.inject`
+  // holds the callback until the service exists, and its disposal removes the command with this plugin.
+  const registerCommand = (scope, commands) => {
+    try {
+      scope.effect(() => commands.register(CLEAN_COMMAND(ctx)))
+      humanCommand = 'registered'
+    } catch (error) {
+      humanCommand = `not registered (${error instanceof Error ? error.message : String(error)})`
+    }
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['commands'], (scope) => registerCommand(scope, scope.commands))
+  else {
+    // An older Context without `inject`: try the one-shot lookup, and let the listing say what happened.
+    const commands = ctx.get('commands')
+    if (commands === undefined || typeof commands.register !== 'function') humanCommand = 'not registered (no command registry)'
+    else registerCommand(ctx, commands)
+  }
+}
+
+/**
+ * Whether the human command is registered in the running profile — the one fact a person cannot see on disk.
+ *
+ * Reported in every listing on purpose: it is the difference between a sidebar row that deletes and a row
+ * that does nothing, and the answer belongs where a person already looks.
+ */
+let humanCommand = 'not registered yet'
+
+/** The `/clean` definition, kept beside the registration so the two cannot drift. */
+function CLEAN_COMMAND(ctx) {
+  return {
+    name: 'clean',
+    description: 'List the sessions whose logs are on disk, or delete the ones you name.',
+    input: { hint: 'no input lists every log; ids (space or comma separated) delete them' },
+    handler: async ({ agent, rawInput }) => {
+      const exec = { agent }
+      if (agent === undefined) {
+        return { kind: 'error', text: 'clean needs the Session it was run from: without one the running session cannot be protected' }
+      }
+      const named = rawInput.split(/[\s,]+/).map((token) => token.trim()).filter((token) => token.length > 0)
+      if (named.length === 0) {
+        const listing = await listLogs(ctx, exec)
+        // No tool to call from here, so the one line the listing cannot say itself: how to act on it.
+        return { kind: 'success', text: `${renderList(listing)}\n\nName the ids to delete: /clean <id> <id> …` }
+      }
+      const report = await deleteLogs(ctx, exec, named)
+      return { kind: 'success', text: renderDelete(report) }
+    },
   }
 }
