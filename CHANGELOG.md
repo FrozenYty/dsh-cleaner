@@ -7,6 +7,13 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.6] - 2026-11-14
+
+- **The row is neutral, not red.** `danger` is gone: the label and the trash glyph already say what the row
+  does, and a red row among neutral ones pulls the eye towards the one action that cannot be undone. It also
+  keeps the row visually identical to its neighbours, which is what was asked for in the first place. The
+  product still colours *its own* destructive row red; this bundle simply does not ask for it.
+
 ## [0.2.5] - 2026-11-14
 
 - **The Ctrl+Shift+D shortcut is withdrawn**, and the session menu works again. Declaring it in the shortcut

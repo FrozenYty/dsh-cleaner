@@ -72,11 +72,14 @@ from the product's own vocabulary rather than from taste:
   归档会话 — instead of before them. A destructive row adjacent to the action people use most is a
   mis-click waiting to happen, and `order` cannot express this: it only sorts contributions against each
   other.
-- **`danger: true`** for the product's red, and **`icon: { key: 'workspace.delete' }`** for the trash glyph
-  the workspace plugin already registers in the shared `contextMenu.icon` slot. Borrowing that key is
-  deliberate: re-drawing the glyph here would be a guess at the neighbours' stroke, size and colour, and
-  this bundle cannot resolve `@deepseek-ai/dsh-client-ui-primitives` to import the real one. If that plugin
-  is ever absent the key resolves to nothing and the row loses its icon rather than failing.
+- **`danger: true`**, then not. It was set because the product colours its own destructive rows red and this
+  row deletes something for good. It was removed on request: among neutral rows, red pulls the eye towards
+  the one action that cannot be undone, and the label plus the trash glyph already carry the meaning. The
+  icon key stays — the workspace plugin's own trash glyph, registered in the shared `contextMenu.icon` slot.
+  Borrowing that key is deliberate: re-drawing the glyph here would be a guess at the neighbours' stroke,
+  size and colour, and this bundle cannot resolve `@deepseek-ai/dsh-client-ui-primitives` to import the real
+  one. If that plugin is ever absent the key resolves to nothing and the row loses its icon rather than
+  failing.
 
 Two facts are only true in a running window, and the half treats both as optional: whether the menus
 service is reachable from a dynamic client half, and what the click may call. If either is absent the row

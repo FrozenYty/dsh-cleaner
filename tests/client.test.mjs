@@ -283,10 +283,9 @@ test('a session menu item runs the command for that session, and nothing else', 
   const [item] = await entry.resolve({ sessionId: 'session-archived-1' })
   assert.equal(item.label, 'Delete session', 'the label follows the window language')
   assert.equal(typeof item.run, 'function')
-  // Presentation, in the product's own vocabulary: red, last in the menu, with the trash glyph the
-  // workspace plugin already registered in the shared icon slot, and tied to the shortcut below so the keys
-  // print beside the label.
-  assert.equal(item.danger, true)
+  // Presentation: neutral like its neighbours (no `danger`), last in the menu, with the trash glyph the
+  // workspace plugin already registered in the shared icon slot.
+  assert.equal(item.danger, undefined, 'the row is not the product red: the label and the glyph say what it does')
   assert.equal(entry.order, 9000, 'after every session action the build registers, Archive (600) included')
   assert.equal(item.afterContent, undefined, 'the footer group renders before the component rows')
   assert.equal(item.icon.key, 'workspace.delete')
