@@ -15,11 +15,11 @@
  * two paths from DSH_HOME and passes them here; this file never reads the environment.
  *
  * WHAT IT WILL NOT DO
- * - It never touches a session that is not listed in `global.archivedSessionIds` of the workspace
- *   file, and it re-reads that list at deletion time, so a session restored between the listing and
- *   the deletion is kept.
- * - It never touches an id the caller protects — the Session running the command, or one a live
- *   agent holds.
+ * - It never touches a session the store does not hold, and it re-checks every candidate against the live
+ *   filesystem at deletion time: the directory must still be a real directory, still encode this id, and
+ *   still resolve inside the storage root.
+ * - It never touches an id the caller protects — the Session running the command, or one whose agent is
+ *   busy.
  * - It never follows a link. Symlinked project and session directories are skipped by the walk, a
  *   session directory holding anything but regular files is refused rather than removed, every
  *   candidate is resolved under the storage root before a byte is unlinked, and files are unlinked
@@ -61,6 +61,23 @@ export function encodeSegment(raw) {
     else out += `~${code.toString(16).toUpperCase().padStart(4, '0')}`
   }
   return out
+}
+
+/**
+ * The inverse of {@link encodeSegment}: the id an escaped directory name came from.
+ *
+ * The escape is injective — a safe unit stays literal and every other unit becomes `~XXXX`, `~` included
+ * — so the directory name is a complete record of the id, and the store can be enumerated without an
+ * archive list or any other index. A name that is not a valid escape cannot come from this backend, and
+ * the caller keeps it as it stands.
+ * @param encoded - one directory name under a project key.
+ * @returns the session id it encodes.
+ */
+export function decodeSegment(encoded) {
+  if (typeof encoded !== 'string' || encoded.length === 0) {
+    throw new Error('an encoded session id must be a non-empty string')
+  }
+  return encoded.replace(/~([0-9A-F]{4})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
 }
 
 /**
@@ -282,28 +299,38 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
   }
 
   const archived = await readArchivedIds(workspaceFile)
+  const archivedSet = new Set(archived)
   const { stored, skipped, refused, refusedBytes } = await scanStoredSessions(sessionsRoot)
   const requested = new Set(only ?? [])
   const candidates = []
   const alreadyGone = []
   const protectedSessions = []
 
-  for (const id of archived) {
+  // The store is the index: every session whose log is on disk is a candidate, archived or not. Archiving
+  // is the product's way to hide a session, not this plugin's precondition, and requiring it was what made
+  // a deletion take two surfaces and produce a class of refusals nobody could act on.
+  for (const [encoded, entry] of stored) {
+    const id = decodeSegment(encoded)
     if (requested.size > 0 && !requested.has(id)) continue
-    const encoded = encodeSegment(id)
-    const entry = stored.get(encoded)
-    if (entry === undefined) {
-      // Not a candidate. "Already gone" is a claim about the disk, so a directory that exists but was
-      // refused — unreadable, or holding something this plugin will not touch — is not gone at all; the
-      // skipped list already names it, and claiming the log had been deleted would be a lie.
-      if (!refused.has(encoded)) alreadyGone.push(id)
-      continue
-    }
     if (protectedReason.has(id)) {
       protectedSessions.push({ id, path: entry.dir, bytes: entry.bytes, reason: protectedReason.get(id) })
       continue
     }
-    candidates.push({ id, path: entry.dir, bytes: entry.bytes, files: entry.files, modified: entry.modified })
+    candidates.push({
+      id,
+      path: entry.dir,
+      bytes: entry.bytes,
+      files: entry.files,
+      modified: entry.modified,
+      archived: archivedSet.has(id),
+    })
+  }
+  // An archived id with no directory is worth saying out loud even when nothing was asked for: it is the
+  // one state a person cannot see on disk, and it is what an earlier deletion leaves in the archive list.
+  for (const id of archived) {
+    if (requested.size > 0 && !requested.has(id)) continue
+    const encoded = encodeSegment(id)
+    if (!stored.has(encoded) && !refused.has(encoded)) alreadyGone.push(id)
   }
 
   // A title only for what a person is about to decide about, and only when one could be read: the
@@ -315,9 +342,8 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
     }
   }
 
-  // Every id the caller asked for must be accounted for, with a reason a person can act on. "Not
-  // archived" covers two different situations worth telling apart: the session exists and only needs
-  // archiving, or nothing is stored under that id at all.
+  // Every id the caller asked for must be accounted for, with a reason a person can act on: it is
+  // protected, its directory was refused, or nothing is stored under it at all.
   const requestedReport = []
   const unlogged = []
   if (requested.size > 0) {
@@ -328,18 +354,11 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
       // and a record somewhere may still name it. That is the set the caller can have a ghost row for.
       if (!stored.has(encoded)) unlogged.push(id)
       let reason
-      if (!archived.includes(id)) {
-        reason = stored.has(encoded)
-          ? 'not an archived session; archive it first to make it a candidate'
-          : 'not an archived session, and no log is stored under that id'
-      } else if (!stored.has(encoded)) {
-        reason = refused.has(encoded)
-          ? `archived, but its directory is not a candidate: ${refused.get(encoded)}`
-          : 'archived, but no session directory is stored; already deleted'
-      } else {
-        // Archived, stored and skipped above: protection is the only reason left.
-        reason = protectedReason.get(id) ?? 'protected'
-      }
+      if (protectedReason.has(id)) reason = protectedReason.get(id)
+      else if (refused.has(encoded)) reason = `its directory is not a candidate: ${refused.get(encoded)}`
+      else reason = archivedSet.has(id)
+        ? 'no session directory is stored under that id; already deleted'
+        : 'no session directory is stored under that id'
       requestedReport.push({ id, reason })
     }
   }
@@ -381,7 +400,6 @@ export async function applyCleanup(plan) {
   if (typeof plan.sessions_root !== 'string' || typeof plan.workspace_file !== 'string') {
     throw new Error('applyCleanup: the plan must name its session storage root and workspace storage file')
   }
-  const archived = new Set(await readArchivedIds(plan.workspace_file))
   let root
   try {
     root = await realpath(plan.sessions_root)
@@ -394,7 +412,7 @@ export async function applyCleanup(plan) {
   const refused = []
   let removedBytes = 0
   for (const candidate of plan.candidates) {
-    const outcome = await removeCandidate(candidate, root, archived)
+    const outcome = await removeCandidate(candidate, root)
     if (outcome.kind === 'removed') {
       const entry = { id: outcome.id, path: outcome.path, files: outcome.files, bytes: outcome.bytes }
       // The receipt names what was deleted the way the listing did, so a person can confirm the ids were
@@ -417,16 +435,14 @@ export async function applyCleanup(plan) {
  * beside the candidates that did work, and an interrupted deletion is still described truthfully.
  * @param candidate - one entry of `plan.candidates`.
  * @param root - the resolved session storage root.
- * @param archived - the archive list, re-read at deletion time.
  * @returns `{ kind: 'removed'|'refused'|'failed', ... }`.
  */
-async function removeCandidate(candidate, root, archived) {
+async function removeCandidate(candidate, root) {
   const id = candidate?.id
   const path = candidate?.path
   if (typeof id !== 'string' || typeof path !== 'string') {
     return { kind: 'refused', id: String(id), reason: 'the plan entry has no usable id or path' }
   }
-  if (!archived.has(id)) return { kind: 'refused', id, reason: 'no longer archived' }
   // The id and the path have to describe the same session, or the report names the wrong one. Inside a
   // plan this file produced they always agree, because the scan looks the directory up by the encoded
   // id; the check is here so that a plan is held to it too.

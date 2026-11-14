@@ -8,19 +8,19 @@
 ![build step](https://img.shields.io/badge/build-none-brightgreen)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 
-> 只删归档，不碰在用。
+> 只删日志，不碰在用。
 
-一个 DeepSeek Harness 的 profile bundle，补上产品本身不做的那件事：把已归档会话的日志从磁盘上真正删掉。
-它列出还在占地方的东西，等人做决定，只删被点名的那几个 id，并报告回收了多少字节。没有定时器，没有
-“多久没动就删”的阈值，没有后台清扫。
+一个 DeepSeek Harness 的 profile bundle，补上产品本身不做的那件事：把会话的日志从磁盘上真正删掉。它列出还在占
+地方的东西，等人做决定，只删被点名的那几个 id，并报告回收了多少字节。没有定时器，没有“多久没动就删”的阈值，
+没有后台清扫，**也不需要先归档**——归档只是侧边栏把会话藏起来的方式，不是删除它的许可证。
 
 [github.com/FrozenYty/dsh-cleaner](https://github.com/FrozenYty/dsh-cleaner)
 
 ## 状态
 
-- 当前版本：v0.1.0。
+- 当前版本：v0.2.0。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
-  `list_archived_sessions` 列出 6 个已归档日志，`delete_archived_sessions` 只删掉这 6 个目录——回收
+  `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
   候选、6 个全部报成 already gone；独立清点目录也一致：删前 36 个会话目录，删后 30 个，正在跑的会话没被动。
 - **用宿主自己的 schema 校验器验过**（从已安装的 `0.2.2-rc.1` asar 里取出）：两个输出 schema 通过
@@ -48,16 +48,16 @@ session files”。这个 bundle 就是那次外部清理，它只守一条规�
 
 | 步骤 | 工具 | 做什么 |
 |---|---|---|
-| 列出 | `list_archived_sessions` | 列出日志还在磁盘上的已归档会话，以及各自占多少字节。没有参数、没有副作用——调它永远不会是个错误。 |
+| 列出 | `list_session_logs` | 列出日志还在磁盘上的会话，各自占多少字节、几个文件、最后写入时间，以及是否已归档。没有参数、没有副作用——调它永远不会是个错误。 |
 | 确认 | — | 人看清单、批准 id。这一步什么都不会发生。 |
-| 删除 | `delete_archived_sessions` | 只接受点名给出的 id，删掉这些会话目录，报告回收的字节。 |
+| 删除 | `delete_session_logs` | 只接受点名给出的 id，删掉这些会话目录，报告回收的字节。 |
 
-`delete_archived_sessions` 必须逐个点名 id，所以默认什么都删不了，也就可以只批准其中几个。下面这些情况它
-会**拒绝并汇报**，而不是让整次调用失败：
+`delete_session_logs` 必须逐个点名 id，所以默认什么都删不了，也就可以只批准其中几个。已归档和未归档的会话
+都能删；它会**拒绝并汇报**的，只有下面这些：
 
-- 没归档的会话，以及已归档但磁盘上已经没有目录的会话；
-- 正在执行命令的这个会话，以及任何被活着的 agent 占着的会话；
-- 列表给你看过之后又被取消归档的会话——归档表在删除那一刻重读，不沿用列表时的快照。
+- 正在执行命令的这个会话，以及任何 agent 正**忙**着的会话（拒绝里会写明状态）；
+- 磁盘上已经没有目录的 id；
+- 本插件不肯碰的会话目录：一个链接，或者里面不只有普通文件。
 
 ## 安装
 
@@ -81,7 +81,7 @@ dsh plugin --profile web add ~/code/dsh-cleaner
 时的那份代码。**卸载**是 `plugin_manager` 的 `remove_bundle`，CLI 管的 profile 用
 `dsh plugin --profile <name> remove dsh-cleaner`；clone、存储、以及已经删掉的东西都不受影响。
 
-装好之后，插件列表里那张卡的标题是**清理**、描述是`只删归档，不碰在用。`——卡片在、开关是开的，就说明
+装好之后，插件列表里那张卡的标题是**清理**、描述是`只删日志，不碰在用。`——卡片在、开关是开的，就说明
 bundle 加载成功了。
 
 ## 第一次使用
@@ -89,31 +89,33 @@ bundle 加载成功了。
 没有界面要打开：正常说话，模型去调工具。下面这段来自[状态](#状态)里记录的那次真实运行：
 
 ```
-> 还有哪些已归档会话在占地方？
+> 还有哪些会话在占地方？
 
-list_archived_sessions {}
-← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
+list_session_logs {}
+← Session logs on disk: 6, 4169349 bytes (3.98 MiB) (6 of them archived).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
-    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
-    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  archived  last write 2026-11-02T07:39:15.053Z
+    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  archived  last write 2026-11-03T02:14:07.060Z
     …
-  Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
-  they approve.
+  Nothing was deleted. Show this list to the person and call delete_session_logs with the ids
+  they approve — archived or not.
 
 > 清单上那六个，全删。
 
-delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
+delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.
+  The workspace records dropped them (6 detached, 6 unarchived).
   The session persistence backend no longer lists any of them.
 ```
 
 ## 它绝不做什么
 
-- 绝不碰未归档的会话。它能删的 id 只来自 workspace 存储文件里的 `global.archivedSessionIds`，而且引擎
-  只查这些 id——未归档的会话不是被“过滤掉”，而是从构造上就不会成为候选。
-- 绝不碰正在执行命令的这个会话，也不碰任何被活着的 agent 占着的会话。
+- 绝不碰正在执行命令的这个会话，也不碰任何 agent 正**忙**着的会话——拒绝里会写明状态，这样“等它干完”和
+  “插件因为看不见的原因拒绝了”能分得清。宿主只是把 agent 留在内存里（闲置），不构成阻塞
+  （[ADR 0008](docs/adr/0008-busy-not-resident.md)）。
+- 绝不删没人点名过的东西。存储本身就是索引——日志还在磁盘上的会话都是候选，归档与否都一样——而删除工具
+  拿到的 id，永远来自清单打印出来的那一份。
 - 绝不跟随链接。项目目录或会话目录是符号链接/目录联接时，只报告、不进入；会话目录里只要有不是普通文件的
   东西，就整个拒绝并说明原因；每个候选在删第一个字节之前都要 `realpath` 到存储根之内；文件是逐个
   `unlink` 的，不把整棵树交给递归删除。
@@ -127,7 +129,8 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
 - `<DSH_HOME>/sessions/<project-key>/<session-id>/` —— 会话自己的目录，布局来自
   `dsh-session-persistence-jsonl`（里面是 `session.vN.jsonl.zstd` 各代）。目录名是后端对 id 的转义，
   在 `engine.js` 里照抄了一份；目录里的每一代都属于同一个会话，一起删。
-- `<DSH_HOME>/storages/workspace.json` —— 只读，用来看 `global.archivedSessionIds`。
+- `<DSH_HOME>/storages/workspace.json` —— 只读，用来看 `global.archivedSessionIds`：清单里那个“是否已
+  归档”的标记，以及更早的删除可能留下的 id。它不是门槛——没有归档记录的会话，照样是候选。
 - `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` —— 只读，只为一行：会话标题。它显示在 id
   旁边，好让一串 id 能对上你记得名字的那些会话。文件缺失、版本更旧或读不出来，只损失标题，别的都不受影响。
 
@@ -156,8 +159,8 @@ already gone。项目里的会话列表也不是插件写的：它**请** regist
 - **没有定时、没有保留策略、没有大小上限。** 删不删是决定，不是规则。
 - **证明不了“人批准过这份清单”。** id 让被批准的集合在对话里明确可见，各条拒绝规则也把损害限制住了，
   但模型仍然可以点一个没人看过的 id。见 [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md)。
-- **不修日志。** 会话已归档但日志损坏、读不出来，照样会被删：本插件是清理的最后一条路，所以不能依赖日志
-  可解析。
+- **不修日志。** 日志损坏、读不出来，只要会话被点名，照样会被删：本插件是清理的最后一条路，所以不能依赖
+  日志可解析。
 
 ## 它的位置
 
@@ -167,27 +170,28 @@ already gone。项目里的会话列表也不是插件写的：它**请** regist
 | | 本插件 | `dsh-session-cleaner` | 手工删 |
 |---|---|---|---|
 | 出现在哪 | 两个模型侧工具 | Web 界面菜单项 + HTTP 路由 | 一个 shell |
-| 会删什么 | 只有已归档、且被人点名的 id | 任何没有挂 agent 的会话 | glob 匹配到什么就删什么 |
+| 会删什么 | 磁盘上任何会话日志，被人点名 | 任何没有挂 agent 的会话 | glob 匹配到什么就删什么 |
 | 正在跑的会话 | 按 id 永远拒绝 | agent 在跑时拒绝 | 不拒绝——glob 不认识它 |
 | 报告什么 | 候选、字节、最后写入、存储总量、逐 id 结果 | detach / workspace / 文件数 | 什么都不报 |
 | 是否写 workspace 记录 | 请 registry 摘掉刚删的会话，自己从不写这个文件 | 会，它把会话从记录里摘掉 | 不写 |
 | id 写错时 | 拒绝并说明原因 | 不适用——id 来自菜单 | 删错会话 |
 
-两者不是包含关系：`dsh-session-cleaner` 删的是“任何会话”并顺手清理 workspace 记录，这正是点菜单的人想要
-的；本插件只删已经藏起来的东西，而它的全部设计就是为了“删不掉别的”。
+两者不是包含关系：`dsh-session-cleaner` 从一个菜单项和一条 HTTP 路由进入，点一下就删；本插件的全部设计
+是为了“删不掉任何没在清单里出现过的东西”——而自 v0.2.0 起，未归档的会话也照样能删，所以“只删已经藏起来
+的”这条差别已经不存在了。
 
 ## 常见问题
 
 **归档错了，还能救回来吗？**
-在删之前都能。本插件从不写归档表，所以文件还在时取消归档照常有效；而在你看过清单之后又被取消归档的会话，
-删除那一步会点名拒绝它。
+在删之前都能。本插件从不写归档表，所以文件还在时取消归档照常有效。
 
 **harness 开着的时候能用吗？**
 能。它只读 workspace 文件、只 unlink 会话目录，不持有会话存储的任何句柄。正在执行命令的这个会话永远被
-拒绝，被活着的 agent 占着的会话也一样。删掉的会话可能在界面上留一行，直到运行时刷新——见上面的投影缓存。
+拒绝，agent 还在忙的会话也一样。删掉的会话可能在界面上留一行，直到运行时刷新——见上面的投影缓存。
 
 **没归档的会话会被删吗？**
-不会。候选集就是归档表，按 id 去查；未归档的会话根本不会被查到，而不是“查出来再过滤掉”。
+会。归档只是产品把会话藏起来的方式，不是本插件删除它的许可证：存储本身就是索引，所以未归档的会话也是候选，
+点名就能删。清单里会显示每个会话是否已归档，因为那决定了那一行是不是本来就已经藏起来了。
 
 **删掉之后还能恢复吗？**
 不能。每个会话目录是逐个文件 unlink 掉的，没有回收站可以还原：workspace 里的那条记录还在，记录背后的日志
@@ -213,13 +217,14 @@ already gone 的原因——第二次运行看到的就是这个状态。
 `dsh-cleaner`；两样都在而工具还是没有，就重启应用——一个窗口用的是它启动时那份插件清单。
 
 **清单是空的，但磁盘还是满的。**
-只有已归档的会话才会成为候选；清单会把整个存储的规模跟可回收字节放在一起报：候选 4 MiB、存储 90 MiB，
-说明剩下的是活着的会话、投影缓存和附件仓库——这三样本插件都不动。
+清单会把整个存储的规模跟它找到的东西放在一起报：什么都没列出来、存储 90 MiB，说明会话已经不在了，占地方的是
+本插件不动的两样——投影缓存和附件仓库。
 
 **拒绝理由看不懂。**
-有两条值得写清楚：`not an archived session; archive it first to make it a candidate`（日志还在，只是这个
-会话还没被藏起来）和 `archived, but no session directory is stored; already deleted`（同样的 id 又调了一次，
-或者这个会话在另一个窗口里已经被删）。
+理由只有这几条：`a live agent holds this session (status: …)`——它的活还在跑，等它干完；`no session
+directory is stored under that id`——同样的 id 又调了一次，或者这个会话在另一个窗口里已经被删；
+`its directory is not a candidate: …`——冒号后面写的是本插件不肯碰的那种形状（一个链接，或者目录里有不是
+普通文件的东西）。
 
 **删除结果里出现 `Partially removed`。**
 某个文件 unlink 不掉，通常是索引器或杀毒软件占着。答案会点名是哪个文件、已经释放了多少字节；目录还在，
@@ -229,13 +234,12 @@ already gone 的原因——第二次运行看到的就是这个状态。
 宿主只在启动时读 bundle：`git pull` 更新的是文件，正在运行的窗口用的还是它加载时的代码和语言包。重启。
 
 **删掉的会话还在侧边栏里。**
-把那个 id 在 `delete_archived_sessions` 里再点一次名。日志消失之后，有三处记录还能让它留在界面上：项目里的归属、
-归档集，以及窗口自己持久化的侧边栏视图。插件会请 registry 去掉前两处（答案里写 `The workspace records dropped
-them…`），同时告诉你宿主那份会话清单是否还记着它。第三处归窗口自己管，插件的浏览器半边会修：它把"视图里留着、
-但宿主已经不再列出"的 id 删掉，每次页面加载和窗口重新获得焦点时都做一次，所以**下一次页面加载时那一行就没了，
-你什么都不用点**。删除发生时已经打开的那个页面会保留自己那份副本，直到它再次加载——因为渲染进程已经拿在手里的
-视图，没有任何宿主事件能让它重画。想立刻清掉，就把侧边栏排序从"手动"切走再切回，或者拖动一个会话：客户端会用
-真实存在的成员重写这份视图。
+日志消失之后，有三处记录还能让它留在界面上：项目里的归属、归档集，以及窗口自己持久化的侧边栏视图。前两处插件
+会处理——答案里写了它做了什么——第三处归窗口自己管，插件的浏览器半边会修：它把“视图里留着、但宿主已经不再
+列出”的 id 删掉，每次页面加载和窗口重新获得焦点时都做一次，所以**下一次页面加载时那一行就没了，你什么都不用
+点**。有一种情况是说明而不是修好的：宿主仍握在内存里的会话，窗口就还会画出它那一行，任何插件都驱逐不了它，
+只能等宿主释放（重启一定会释放）；答案会在这种情况下直说（`the host still holds that session in memory`）。
+想立刻清掉这样一行，就把侧边栏排序从“手动”切走再切回，或者拖动一个会话。
 
 ## 兼容性
 
@@ -277,7 +281,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 }), null, 2)))"
 ```
 
-`planCleanup` 只读，任何时候跑都安全，也正是 `list_archived_sessions` 调的那个函数。它永远不删；
+`planCleanup` 只读，任何时候跑都安全，也正是 `list_session_logs` 调的那个函数。它永远不删；
 `applyCleanup` 是唯一会删的函数。
 
 ## 文档

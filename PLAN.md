@@ -19,17 +19,14 @@ Written after a night of live failures, which are the reason each item exists.
 
 ## P0 — one step, no archive dance
 
-1. **A session no longer has to be archived to be deletable.**
-   The candidate rule becomes: *the store holds a log for this id, no agent is busy with it, and the caller
-   named it.* Archiving stays what it is in the product — a way to hide a session — instead of a
-   precondition this plugin invented.
-   - Acceptance: a session that is **not** archived, named by id, with no busy agent, is deleted in one
-     call; the answer reports it and the bytes. The refusal `not an archived session; archive it first`
-     no longer exists.
-   - Files: `engine.js` (the plan's candidate rule and every reason that mentions archiving), `index.js`
-     (tool descriptions, the listing, the answer), both READMEs, `docs/design.md` §4, a new ADR 0010.
-   - Test that fails without it: a fixture session with a log and **no** archive entry must be a candidate
-     and must be deletable by name.
+1. **A session no longer has to be archived to be deletable.** — **done** (v0.2.0,
+   [ADR 0010](docs/adr/0010-no-archive-precondition.md)).
+   The store is the index: the engine enumerates session directories and decodes each name back to its id,
+   the archive file is read only to report, and the tools are renamed `list_session_logs` /
+   `delete_session_logs` because the old names had become a lie.
+   - Met: a session with no archive entry is a candidate and is deleted by name (engine test
+     *"archiving is not a gate"*, entry test *"an id that is already deleted is refused…"*).
+   - Met: `not an archived session; archive it first to make it a candidate` no longer exists anywhere.
 
 2. **A human command surface, so the model is optional.**
    The harness documents the shape: implement the operation once as a host service method, expose it as a
@@ -56,12 +53,12 @@ Written after a night of live failures, which are the reason each item exists.
 
 ## P1 — no surprises in the answer
 
-5. **The listing shows everything a decision needs, and every refusal is predictable from it.**
-   Each row already carries title, bytes, file count, last write, and the store total. Add the two facts
-   that decide a deletion: whether the session is archived, and whether an agent currently holds it (and
-   its status).
-   - Acceptance: every refusal the deleting tool can produce has its cause visible in the listing that
-     preceded it.
+5. **The listing shows everything a decision needs, and every refusal is predictable from it.** — **done**
+   for the two facts that decide a deletion: each row carries its archive state, and every session the
+   plugin will keep is printed with the reason it is kept (`Kept, protected: <id> — <reason>`), including a
+   busy agent's status.
+   - Met: every refusal the deleting tool can produce has its cause visible in the listing that preceded
+     it — protected (with reason), refused directory (with reason), or not on disk at all.
 
 6. **A UI affordance for the same operation**, if the slot system allows it cheaply: the browser half
    registers an item on a session's context menu that runs the command of item 2 through
@@ -81,3 +78,6 @@ Written after a night of live failures, which are the reason each item exists.
 1 (the rule) → 3 (the row, proven live) → 5 (the listing) → 2 (the command) → 6 (the menu) → 4 (the browser
 half's live proof, which can happen at any point). Every item lands with its test, its document and its
 entry in `CHANGELOG.md`, on a branch, with the six CI legs green — the same way everything tonight landed.
+
+Items 1 and 5 landed in v0.2.0. Item 4 needs one page load in the real window; item 3 needs one deletion of
+a session the host has let go.

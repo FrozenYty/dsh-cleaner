@@ -1,5 +1,5 @@
 /**
- * dsh-cleaner — permanently delete the logs of archived sessions, on request.
+ * dsh-cleaner — permanently delete the logs of sessions, on request.
  *
  * THE CONTRACT
  * An archive is not a deletion: it hides the session and touches nothing. This plugin is the removal,
@@ -7,11 +7,13 @@
  * and reports the bytes reclaimed. There is no timer, no interval, no age threshold and no background
  * sweep anywhere in this file or in the engine — a schedule is a policy about the future, and the rule
  * here is that deletion is an act somebody asked for. The listing tool cannot delete; the deleting tool
- * cannot invent an id, because every id in its argument came from the listing.
+ * cannot invent an id, because every id in its argument came from the listing. Archiving is not a
+ * precondition: the store is the index, and what protects a session is that it is running, that an agent
+ * is busy with it, or that nobody named it.
  *
  * TWO TOOLS, NOT TWO MODES OF ONE
- * `list_archived_sessions` has no side effect and no required argument, so calling it can never be a
- * mistake. `delete_archived_sessions` requires the ids by name, so nothing is ever deleted by
+ * `list_session_logs` has no side effect and no required argument, so calling it can never be a
+ * mistake. `delete_session_logs` requires the ids by name, so nothing is ever deleted by
  * default and a person can approve a subset. The confirmation is the conversational step between
  * them; the description of each tool says so, because that is the only place the model reads it.
  *
@@ -22,7 +24,7 @@
  * repeated by the JSONL backend as "Nothing deletes session files". So this plugin *is* the
  * out-of-band maintenance: it removes whole session directories and never opens a handle, never
  * reads an event and never rewrites a line. The seam is still used, after the fact and only for
- * verification: `delete_archived_sessions` asks the mounted backend whether it still lists the ids it
+ * verification: `delete_session_logs` asks the mounted backend whether it still lists the ids it
  * just removed, and reports the answer. That check can fail without failing the deletion, because by
  * then the work is done.
  *
@@ -236,9 +238,9 @@ function renderList(value) {
   const lines = []
   lines.push(
     value.candidates.length === 0
-      ? 'No archived session log is on disk: there is nothing to delete.'
-      : `Archived session logs on disk: ${value.candidates.length} of ${value.archived_ids} archived ids, `
-        + `${formatBytes(value.total_bytes)}.`,
+      ? 'No session log is on disk: there is nothing to delete.'
+      : `Session logs on disk: ${value.candidates.length}, ${formatBytes(value.total_bytes)}`
+        + ` (${value.candidates.filter((candidate) => candidate.archived).length} of them archived).`,
   )
   lines.push(
     `The session store holds ${value.stored_sessions} directories, ${formatBytes(value.stored_bytes)} in all.`,
@@ -246,6 +248,7 @@ function renderList(value) {
   for (const candidate of value.candidates) {
     lines.push(
       `  ${title(candidate)}${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
+      + `${candidate.archived ? 'archived' : 'not archived'}  `
       + `last write ${candidate.modified ?? 'unknown'}  ${candidate.path}`,
     )
   }
@@ -263,8 +266,8 @@ function renderList(value) {
   // tool with approved ids, on an answer that listed none, is how a wasted call gets made.
   if (value.candidates.length > 0) {
     lines.push(
-      'Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids '
-      + 'they approve.',
+      'Nothing was deleted. Show this list to the person and call delete_session_logs with the ids '
+      + 'they approve — archived or not.',
     )
   }
   return lines.join('\n')
@@ -275,7 +278,7 @@ function renderDelete(value) {
   const lines = []
   lines.push(
     value.removed.length === 0
-      ? 'Deleted nothing: no archived session log on disk matched the ids given.'
+      ? 'Deleted nothing: no session log on disk matched the ids given.'
       : `Deleted ${directories(value.removed.length)}: ${formatBytes(value.removed_bytes)} reclaimed.`,
   )
   for (const entry of value.removed) {
@@ -376,12 +379,13 @@ const DELETE_VALUE = {
 
 export function apply(ctx) {
   ctx.tools.register(defineTool({
-    name: 'list_archived_sessions',
+    name: 'list_session_logs',
     description:
-      'List the archived DeepSeek Harness sessions whose logs are still on disk: each one\'s bytes and last write, '
-      + 'and what the store holds in total. An archive only hides a session — its log stays on disk and nothing in '
-      + 'the product removes it. Read-only and argument-free, so calling it can never be a mistake. Show it to the '
-      + 'person, then pass the ids they approve to delete_archived_sessions.',
+      'List the DeepSeek Harness sessions whose logs are on disk: each one\'s bytes, file count, last write, whether '
+      + 'it is archived, and what the store holds in total. Nothing in the product removes a log; this plugin is '
+      + 'what does, and archiving is only how the sidebar hides a session — it is not a requirement to delete one. '
+      + 'Read-only and argument-free, so calling it can never be a mistake. Show it to the person, then pass the ids '
+      + 'they approve to delete_session_logs.',
     parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: { schema: LIST_VALUE, render: (_args, value) => [{ type: 'text', text: renderList(value) }] },
     async execute(_args, exec) {
@@ -390,13 +394,14 @@ export function apply(ctx) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'delete_archived_sessions',
+    name: 'delete_session_logs',
     description:
-      'Permanently delete the stored logs of the named archived sessions, and report the bytes reclaimed. Pass '
-      + 'exactly the ids from list_archived_sessions that the person approved: this call is the confirmation step, '
-      + 'so never pass an id nobody has seen. An id that cannot be deleted — not archived, already gone, or held by '
-      + 'a running session — is refused in the answer with the reason instead of failing the call. Each session\'s '
-      + 'own directory is removed whole; no log line is rewritten.',
+      'Permanently delete the stored logs of the named sessions, and report the bytes reclaimed. Pass exactly the '
+      + 'ids from list_session_logs that the person approved: this call is the confirmation step, so never pass an '
+      + 'id nobody has seen. An archived session and an unarchived one are both deletable; an id that cannot be '
+      + 'deleted — held by the running session or by a busy agent, already gone, or stored under a directory the '
+      + 'plugin refuses to touch — is refused in the answer with the reason instead of failing the call. Each '
+      + 'session\'s own directory is removed whole; no log line is rewritten.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -405,21 +410,21 @@ export function apply(ctx) {
         session_ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Exact session ids from list_archived_sessions — never an id from memory.',
+          description: 'Exact session ids from list_session_logs — never an id from memory.',
         },
       },
     },
     output: { schema: DELETE_VALUE, render: (_args, value) => [{ type: 'text', text: renderDelete(value) }] },
     async execute(args, exec) {
       if (exec?.agent === undefined) {
-        throw new Error('delete_archived_sessions needs a calling Agent: without one the running session cannot be protected')
+        throw new Error('delete_session_logs needs a calling Agent: without one the running session cannot be protected')
       }
       const requested = Array.isArray(args?.session_ids) ? args.session_ids : undefined
       if (requested === undefined || requested.some((id) => typeof id !== 'string' || id.length === 0)) {
-        throw new Error('delete_archived_sessions: session_ids must be an array of non-empty session ids')
+        throw new Error('delete_session_logs: session_ids must be an array of non-empty session ids')
       }
       const ids = [...new Set(requested)]
-      if (ids.length === 0) throw new Error('delete_archived_sessions: session_ids must name at least one session')
+      if (ids.length === 0) throw new Error('delete_session_logs: session_ids must name at least one session')
 
       const paths = storagePaths()
       const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })

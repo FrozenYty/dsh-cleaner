@@ -63,7 +63,10 @@ The load-bearing constraints, each with an ADR:
   ([ADR 0008](docs/adr/0008-busy-not-resident.md));
 - what a deletion leaves in the workspace is decided per id by asking the host's own session list: a session
   it still holds keeps both records, one it has let go loses both
-  ([ADR 0009](docs/adr/0009-two-records-two-cases.md)).
+  ([ADR 0009](docs/adr/0009-two-records-two-cases.md));
+- archiving is not a precondition: the store is the index, and a session is a candidate when its directory
+  is under the storage root, well formed and unprotected
+  ([ADR 0010](docs/adr/0010-no-archive-precondition.md)).
 
 ## 3. Working principles
 

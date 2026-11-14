@@ -103,24 +103,28 @@ after(async () => {
 
 test('the entry registers exactly the listing and the deleting tool', () => {
   const tools = install()
-  assert.deepEqual([...tools.keys()].sort(), ['delete_archived_sessions', 'list_archived_sessions'])
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'])
   for (const tool of tools.values()) {
     assert.equal(typeof tool.execute, 'function')
     assert.equal(tool.parameters.type, 'object')
     assert.equal(tool.output.schema.type, 'object')
   }
-  assert.deepEqual(tools.get('list_archived_sessions').parameters.properties, {})
-  assert.deepEqual(tools.get('delete_archived_sessions').parameters.required, ['session_ids'])
+  assert.deepEqual(tools.get('list_session_logs').parameters.properties, {})
+  assert.deepEqual(tools.get('delete_session_logs').parameters.required, ['session_ids'])
 })
 
 test('the listing tool deletes nothing and names the bytes it found', async () => {
   const tools = install()
-  const value = await run(tools.get('list_archived_sessions'), {})
+  const value = await run(tools.get('list_session_logs'), {})
 
-  assert.deepEqual(value.candidates.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
-  assert.equal(value.total_bytes, 300)
-  assert.equal(value.stored_bytes, 300 + 999 + 50)
-  const rendered = text(tools.get('list_archived_sessions'), value)
+  assert.deepEqual(
+    value.candidates.map((entry) => entry.id).sort(),
+    ['session-archived-1', 'session-archived-2', LIVE.id],
+    'every stored session is offered, archived or not',
+  )
+  assert.equal(value.total_bytes, 350)
+  assert.equal(value.stored_bytes, 350 + 999)
+  const rendered = text(tools.get('list_session_logs'), value)
   assert.ok(rendered.includes('Nothing was deleted.'))
   assert.match(rendered, /The session store holds 4 directories/)
   assert.match(rendered, /last write \d{4}-\d{2}-\d{2}T/)
@@ -136,14 +140,16 @@ test('the listing tool deletes nothing and names the bytes it found', async () =
 
 test('a listing with nothing left to delete does not invite a deletion call', async () => {
   const tools = install()
-  await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1', 'session-archived-2'] })
-  const value = await run(tools.get('list_archived_sessions'), {})
+  await run(tools.get('delete_session_logs'), {
+    session_ids: ['session-archived-1', 'session-archived-2', LIVE.id],
+  })
+  const value = await run(tools.get('list_session_logs'), {})
   assert.deepEqual(value.candidates, [])
 
-  const rendered = text(tools.get('list_archived_sessions'), value)
+  const rendered = text(tools.get('list_session_logs'), value)
   assert.match(rendered, /there is nothing to delete/)
   assert.match(rendered, /Already gone/)
-  assert.doesNotMatch(rendered, /call delete_archived_sessions/)
+  assert.doesNotMatch(rendered, /call delete_session_logs/)
 })
 
 test('a directory the walk refused is named in the listing, with the reason', async () => {
@@ -152,10 +158,10 @@ test('a directory the walk refused is named in the listing, with the reason', as
   await symlink(join(ROOT, '--D-ALPHA--'), link, process.platform === 'win32' ? 'junction' : 'dir')
 
   try {
-    const value = await run(tools.get('list_archived_sessions'), {})
+    const value = await run(tools.get('list_session_logs'), {})
     assert.equal(value.skipped.length, 1)
 
-    const rendered = text(tools.get('list_archived_sessions'), value)
+    const rendered = text(tools.get('list_session_logs'), value)
     assert.match(rendered, /Not a candidate: .*--D-LINKED-- — not a directory; a link at this level is not followed/)
   } finally {
     // A junction is a directory entry, a symlink is not: `rmdir` removes the first and fails with ENOTDIR
@@ -170,11 +176,11 @@ test('a long list of already-deleted ids is counted and marked, not printed whol
   const gone = Array.from({ length: 14 }, (_, index) => `session-gone-${index + 1}`)
   await writeWorkspace([...ARCHIVED.map((entry) => entry.id), ...gone])
 
-  const value = await run(tools.get('list_archived_sessions'), {})
+  const value = await run(tools.get('list_session_logs'), {})
   assert.equal(value.already_gone.length, 14)
-  assert.equal(value.candidates.length, 2)
+  assert.equal(value.candidates.length, 3)
 
-  const rendered = text(tools.get('list_archived_sessions'), value)
+  const rendered = text(tools.get('list_session_logs'), value)
   assert.match(rendered, /Already gone \(archived, but no directory is stored\): 14 — session-gone-1\b/)
   assert.match(rendered, /and 4 more/)
   assert.doesNotMatch(rendered, /session-gone-14/, 'the tail is marked, not printed')
@@ -196,7 +202,7 @@ test('a megabyte-sized number is reported in MiB, not only in bytes', () => {
     requested: [],
   }
 
-  assert.match(text(tools.get('list_archived_sessions'), value), /1572864 bytes \(1\.50 MiB\) in all/)
+  assert.match(text(tools.get('list_session_logs'), value), /1572864 bytes \(1\.50 MiB\) in all/)
 })
 
 test('the deletion answer names a partial removal and a backend it could not re-read', () => {
@@ -211,7 +217,7 @@ test('the deletion answer names a partial removal and a backend it could not re-
     verify: { backend: 'sessionPersistence', error: 'the backend went away' },
   }
 
-  const rendered = text(tools.get('delete_archived_sessions'), value)
+  const rendered = text(tools.get('delete_session_logs'), value)
   assert.match(rendered, /Partially removed: session-archived-2 — cannot be removed \(x\): EACCES \(40 bytes freed\)/)
   assert.match(rendered, /Kept: session-live-1 — not an archived session/)
   assert.match(rendered, /could not be re-read \(the backend went away\); the deletion above stands/)
@@ -222,15 +228,15 @@ test('a listing names the sessions the way a person does, and so does the receip
   await writeProjection('session-archived-1', '询问模型身份')
   await writeProjection('session-archived-2', '  say   "hi"  ')
 
-  const value = await run(tools.get('list_archived_sessions'), {})
-  const rendered = text(tools.get('list_archived_sessions'), value)
+  const value = await run(tools.get('list_session_logs'), {})
+  const rendered = text(tools.get('list_session_logs'), value)
   assert.match(rendered, /"询问模型身份"  session-archived-1/)
   // Whitespace collapses, and a quote in a title cannot break the line's quoting.
   assert.match(rendered, /"say 'hi'"  session-archived-2/)
 
-  const report = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const report = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(report.removed[0].title, '询问模型身份')
-  assert.match(text(tools.get('delete_archived_sessions'), report), /"询问模型身份"  session-archived-1/)
+  assert.match(text(tools.get('delete_session_logs'), report), /"询问模型身份"  session-archived-1/)
   assert.equal(report.removed_bytes, 100)
 })
 
@@ -241,19 +247,19 @@ test('a projection that cannot be read costs a title, not the listing', async ()
   await writeFile(join(dir, 'session-archived-1.json'), '{ this is not json')
   // session-archived-2 has no projection file at all.
 
-  const value = await run(tools.get('list_archived_sessions'), {})
-  assert.equal(value.candidates.length, 2)
+  const value = await run(tools.get('list_session_logs'), {})
+  assert.equal(value.candidates.length, 3)
   for (const candidate of value.candidates) assert.equal('title' in candidate, false)
-  assert.match(text(tools.get('list_archived_sessions'), value), /  session-archived-1  \d+ bytes/)
+  assert.match(text(tools.get('list_session_logs'), value), /  session-archived-1  \d+ bytes/)
 
-  const report = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const report = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
   assert.equal('title' in report.removed[0], false)
   assert.equal(report.removed_bytes, 200)
 })
 
 test('the deleting tool removes only the ids it was given, and reports the bytes', async () => {
   const tools = install()
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
 
   assert.deepEqual(value.removed.map((entry) => entry.id), ['session-archived-1'])
   assert.equal(value.removed_count, 1)
@@ -261,7 +267,7 @@ test('the deleting tool removes only the ids it was given, and reports the bytes
   assert.deepEqual(value.failed, [])
   assert.deepEqual(value.refused, [])
   assert.match(
-    text(tools.get('delete_archived_sessions'), value),
+    text(tools.get('delete_session_logs'), value),
     /Deleted 1 session directory: 100 bytes/,
     'the singular is spelled out, not templated',
   )
@@ -290,7 +296,7 @@ test('a deletion asks the workspace registry to forget the session it orphaned',
   }
   const tools = install({ workspaces: registry })
 
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 1)
   assert.deepEqual(detachment, ['session-archived-1'], 'the registry is asked, so the row can go now')
   assert.deepEqual(value.workspace.detached, ['session-archived-1'])
@@ -299,19 +305,19 @@ test('a deletion asks the workspace registry to forget the session it orphaned',
   assert.deepEqual(value.workspace.unarchived, ['session-archived-1'])
   assert.deepEqual(registry.archivedSessionIds, ['session-archived-2'])
   assert.deepEqual(workspace.sessionIds, ['session-archived-2'])
-  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace records dropped them \(1 detached, 1 unarchived\)/)
+  assert.match(text(tools.get('delete_session_logs'), value), /The workspace records dropped them \(1 detached, 1 unarchived\)/)
   // A page reload proved not to be enough; the window rewrites its own copy on a sort switch or a drag,
   // and a restart is the heavier way to the same end.
-  assert.match(text(tools.get('delete_archived_sessions'), value), /until it rewrites it \(a sort switch or a drag\) or restarts/)
+  assert.match(text(tools.get('delete_session_logs'), value), /until it rewrites it \(a sort switch or a drag\) or restarts/)
 })
 
 test('a profile without a workspace registry still answers', async () => {
   const tools = install()
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
 
   assert.equal(value.removed_count, 1)
   assert.equal(value.workspace.registry, 'absent')
-  assert.match(text(tools.get('delete_archived_sessions'), value), /No workspace registry is mounted/)
+  assert.match(text(tools.get('delete_session_logs'), value), /No workspace registry is mounted/)
 })
 
 test('a registry that refuses a detach cannot fail a deletion that already happened', async () => {
@@ -320,11 +326,11 @@ test('a registry that refuses a detach cannot fail a deletion that already happe
   }
   const tools = install({ workspaces })
 
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 1)
   assert.equal(value.removed_bytes, 100)
   assert.deepEqual(value.workspace.failed, [{ id: 'session-archived-1', error: 'the registry refused' }])
-  assert.match(text(tools.get('delete_archived_sessions'), value), /The workspace list kept session-archived-1/)
+  assert.match(text(tools.get('delete_session_logs'), value), /The workspace list kept session-archived-1/)
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
 })
 
@@ -347,7 +353,7 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   const tools = install({ workspaces: registry })
 
   // First call removes the log; the row goes with it.
-  const first = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const first = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(first.removed_count, 1)
   assert.deepEqual(first.workspace.orphans, [])
   assert.deepEqual(workspace.sessionIds, [])
@@ -355,14 +361,14 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   // Second call has nothing to remove — that is the state a person is left in after a cleanup, and the
   // id they still see in the sidebar is exactly what they can name to be rid of the row.
   workspace.sessionIds = ['session-archived-1']
-  const second = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const second = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(second.removed_count, 0)
   assert.equal(second.removed_bytes, 0)
   assert.deepEqual(second.workspace.orphans, ['session-archived-1'])
   assert.deepEqual(workspace.sessionIds, [])
   assert.deepEqual(calls, ['session-archived-1', 'session-archived-1'])
-  assert.match(text(tools.get('delete_archived_sessions'), second), /1 of the ids had no log left to remove/)
-  assert.doesNotMatch(text(tools.get('delete_archived_sessions'), second), /persistence backend/)
+  assert.match(text(tools.get('delete_session_logs'), second), /1 of the ids had no log left to remove/)
+  assert.doesNotMatch(text(tools.get('delete_session_logs'), second), /persistence backend/)
 })
 
 test('an unarchived id with no log is still dropped, and the session list is still asked about it', async () => {
@@ -385,17 +391,17 @@ test('an unarchived id with no log is still dropped, and the session list is sti
     query: { listSessions: async () => [{ sessionId: 'session-archived-1' }] },
   })
 
-  const first = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const first = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(first.removed_count, 1)
   // The state a person is in after an earlier cleanup: no log left, no archive entry, and a row still
   // drawn. Detaching is all that is left to ask for, and the session list is the answer that says where
   // the row still lives.
   registry.list()[0].sessionIds = ['session-archived-1']
-  const again = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const again = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(again.removed_count, 0)
   assert.deepEqual(again.workspace.unarchived, [])
   assert.deepEqual(again.query.still_listed, ['session-archived-1'])
-  assert.match(text(tools.get('delete_archived_sessions'), again), /The session list still names session-archived-1/)
+  assert.match(text(tools.get('delete_session_logs'), again), /The session list still names session-archived-1/)
 })
 
 test('an id the host still lists keeps both records, because a window still draws a row for it', async () => {
@@ -422,7 +428,7 @@ test('an id the host still lists keeps both records, because a window still draw
     query: { listSessions: async () => [{ sessionId: 'session-archived-1' }] },
   })
 
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 1, 'the log still goes')
   assert.deepEqual(value.workspace.detached, [])
   assert.deepEqual(value.workspace.unarchived, [])
@@ -430,7 +436,7 @@ test('an id the host still lists keeps both records, because a window still draw
   assert.deepEqual(calls, [], 'nothing asked the registry to detach it')
   assert.deepEqual(workspace.sessionIds, ['session-archived-1'])
   assert.deepEqual(registry.archivedSessionIds, ['session-archived-1'])
-  const rendered = text(tools.get('delete_archived_sessions'), value)
+  const rendered = text(tools.get('delete_session_logs'), value)
   assert.match(rendered, /1 of the ids stayed where they were/)
   assert.match(rendered, /the host still holds that session in memory/)
   assert.doesNotMatch(rendered, /The workspace records dropped them/)
@@ -439,22 +445,22 @@ test('an id the host still lists keeps both records, because a window still draw
 test('a session list that still names a deleted id is reported, because a row can outlive the log', async () => {
   const tools = install({ query: { listSessions: async () => [{ sessionId: 'session-archived-2' }, { sessionId: 'session-archived-1' }] } })
 
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.deepEqual(value.query.still_listed, ['session-archived-1'])
-  assert.match(text(tools.get('delete_archived_sessions'), value), /The session list still names session-archived-1/)
+  assert.match(text(tools.get('delete_session_logs'), value), /The session list still names session-archived-1/)
 })
 
 test('a session list that no longer names them adds no noise', async () => {
   const tools = install({ query: { listSessions: async () => [{ sessionId: 'some-other-session' }] } })
 
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.deepEqual(value.query.still_listed, [])
-  assert.doesNotMatch(text(tools.get('delete_archived_sessions'), value), /session list/)
+  assert.doesNotMatch(text(tools.get('delete_session_logs'), value), /session list/)
 })
 
 test('the running session is refused by name, not deleted', async () => {
   const tools = install()
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: [CALLER] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: [CALLER] })
 
   assert.deepEqual(value.removed, [])
   assert.equal(value.removed_bytes, 0)
@@ -464,7 +470,7 @@ test('the running session is refused by name, not deleted', async () => {
 
 test('a live agent’s session is refused too', async () => {
   const tools = install({ agents: [{ id: 'session-archived-2' }] })
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
 
   assert.deepEqual(value.removed, [])
   assert.deepEqual(value.refused, [{ id: 'session-archived-2', reason: 'a live agent holds this session' }])
@@ -474,43 +480,42 @@ test('a live agent’s session is refused too', async () => {
 test('an idle agent does not block a deletion, a busy one does, and the answer says which', async () => {
   // The busy case runs first: the idle case is the one that actually removes the directory.
   const busy = install({ agents: [{ id: 'session-archived-2', status: 'running' }] })
-  const kept = await run(busy.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const kept = await run(busy.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
   assert.deepEqual(kept.removed, [])
   assert.deepEqual(kept.refused, [{ id: 'session-archived-2', reason: 'a live agent holds this session (status: running)' }])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
 
   const idle = install({ agents: [{ id: 'session-archived-2', status: 'idle' }] })
-  const removed = await run(idle.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const removed = await run(idle.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
   assert.equal(removed.removed_count, 1, 'a resident agent is not a writer')
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), false)
 })
 
-test('an unarchived or already-deleted id is refused in the answer, not thrown', async () => {
+test('an id that is already deleted is refused in the answer, not thrown', async () => {
   const tools = install()
-  const value = await run(tools.get('delete_archived_sessions'), {
+  const value = await run(tools.get('delete_session_logs'), {
     session_ids: [LIVE.id, 'session-archived-2', 'session-archived-2'],
   })
 
-  assert.deepEqual(value.removed.map((entry) => entry.id), ['session-archived-2'])
-  assert.deepEqual(value.refused, [
-    { id: LIVE.id, reason: 'not an archived session; archive it first to make it a candidate' },
-  ])
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
+  // An unarchived id is deleted like any other; a repeated id is de-duplicated, not an error.
+  assert.deepEqual(value.removed.map((entry) => entry.id).sort(), [LIVE.id, 'session-archived-2'].sort())
+  assert.deepEqual(value.refused, [])
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), false)
 
-  const again = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const again = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
   assert.deepEqual(again.removed, [])
   assert.deepEqual(again.refused, [
-    { id: 'session-archived-2', reason: 'archived, but no session directory is stored; already deleted' },
+    { id: 'session-archived-2', reason: 'no session directory is stored under that id; already deleted' },
   ])
   // Nothing was removed, so the persistence backend is not asked to confirm a removal that did not
   // happen — and the answer says nothing about it.
   assert.deepEqual(again.verify, { backend: 'not-asked' })
-  assert.doesNotMatch(text(tools.get('delete_archived_sessions'), again), /persistence backend/)
+  assert.doesNotMatch(text(tools.get('delete_session_logs'), again), /persistence backend/)
 })
 
 test('a call without a calling Agent, or with no ids, is rejected before anything is touched', async () => {
   const tools = install()
-  const tool = tools.get('delete_archived_sessions')
+  const tool = tools.get('delete_session_logs')
 
   await assert.rejects(() => run(tool, { session_ids: [LIVE.id] }, {}), /needs a calling Agent/)
   await assert.rejects(() => run(tool, { session_ids: [] }), /at least one session/)
@@ -520,30 +525,30 @@ test('a call without a calling Agent, or with no ids, is rejected before anythin
 
 test('the answer says what the mounted persistence backend sees after the deletion', async () => {
   const tools = install({ persistence: { list: async () => [{ header: { id: 'session-archived-1' } }] } })
-  const stillThere = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const stillThere = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
 
   assert.deepEqual(stillThere.verify, { backend: 'sessionPersistence', still_listed: ['session-archived-1'] })
-  assert.match(text(tools.get('delete_archived_sessions'), stillThere), /still lists session-archived-1/)
+  assert.match(text(tools.get('delete_session_logs'), stillThere), /still lists session-archived-1/)
 
   await writeWorkspace([...ARCHIVED.map((entry) => entry.id), CALLER])
   const clean = install({ persistence: { list: async () => [] } })
-  const leftover = await run(clean.get('delete_archived_sessions'), { session_ids: ['session-archived-2'] })
+  const leftover = await run(clean.get('delete_session_logs'), { session_ids: ['session-archived-2'] })
   assert.deepEqual(leftover.verify, { backend: 'sessionPersistence', still_listed: [] })
-  assert.match(text(clean.get('delete_archived_sessions'), leftover), /no longer lists any of them/)
+  assert.match(text(clean.get('delete_session_logs'), leftover), /no longer lists any of them/)
 
   // No backend mounted at all: a real deletion still reports, and says the disk was the only witness.
   await writeWorkspace([...ARCHIVED.map((entry) => entry.id), CALLER, 'session-archived-3'])
   await writeSession({ id: 'session-archived-3', project: '--D-ALPHA--', bytes: 33 })
   const absent = install()
-  const noBackend = await run(absent.get('delete_archived_sessions'), { session_ids: ['session-archived-3'] })
+  const noBackend = await run(absent.get('delete_session_logs'), { session_ids: ['session-archived-3'] })
   assert.equal(noBackend.removed_count, 1)
   assert.deepEqual(noBackend.verify, { backend: 'absent' })
-  assert.match(text(absent.get('delete_archived_sessions'), noBackend), /no session persistence backend is mounted/)
+  assert.match(text(absent.get('delete_session_logs'), noBackend), /no session persistence backend is mounted/)
 })
 
 test('a persistence backend that throws cannot fail a deletion that already happened', async () => {
   const tools = install({ persistence: { list: async () => { throw new Error('backend is gone') } } })
-  const value = await run(tools.get('delete_archived_sessions'), { session_ids: ['session-archived-1'] })
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
 
   assert.equal(value.removed_count, 1)
   assert.deepEqual(value.verify, { backend: 'sessionPersistence', error: 'backend is gone' })

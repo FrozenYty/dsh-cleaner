@@ -7,6 +7,25 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.0] - 2026-11-14
+
+- **Archiving is no longer a precondition.** The store is the index: every session whose log is on disk is
+  a candidate, and the archive file is read only to *report* facts — whether a listed session is archived,
+  and which archived ids no longer have a directory. Deleting used to take two surfaces (hide the session
+  in the sidebar, then name it) and produced a class of refusals nobody could act on; a person can now
+  name a session that was never archived and it is removed like any other
+  ([ADR 0010](docs/adr/0010-no-archive-precondition.md)).
+- The tools are renamed to match what they do: `list_session_logs` and `delete_session_logs`. A listing
+  now prints each session's archive state beside its bytes, and the deleting tool's refusals are the three
+  a person can act on: the running session, a session whose agent is busy (with the status), and an id
+  with no directory left.
+- The engine's candidate rule, its reasons, and the deletion-time checks were rewritten with it: the
+  archive list is no longer re-read at deletion time, because nothing about a candidate depends on it any
+  more. What still guards every candidate is unchanged — the id/path binding, the containment test, the
+  refusal to follow a link, and the refusal to touch a directory holding anything but regular files.
+- `decodeSegment` is the new inverse of the backend's id escape. It is what lets the store enumerate
+  itself: a directory name records its session id completely, `~XXXX` and all.
+
 ## [0.1.0] - 2026-11-13
 
 - The deletion engine, which works from two paths it is given — the session storage root and the
