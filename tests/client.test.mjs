@@ -79,6 +79,22 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
   const registered = []
   const registeredShortcuts = []
   const registrations = new Map()
+  let pendingInject
+  const shortcutService = () => ({
+    register: (definition) => {
+      registeredShortcuts.push(definition)
+      return () => {}
+    },
+    // The overlay reads the catalogue to print keys beside a label; the bundle reads the same store to
+    // decide whether it may name it at all.
+    catalog: {
+      getSnapshot: () => {
+        if (shortcuts === 'loading') throw new Error('the catalogue is not readable yet')
+        if (shortcuts === 'empty') return []
+        return registeredShortcuts.map((definition) => ({ id: definition.id, label: definition.label() }))
+      },
+    },
+  })
   const ctx = {
     remote: {
       session: {
@@ -123,6 +139,7 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
       }
       if (name === 'shortcuts') {
         if (!shortcuts) return undefined
+        if (shortcuts === 'late') return undefined
         if (shortcuts === 'refuse') {
           return {
             register: () => {
@@ -130,27 +147,22 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
             },
           }
         }
-        return {
-          register: (definition) => {
-            registeredShortcuts.push(definition)
-            return () => {}
-          },
-          // The overlay reads the catalogue to print keys beside a label; the bundle reads the same store to
-          // decide whether it may name it at all.
-          catalog: {
-            getSnapshot: () => {
-              if (shortcuts === 'loading') throw new Error('the catalogue is not readable yet')
-              if (shortcuts === 'empty') return []
-              return registeredShortcuts.map((definition) => ({ id: definition.id, label: definition.label() }))
-            },
-          },
-        }
+        return shortcutService()
       }
       if (name === 'locale') {
         return { getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }) }
       }
       return undefined
     },
+    // `ctx.inject` holds a callback until the service exists, which is how a client service that mounts after
+    // this plugin is still reached. The fake records the request so a test can mount the service itself.
+    ...shortcuts === 'late'
+      ? {
+          inject: (deps, callback) => {
+            pendingInject = { deps, callback }
+          },
+        }
+      : {},
     effect: (run) => {
       const dispose = run()
       cleanup.push(dispose)
@@ -168,6 +180,7 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
     registrations,
     listed,
     shortcuts: registeredShortcuts,
+    pendingInject: () => pendingInject,
   }
 }
 
@@ -446,6 +459,23 @@ test('a shortcuts registry that refuses the definition costs the key, not the ro
   // registration is isolated now, so this one may fail alone.
   const { registered } = mount({ views: {}, answer: [], menus: true, shortcuts: 'refuse' })
   assert.equal(registered.length, 1, 'the row is still contributed')
+})
+
+test('a shortcut service that mounts after the page still gets the binding', () => {
+  // The same trap the host half had: a client service that mounts after this plugin is not there while the
+  // bundle loads, and reading ctx.get once skipped the key silently — which is how the keycap went missing
+  // while the row kept working.
+  const { pendingInject } = mount({ views: {}, answer: [], shortcuts: 'late' })
+  const pending = pendingInject()
+  // Serialised: the definition was built in the page's realm, so its arrays are not this realm's.
+  assert.equal(JSON.stringify(pending.deps), JSON.stringify(['shortcuts']), 'the binding waits for its service')
+
+  const definitions = []
+  pending.callback({
+    shortcuts: { register: (definition) => { definitions.push(definition); return () => {} } },
+    effect: (callback) => callback(),
+  })
+  assert.deepEqual(definitions.map((definition) => definition.id), ['session.delete-log'])
 })
 
 test('a page without the menus service still prunes the view', async () => {
