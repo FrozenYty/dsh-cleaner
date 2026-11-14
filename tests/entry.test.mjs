@@ -690,6 +690,33 @@ test('the human command is registered with the shape the command registry requir
   assert.deepEqual([...tools.commands.keys()], [])
 })
 
+test('a command registry that mounts after the plugin still gets the command', () => {
+  // The registry may appear after this bundle loads. Reading `ctx.get('commands')` once at load missed it
+  // silently, which is how the sidebar row came to run a command the host had never heard of — the row was
+  // there, the command was not, and nothing said so. `inject` holds the callback until the service exists.
+  let pending
+  const registered = new Map()
+  const tools = new Map()
+  const ctx = {
+    tools: { register: (definition) => { tools.set(definition.name, definition); return () => tools.delete(definition.name) } },
+    effect: (callback) => { const disposer = callback(); return () => disposer?.() },
+    get: () => undefined,
+    inject: (deps, callback) => { pending = { deps, callback } },
+  }
+
+  apply(ctx)
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'], 'the tools are there')
+  assert.deepEqual(pending.deps, ['commands'], 'the registration is waiting for the registry')
+  assert.equal(registered.size, 0)
+
+  // The registry mounts, and the Context runs the callback in a scope that carries the service.
+  pending.callback({
+    commands: { register: (definition) => { registered.set(definition.name, definition); return () => registered.delete(definition.name) } },
+    effect: ctx.effect,
+  })
+  assert.deepEqual([...registered.keys()], ['clean'], 'and then the command is registered')
+})
+
 test('the command lists without deleting, and deletes only what it is given', async () => {
   const tools = install()
 
