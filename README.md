@@ -82,6 +82,10 @@ and runs it *without* sending anything to the model: no turn, no request, no con
 decision you have already made. Both callers end in one implementation, so a person typing and a model
 calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
 
+A session's own **⋯ menu** carries the same thing as one row — *Delete log* (in the window's language) —
+which runs that command for the row it was opened on. It is a data contribution to the menu, not a
+renderer: the bundle supplies the label and the click, and the sidebar draws it like its own actions.
+
 ## Install
 
 The profile links to a directory, so the clone is what runs — put it somewhere it can stay:

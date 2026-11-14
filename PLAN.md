@@ -59,11 +59,13 @@ Written after a night of live failures, which are the reason each item exists.
    - Met: every refusal the deleting tool can produce has its cause visible in the listing that preceded
      it — protected (with reason), refused directory (with reason), or not on disk at all.
 
-6. **A UI affordance for the same operation**, if the slot system allows it cheaply: the browser half
-   registers an item on a session's context menu that runs the command of item 2 through
-   `ctx.remote.commands.execute(...)`, so a person can delete a session without typing and without the
-   agent.
-   - Acceptance: the row's menu offers it; clicking it deletes and the row goes, with no model turn.
+6. **A UI affordance for the same operation.** — **done** (v0.2.0, ADR 0011's amendment).
+   A session's ⋯ menu carries *Delete log*, and its click runs `/clean <that id>` — a data contribution to
+   `contextMenus`, so no renderer, no styles and no markup of ours in the sidebar. The label follows the
+   window's language, and both services are treated as optional: without them the row is not contributed
+   and the view pruning still runs.
+   - Met: the item resolves for a session target and calls the command for exactly that id; it does not
+     resolve without a target; it disappears when the plugin is unloaded (three client tests).
 
 ## Stated boundary, not fixed
 

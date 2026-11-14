@@ -47,3 +47,20 @@ failure the UI shows is the failure the tool returns.
 - The command cannot be invoked by an agent: it is the human's entry point in the composer. That is the
   line `references/user-actions.md` draws, and the plugin keeps to it — an authority-granting action stays
   user-only, and this one grants nothing: it is the same explicit-id consent, typed instead of spoken.
+
+## Amendment — the row in the session menu (same day)
+
+A third caller appeared once the command existed: a session's ⋯ menu carries *Delete log*, and its click
+runs the same command for the row it was opened on. It adds no operation, which is the point — the surface
+a person reaches for is a row that says what it does, and what it does is `/clean <that id>`.
+
+It is a **data contribution** (`contextMenus.register({ id, target: 'session', order, resolve })` returning
+`{ id, label, run }`), not a React component in the token slot the sidebar also offers. Two reasons: a
+renderer would have to reproduce the menu's markup and styles to look native, and a data contribution is
+the shape the harness documents ("data contributions need no renderer"). The label follows the window's
+active locale — the two literals are in the half rather than in a dictionary it would have to register,
+because two words do not justify a locale namespace, and a missing dictionary key would render as a key.
+
+Two facts are only true in a running window, and the half treats both as optional: whether the menus
+service is reachable from a dynamic client half, and what the click may call. If either is absent the row
+is simply not contributed — the view pruning, which is the half's first job, keeps working either way.

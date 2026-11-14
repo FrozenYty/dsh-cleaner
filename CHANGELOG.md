@@ -27,6 +27,9 @@ A release adds its section in the same pull request that writes the change, so t
   `/clean <id> <id>` deletes, and the wording is identical to the tool's because both end in one
   implementation ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)). It runs through the host's
   command registry, so no turn is started and no tokens are spent deciding what to delete.
+- **A row in a session's ⋯ menu: *Delete log*.** A data contribution, not a renderer: the browser half
+  supplies the label (in the window's language) and a click, and the click runs that same command for the
+  row it was opened on. A window without the menus service loses the row and keeps the view pruning.
 - `decodeSegment` is the new inverse of the backend's id escape. It is what lets the store enumerate
   itself: a directory name records its session id completely, `~XXXX` and all.
 
