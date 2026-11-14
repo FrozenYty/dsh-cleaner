@@ -246,8 +246,13 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
 
   const [item] = entry.resolve({ sessionId: 'session-archived-1' })
-  assert.equal(item.label, 'Delete log', 'the label follows the window language')
+  assert.equal(item.label, 'Delete session', 'the label follows the window language')
   assert.equal(typeof item.run, 'function')
+  // Presentation, in the product's own vocabulary: red, after the built-in rows, with the trash glyph the
+  // workspace plugin already registered in the shared icon slot.
+  assert.equal(item.danger, true)
+  assert.equal(item.afterContent, true, 'a destructive row belongs after 归档会话, not next to it')
+  assert.equal(item.icon.key, 'workspace.delete')
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
@@ -270,7 +275,7 @@ test('a session menu item runs the command for that session, and nothing else', 
 
 test('the menu label is Chinese when the window is', () => {
   const { registered } = mount({ views: {}, answer: [], menus: true, locale: 'zh-CN' })
-  assert.equal(registered[0].resolve({ sessionId: 'session-1' })[0].label, '删除日志')
+  assert.equal(registered[0].resolve({ sessionId: 'session-1' })[0].label, '删除会话')
 })
 
 test('a page without the menus service still prunes the view', async () => {

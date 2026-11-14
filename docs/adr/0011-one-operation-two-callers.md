@@ -61,6 +61,27 @@ the shape the harness documents ("data contributions need no renderer"). The lab
 active locale — the two literals are in the half rather than in a dictionary it would have to register,
 because two words do not justify a locale namespace, and a missing dictionary key would render as a key.
 
+### Amendment — where the row sits, and how it looks (same day, after the first sight of it)
+
+The row read *Delete log* and rendered between the ordinary actions, with no icon. Three corrections, all
+from the product's own vocabulary rather than from taste:
+
+- **The label is the act**: 删除会话 / *Delete session*. "日志" is what the plugin removes; "会话" is what
+  the person is looking at, and the menu is theirs.
+- **`afterContent: true`**, which renders the action in the menu's footer group — after 在文件夹显示 and
+  归档会话 — instead of before them. A destructive row adjacent to the action people use most is a
+  mis-click waiting to happen, and `order` cannot express this: it only sorts contributions against each
+  other.
+- **`danger: true`** for the product's red, and **`icon: { key: 'workspace.delete' }`** for the trash glyph
+  the workspace plugin already registers in the shared `contextMenu.icon` slot. Borrowing that key is
+  deliberate: re-drawing the glyph here would be a guess at the neighbours' stroke, size and colour, and
+  this bundle cannot resolve `@deepseek-ai/dsh-client-ui-primitives` to import the real one. If that plugin
+  is ever absent the key resolves to nothing and the row loses its icon rather than failing.
+
+Two facts are only true in a running window, and the half treats both as optional: whether the menus
+service is reachable from a dynamic client half, and what the click may call. If either is absent the row
+is simply not contributed — the view pruning, which is the half's first job, keeps working either way.
+
 Two facts are only true in a running window, and the half treats both as optional: whether the menus
 service is reachable from a dynamic client half, and what the click may call. If either is absent the row
 is simply not contributed — the view pruning, which is the half's first job, keeps working either way.
