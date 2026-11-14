@@ -164,10 +164,12 @@ window.__ModuleLoader__.load({
          * Presentation, in the product's own vocabulary:
          * - `order: 9000` sorts it after every other session action this build registers (pin 100, rename
          *   200, fork 300, copy-id 450, archive 600), so it is the last contribution in the menu.
-         * - `danger` gets the red treatment the product gives its own destructive actions, and the icon key
-         *   is the workspace plugin's own trash glyph from the shared `contextMenu.icon` slot — borrowing it
-         *   is what makes the row look like its neighbours without this bundle resolving an
+         * - the icon key is the workspace plugin's own trash glyph from the shared `contextMenu.icon` slot —
+         *   borrowing it is what makes the row look like its neighbours without this bundle resolving an
          *   `@deepseek-ai` package it cannot resolve.
+         * - the row is **not** `danger`: the label and the trash glyph already say what it does, and a red
+         *   row in a menu of neutral ones draws the eye towards the one action that cannot be undone. The
+         *   product colours its own destructive row red; this plugin was asked not to.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -184,7 +186,6 @@ window.__ModuleLoader__.load({
                 id: 'dsh-cleaner.delete-log',
                 label: label(),
                 icon: { key: 'workspace.delete' },
-                danger: true,
                 run: () => runClean(sessionId),
               }]
             },
