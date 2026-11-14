@@ -63,7 +63,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale, commands, shortcuts, current } = {}) {
+function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -97,7 +97,8 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
         },
         execute: async (sessionId, line, attachments) => {
           executed.push({ sessionId, line, attachments })
-          return { commandId: 'command-1', result: { kind: 'success' } }
+          // A host that does not know the command answers `undefined`, exactly as the registry does.
+          return silent ? undefined : { commandId: 'command-1', result: { kind: 'success' } }
         },
       },
     },
@@ -332,7 +333,7 @@ test('a host that has no clean command contributes no row at all', async () => {
   assert.deepEqual(executed, [], 'and nothing was executed')
 })
 
-test('the command list is asked once per session, and an unreadable list keeps the row', async () => {
+test('the command list is asked once per session, and an unreadable list hides the row', async () => {
   const asked = []
   const { registered } = mount({
     views: {},
@@ -353,14 +354,35 @@ test('the command list is asked once per session, and an unreadable list keeps t
   await entry.resolve({ sessionId: 'session-2' })
   assert.deepEqual(asked, ['session-1', 'session-2'])
 
-  // A list call that throws is not evidence against the command, so the row stays.
+  // A list call that throws is not evidence that the command exists, so no row is offered: a click that
+  // fails reads worse than a row that is missing.
   const failing = mount({
     views: {},
     answer: [],
     menus: true,
     commands: () => { throw new Error('gateway down') },
   })
-  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
+  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 0)
+})
+
+test('a click that reaches a host without the command stops offering the row', async () => {
+  // The guard reads the command list, but the host can still answer `undefined` — a race, or a build whose
+  // list endpoint lies. Then the row is withdrawn for that session rather than failing a second time.
+  const { registered, executed } = mount({
+    views: {},
+    answer: [],
+    menus: true,
+    commands: [{ name: 'clean', description: 'stub' }],
+    silent: true,
+  })
+  const entry = registered[0]
+  const [item] = await entry.resolve({ sessionId: 'session-1' })
+  assert.equal(typeof item.run, 'function', 'the list said the command exists, so the row is offered')
+
+  item.run()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(executed.length, 1)
+  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 0, 'the host answered nothing, so no second try')
 })
 
 test('a registration the host refuses costs the row and nothing else', async () => {
