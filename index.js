@@ -233,6 +233,63 @@ function listIds(ids) {
   return ` — ${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`
 }
 
+/**
+ * The listing, as a value. One implementation behind the tool and the human command, so the two can never
+ * report different things about the same store.
+ * @param ctx - the plugin context.
+ * @param exec - the tool execution, carrying the calling agent.
+ * @returns the plan: what is on disk, what is protected, and what a deletion would take.
+ */
+function listLogs(ctx, exec) {
+  return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
+}
+
+/**
+ * The deletion, as a value. One implementation behind the tool and the human command.
+ *
+ * The order here is deliberate and load-bearing: the files go first, and every later step is a report about
+ * work already done, so a profile without one of those services still gets an honest answer.
+ * @param ctx - the plugin context.
+ * @param exec - the tool execution (or `{ agent }` from a command), carrying the calling agent.
+ * @param requested - the ids the caller named, exactly as they were given.
+ * @returns the deletion report: what was removed, what was kept, and what the records now say.
+ */
+async function deleteLogs(ctx, exec, requested) {
+  if (exec?.agent === undefined) {
+    throw new Error('a deletion needs a calling Agent: without one the running session cannot be protected')
+  }
+  const ids = [...new Set(requested)]
+  if (ids.length === 0) throw new Error('a deletion must name at least one session')
+
+  const paths = storagePaths()
+  const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
+  const report = await applyCleanup(plan)
+  const removedIds = report.removed.map((entry) => entry.id)
+  // The records to drop are not only the ones just deleted: an id the caller names whose log is gone
+  // is a ghost row too, and naming it is the person saying it should be gone. `unlogged` is exactly
+  // those names, archived or not, so nothing is dropped that the plugin was not asked about.
+  const orphans = plan.unlogged
+  const drop = [...removedIds, ...orphans]
+  // Ask the host what it still lists *before* deciding the archive set: a session it still names is one
+  // a window still draws, and an archived row is the one the sidebar hides. Unarchiving such an id is
+  // what puts a ghost row on screen, so those stay archived on purpose.
+  const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
+  const stillListed = new Set(Array.isArray(query.still_listed) ? query.still_listed : [])
+  return {
+    sessions_root: paths.sessionsRoot,
+    removed: report.removed,
+    removed_count: report.removed.length,
+    removed_bytes: report.removed_bytes,
+    failed: report.failed,
+    refused: [...plan.requested, ...report.refused],
+    workspace: drop.length === 0
+      ? { registry: 'not-asked' }
+      : { orphans, ...await forgetSessions(ctx, drop, stillListed) },
+    query,
+    verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
+  }
+}
+
 /** Every line a listing answers with, including the ones that explain an empty result. */
 function renderList(value) {
   const lines = []
@@ -388,8 +445,8 @@ export function apply(ctx) {
       + 'they approve to delete_session_logs.',
     parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: { schema: LIST_VALUE, render: (_args, value) => [{ type: 'text', text: renderList(value) }] },
-    async execute(_args, exec) {
-      return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
+    execute(_args, exec) {
+      return listLogs(ctx, exec)
     },
   }))
 
@@ -416,43 +473,38 @@ export function apply(ctx) {
     },
     output: { schema: DELETE_VALUE, render: (_args, value) => [{ type: 'text', text: renderDelete(value) }] },
     async execute(args, exec) {
-      if (exec?.agent === undefined) {
-        throw new Error('delete_session_logs needs a calling Agent: without one the running session cannot be protected')
-      }
       const requested = Array.isArray(args?.session_ids) ? args.session_ids : undefined
       if (requested === undefined || requested.some((id) => typeof id !== 'string' || id.length === 0)) {
         throw new Error('delete_session_logs: session_ids must be an array of non-empty session ids')
       }
-      const ids = [...new Set(requested)]
-      if (ids.length === 0) throw new Error('delete_session_logs: session_ids must name at least one session')
-
-      const paths = storagePaths()
-      const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
-      const report = await applyCleanup(plan)
-      const removedIds = report.removed.map((entry) => entry.id)
-      // The records to drop are not only the ones just deleted: an id the caller names whose log is gone
-      // is a ghost row too, and naming it is the person saying it should be gone. `unlogged` is exactly
-      // those names, archived or not, so nothing is dropped that the plugin was not asked about.
-      const orphans = plan.unlogged
-      const drop = [...removedIds, ...orphans]
-      // Ask the host what it still lists *before* deciding the archive set: a session it still names is one
-      // a window still draws, and an archived row is the one the sidebar hides. Unarchiving such an id is
-      // what puts a ghost row on screen, so those stay archived on purpose.
-      const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
-      const stillListed = new Set(Array.isArray(query.still_listed) ? query.still_listed : [])
-      return {
-        sessions_root: paths.sessionsRoot,
-        removed: report.removed,
-        removed_count: report.removed.length,
-        removed_bytes: report.removed_bytes,
-        failed: report.failed,
-        refused: [...plan.requested, ...report.refused],
-        workspace: drop.length === 0
-          ? { registry: 'not-asked' }
-          : { orphans, ...await forgetSessions(ctx, drop, stillListed) },
-        query,
-        verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
-      }
+      return deleteLogs(ctx, exec, requested)
     },
   }))
+
+  // One operation, two callers — the shape the plugin-development skill documents: the command registry's
+  // handler and the tool above both end in the same function, so a person who types the command and a model
+  // that calls the tool cannot drift apart. The command runs *without* the model: `execute` resolves it and
+  // no turn is started, which is what makes a deletion possible with zero tokens spent on deciding.
+  const commands = ctx.get('commands')
+  if (commands !== undefined && typeof commands.register === 'function') {
+    ctx.effect(() => commands.register({
+      name: 'clean',
+      description: 'List the sessions whose logs are on disk, or delete the ones you name.',
+      input: { hint: 'no input lists every log; ids (space or comma separated) delete them' },
+      handler: async ({ agent, rawInput }) => {
+        const exec = { agent }
+        if (agent === undefined) {
+          return { kind: 'error', text: 'clean needs the Session it was run from: without one the running session cannot be protected' }
+        }
+        const named = rawInput.split(/[\s,]+/).map((token) => token.trim()).filter((token) => token.length > 0)
+        if (named.length === 0) {
+          const listing = await listLogs(ctx, exec)
+          // No tool to call from here, so the one line the listing cannot say itself: how to act on it.
+          return { kind: 'success', text: `${renderList(listing)}\n\nName the ids to delete: /clean <id> <id> …` }
+        }
+        const report = await deleteLogs(ctx, exec, named)
+        return { kind: 'success', text: renderDelete(report) }
+      },
+    }))
+  }
 }

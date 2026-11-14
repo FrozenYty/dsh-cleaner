@@ -73,7 +73,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['remote.session'],
+      inject: ['remote.session', 'remote.commands'],
       /**
        * @param ctx - the browser plugin context.
        */
@@ -106,12 +106,60 @@ window.__ModuleLoader__.load({
           }
         }
 
+        /** The menu label in the language the window is showing, without a dictionary to register. */
+        const label = () => {
+          let active = ''
+          try {
+            active = String(ctx.get('locale')?.getLocale?.().active ?? '')
+          } catch {
+            // A locale service that cannot answer costs the language, never the item.
+          }
+          return active.toLowerCase().startsWith('zh') ? '删除日志' : 'Delete log'
+        }
+
+        /**
+         * The same operation as the tool and the command, from the sidebar: one row in a session's own menu.
+         *
+         * A data contribution, not a component — `resolve` returns the item and `run` is the click, so this
+         * half needs no renderer and no stylesheet. It calls the command rather than a host method of its
+         * own so that everything a person can do to a log goes through one implementation
+         * (docs/adr/0011-one-operation-two-callers.md).
+         */
+        const registerMenu = () => {
+          const menus = ctx.get('contextMenus')
+          if (menus === undefined || typeof menus.register !== 'function') return undefined
+          return menus.register({
+            id: 'dsh-cleaner.delete-log',
+            target: 'session',
+            // After the shipped actions (pin 100, rename 200, …) and before nothing: a destructive item
+            // belongs where a hand reaches last.
+            order: 500,
+            resolve: (target) => {
+              const sessionId = target?.sessionId
+              if (typeof sessionId !== 'string' || sessionId.length === 0) return []
+              return [{
+                id: 'dsh-cleaner.delete-log',
+                label: label(),
+                run: () => {
+                  // The command answers in the transcript; this item has nothing to show, and a rejected
+                  // promise here would be an unhandled rejection with no reader.
+                  void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
+                },
+              }]
+            },
+          })
+        }
+
         return ctx.effect(() => {
           void prune()
           // A deletion made while this window was in the background is covered when it comes back.
           const onFocus = () => void prune()
           window.addEventListener('focus', onFocus)
-          return () => window.removeEventListener('focus', onFocus)
+          const unregisterMenu = registerMenu()
+          return () => {
+            window.removeEventListener('focus', onFocus)
+            unregisterMenu?.()
+          }
         })
       },
     }

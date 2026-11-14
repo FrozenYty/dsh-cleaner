@@ -51,12 +51,19 @@ function plugin(definition) {
     throw new Error('the browser half imports nothing')
   })
   // The plugin object comes from the page's realm, so its array is compared by content, not identity.
-  assert.deepEqual([...built.inject], ['remote.session'], 'it waits for the session list it prunes against')
+  assert.deepEqual(
+    [...built.inject],
+    ['remote.session', 'remote.commands'],
+    'it waits for the session list it prunes against, and for the command its menu item runs',
+  )
   return built
 }
 
-/** Mount the half against a fake page and return what it did. */
-function mount({ views, list, answer }) {
+/**
+ * Mount the half against a fake page and return what it did.
+ * @param options - the views to plant, the host's answer, and the optional client services.
+ */
+function mount({ views, list, answer, menus, locale } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -66,6 +73,9 @@ function mount({ views, list, answer }) {
   }
   const calls = []
   const cleanup = []
+  const executed = []
+  const registered = []
+  const registrations = new Map()
   const ctx = {
     remote: {
       session: {
@@ -75,6 +85,28 @@ function mount({ views, list, answer }) {
           return answer
         },
       },
+      commands: {
+        execute: async (sessionId, line, attachments) => {
+          executed.push({ sessionId, line, attachments })
+          return { commandId: 'command-1', result: { kind: 'success' } }
+        },
+      },
+    },
+    get: (name) => {
+      if (name === 'contextMenus') {
+        if (!menus) return undefined
+        return {
+          register: (definition) => {
+            registered.push(definition)
+            registrations.set(definition.id, definition)
+            return () => registrations.delete(definition.id)
+          },
+        }
+      }
+      if (name === 'locale') {
+        return { getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }) }
+      }
+      return undefined
     },
     effect: (run) => {
       const dispose = run()
@@ -83,7 +115,7 @@ function mount({ views, list, answer }) {
     },
   }
   plugin(register(page)).apply(ctx)
-  return { store, calls, listeners, cleanup }
+  return { store, calls, listeners, cleanup, executed, registered, registrations }
 }
 
 const VIEW = (buckets) => JSON.stringify({ groupBy: 'workspace-tree', orderBy: 'manual', sessionOrderByAccount: buckets })
@@ -198,4 +230,56 @@ test('the listener is registered as an effect, so an unloaded plugin leaves no h
   assert.equal(typeof cleanup[0], 'function', 'apply returns the cleanup the page can run')
   cleanup[0]()
   assert.equal(listeners.has('focus'), false, 'the handler is gone with it')
+})
+
+test('a session menu item runs the command for that session, and nothing else', async () => {
+  const { registered, registrations, executed, cleanup } = mount({
+    views: {},
+    answer: [{ sessionId: 'session-live-1' }],
+    menus: true,
+  })
+
+  assert.equal(registered.length, 1, 'one data contribution, no renderer')
+  const entry = registered[0]
+  assert.equal(entry.target, 'session')
+  assert.equal(typeof entry.resolve, 'function')
+  assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
+
+  const [item] = entry.resolve({ sessionId: 'session-archived-1' })
+  assert.equal(item.label, 'Delete log', 'the label follows the window language')
+  assert.equal(typeof item.run, 'function')
+
+  item.run()
+  await new Promise((resolve) => setImmediate(resolve))
+  // Compared field by field: the arguments come from the page's realm, so their arrays are not this
+  // realm's arrays even when they hold the same values.
+  assert.equal(executed.length, 1)
+  assert.equal(executed[0].sessionId, 'session-archived-1')
+  assert.equal(executed[0].line, '/clean session-archived-1')
+  assert.equal(executed[0].attachments.length, 0)
+
+  // No target, no item: the menu must not offer a deletion it cannot name.
+  assert.equal(entry.resolve(undefined).length, 0)
+  assert.equal(entry.resolve({}).length, 0)
+
+  // The contribution goes away with the plugin.
+  assert.equal(registrations.size, 1)
+  cleanup[0]()
+  assert.equal(registrations.size, 0)
+})
+
+test('the menu label is Chinese when the window is', () => {
+  const { registered } = mount({ views: {}, answer: [], menus: true, locale: 'zh-CN' })
+  assert.equal(registered[0].resolve({ sessionId: 'session-1' })[0].label, '删除日志')
+})
+
+test('a page without the menus service still prunes the view', async () => {
+  const { store, registered } = mount({
+    views: { 'dsh.workspace.view.v5': VIEW({ '': ['session-gone-1', 'session-live-1'] }) },
+    answer: [{ sessionId: 'session-live-1' }],
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(registered, [], 'no service, no contribution, and no throw')
+  assert.equal(store.getItem('dsh.workspace.view.v5').includes('session-gone-1'), false)
 })

@@ -69,6 +69,23 @@ failing, is:
 - an id that is no longer on disk;
 - a session directory the plugin will not touch: a link, or one holding anything but regular files.
 
+The same operation is a **human command**, so a deletion does not need a model turn. Its name is `clean`,
+and it is typed with a leading slash:
+
+```
+/clean                     → the listing, as text in the transcript
+/clean <id> <id> …         → deletes exactly those, and reports the bytes
+```
+
+It runs through the host's command registry (`ctx.remote.commands.execute`), which resolves the command
+and runs it *without* sending anything to the model: no turn, no request, no context window spent on a
+decision you have already made. Both callers end in one implementation, so a person typing and a model
+calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
+
+A session's own **⋯ menu** carries the same thing as one row — *Delete log* (in the window's language) —
+which runs that command for the row it was opened on. It is a data contribution to the menu, not a
+renderer: the bundle supplies the label and the click, and the sidebar draws it like its own actions.
+
 ## Install
 
 The profile links to a directory, so the clone is what runs — put it somewhere it can stay:
@@ -346,6 +363,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
+| Why is there a command as well as a tool? | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
