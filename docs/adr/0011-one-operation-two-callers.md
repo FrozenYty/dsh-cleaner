@@ -82,6 +82,19 @@ Two facts are only true in a running window, and the half treats both as optiona
 service is reachable from a dynamic client half, and what the click may call. If either is absent the row
 is simply not contributed — the view pruning, which is the half's first job, keeps working either way.
 
-Two facts are only true in a running window, and the half treats both as optional: whether the menus
-service is reachable from a dynamic client half, and what the click may call. If either is absent the row
-is simply not contributed — the view pruning, which is the half's first job, keeps working either way.
+### Amendment — a row that runs a command the host does not have (same day, after the first click)
+
+The first click on that row failed, and the reason is worth writing down because it is a shape this plugin
+will always have: **the browser half reloads with the page and the host half only reloads with the
+process.** Right after an update the window therefore offers the new row while the running host still has
+the old bundle — and `ctx.remote.commands.execute` answers `undefined` for a name it does not know, which
+the composer treats as ordinary text. The session's own agent answered instead of the plugin, and the
+person read a failure for a deletion that never happened.
+
+The half now asks the host for that session's command list (once per session, remembered, because scoped
+commands shadow globals per agent) and contributes **no row** unless `clean` is among them. A list that
+cannot be read fails open: an unreadable answer is not evidence against the command, and a row that works
+beats a row that hides.
+
+The alternative — showing the row and disabling it — was rejected because a disabled row explains nothing
+about *why*, and this plugin's whole surface is about saying what is true.

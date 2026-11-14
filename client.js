@@ -118,6 +118,33 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * Whether the host actually has the command this row runs.
+         *
+         * A row that runs a command the host does not know is worse than no row at all: the click is
+         * admitted as ordinary text, the session's own agent answers instead, and the person reads a
+         * failure for a deletion that never happened. That is exactly what a window shows when the browser
+         * half is newer than the loaded bundle — which is the normal state right after an update, because
+         * this half reloads with the page and the host half only reloads with the process.
+         *
+         * Asked once per session and remembered; a list that cannot be read fails **open**, because a row
+         * that works is better than a row that hides.
+         */
+        const knownCommands = new Map()
+        const commandExists = async (sessionId) => {
+          if (knownCommands.has(sessionId)) return knownCommands.get(sessionId)
+          let known = true
+          try {
+            const answer = await ctx.remote.commands.list(sessionId)
+            const items = Array.isArray(answer) ? answer : answer?.items
+            known = (Array.isArray(items) ? items : []).some((entry) => entry?.name === 'clean')
+          } catch {
+            // No answer means no evidence against it: keep the row.
+          }
+          knownCommands.set(sessionId, known)
+          return known
+        }
+
+        /**
          * The same operation as the tool and the command, from the sidebar: one row in a session's own menu.
          *
          * A data contribution, not a component — `resolve` returns the item and `run` is the click, so this
@@ -143,9 +170,10 @@ window.__ModuleLoader__.load({
             target: 'session',
             // Only sorts against other contributions; `afterContent` is what decides the group.
             order: 500,
-            resolve: (target) => {
+            resolve: async (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
+              if (!await commandExists(sessionId)) return []
               return [{
                 id: 'dsh-cleaner.delete-log',
                 label: label(),
