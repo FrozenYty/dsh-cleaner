@@ -8,19 +8,20 @@ English | [中文](README-zh.md)
 ![build step](https://img.shields.io/badge/build-none-brightgreen)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 
-> Deletes archived logs, never a live session.
+> Deletes stored logs, never a live session.
 
-A DeepSeek Harness profile bundle for the one thing the product does not do: remove an archived
-session's log. It lists what is still on disk, waits while a person decides, deletes exactly the ids
-they approve, and reports the bytes reclaimed. No schedule, no age threshold, no background sweep.
+A DeepSeek Harness profile bundle for the one thing the product does not do: remove a session's log. It
+lists what is still on disk, waits while a person decides, deletes exactly the ids they approve, and
+reports the bytes reclaimed. No schedule, no age threshold, no background sweep, and **no need to archive
+first** — archiving is how the sidebar hides a session, not a permission to delete one.
 
 [github.com/FrozenYty/dsh-cleaner](https://github.com/FrozenYty/dsh-cleaner)
 
 ## Status
 
-- Current version: v0.1.0.
+- Current version: v0.2.0.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
-  tools appeared, `list_archived_sessions` reported the six archived logs, and `delete_archived_sessions`
+  tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
   `sessionPersistence` backend confirmed it no longer lists them, a second listing reported zero
   candidates with all six explained as already gone, and an independent directory count agreed: 36
@@ -56,17 +57,17 @@ The two tools are the three steps:
 
 | Step | Tool | What it does |
 |---|---|---|
-| list | `list_archived_sessions` | Lists the archived sessions whose logs are still on disk, with each one's bytes. No argument, no side effect — calling it can never be a mistake. |
+| list | `list_session_logs` | Lists the sessions whose logs are on disk, with each one's bytes, file count, last write and whether it is archived. No argument, no side effect — calling it can never be a mistake. |
 | confirm | — | The person reads the list and approves ids. Nothing happens during this step. |
-| delete | `delete_archived_sessions` | Takes the approved ids by name, removes those session directories, and reports the bytes reclaimed. |
+| delete | `delete_session_logs` | Takes the approved ids by name, removes those session directories, and reports the bytes reclaimed. |
 
-`delete_archived_sessions` requires the ids, so nothing is ever deleted by default and a subset can be
-approved. It refuses, and reports instead of failing:
+`delete_session_logs` requires the ids, so nothing is ever deleted by default and a subset can be
+approved. Archived and unarchived sessions are both deletable; what it refuses, and reports instead of
+failing, is:
 
-- a session that is not archived, and one archived but no longer on disk;
-- the session running the command, and any session a live agent holds;
-- a session restored between the listing and the deletion — the archive list is re-read at deletion
-  time, not trusted from the listing.
+- the session running the command, and any session whose agent is **busy** (the refusal names the status);
+- an id that is no longer on disk;
+- a session directory the plugin will not touch: a link, or one holding anything but regular files.
 
 ## Install
 
@@ -93,7 +94,7 @@ starts, so a running window keeps the code it loaded. **Removing** is `plugin_ma
 `remove_bundle`, or `dsh plugin --profile <name> remove dsh-cleaner` on a CLI profile; the clone, the
 store, and every deletion already made are untouched.
 
-After installing, the card in the plugin list reads **Cleaner** — `Deletes archived logs, never a live
+After installing, the card in the plugin list reads **Cleaner** — `Deletes stored logs, never a live
 session.` If the card is there with its switch on, the bundle loaded.
 
 ## First use
@@ -102,31 +103,33 @@ There is no interface to open: you ask in ordinary language and the model calls 
 exchange, from the live run recorded in [Status](#status):
 
 ```
-> Which archived sessions are still taking space?
+> Which sessions are still taking space?
 
-list_archived_sessions {}
-← Archived session logs on disk: 6 of 6 archived ids, 4169349 bytes (3.98 MiB).
+list_session_logs {}
+← Session logs on disk: 6, 4169349 bytes (3.98 MiB) (6 of them archived).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
-    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  last write 2026-11-02T07:39:15.053Z
-    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  last write 2026-11-03T02:14:07.060Z    …
-  Nothing was deleted. Show this list to the person and call delete_archived_sessions with the ids
-  they approve.
+    "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  archived  last write 2026-11-02T07:39:15.053Z
+    "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  archived  last write 2026-11-03T02:14:07.060Z    …
+  Nothing was deleted. Show this list to the person and call delete_session_logs with the ids
+  they approve — archived or not.
 
 > Delete the six you listed. Keep nothing.
 
-delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
+delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace list dropped them: the rows are gone from the sidebar, not only from the disk.
+  The workspace records dropped them (6 detached, 6 unarchived).
   The session persistence backend no longer lists any of them.
 ```
 
 ## What it never does
 
-- Never touches an unarchived session. The only ids it can delete come from
-  `global.archivedSessionIds` in the workspace storage file, and the engine looks up only those ids —
-  an unarchived session is not filtered out, it is never a candidate by construction.
-- Never touches the session executing the command, or one a live agent is using.
+- Never touches a session that is running the command, or one whose agent is **busy** — the refusal names
+  the status, so "wait for its work" is distinguishable from "the plugin refused for a reason you cannot
+  see". An agent the host merely keeps in memory does not block a deletion
+  ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
+- Never deletes anything nobody named. The store is the index — every session whose log is on disk is a
+  candidate, archived or not — and the deleting tool only ever receives ids the listing printed.
 - Never follows a link. Symlinked project and session directories are skipped rather than entered, a
   session directory holding anything but regular files is refused and reported rather than removed,
   every candidate is resolved under the session storage root before a byte is unlinked, and files are
@@ -142,7 +145,9 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
   `dsh-session-persistence-jsonl` lays it out (`session.vN.jsonl.zstd` generations inside it). The
   directory name is the backend's own escaping of the id, reproduced in `engine.js`; every generation
   in the directory is part of the same session and goes with it.
-- `<DSH_HOME>/storages/workspace.json` — read only, for `global.archivedSessionIds`.
+- `<DSH_HOME>/storages/workspace.json` — read only, for `global.archivedSessionIds`: the archive flag a
+  listing shows, and the ids an earlier deletion may have left behind. It is not a gate — a session
+  without an archive entry is a candidate like any other.
 - `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` — read only, for one row: the session's
   title, shown beside the id so a list of ids can be matched against the sessions someone remembers by
   name. A missing, older or unreadable file costs the title and changes nothing else.
@@ -179,7 +184,7 @@ window's own sidebar view, so the bundle carries a browser half that prunes it a
 - **No proof that a person approved the list.** The ids make the approved set explicit in the
   conversation and the refusals bound the damage, but a model could still name an id nobody looked at.
   See [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md).
-- **No log repair.** A corrupt or unreadable log is still deleted when its session is archived: this
+- **No log repair.** A corrupt or unreadable log is still deleted when its session is named: this
   plugin is the cleanup path of last resort, so it must not depend on the log being parseable.
 
 ## Where this fits
@@ -190,15 +195,16 @@ was read from `dsh-session-cleaner` v1.0.2's published code, not from its summar
 | | this plugin | `dsh-session-cleaner` | doing it by hand |
 |---|---|---|---|
 | surface | two model-facing tools | a web UI menu item and an HTTP route | a shell |
-| what it will delete | archived ids only, named by a person | any session with no attached agent | whatever the glob matches |
+| what it will delete | any session log on disk, named by a person | any session with no attached agent | whatever the glob matches |
 | the running session | refused by id, always | refused while its agent is running | not refused — the glob does not know |
 | what it reports | candidates, bytes, last write, store total, per-id result | detach / workspace / file counts | nothing |
 | writes the workspace records | asks the registry to detach the deleted session; never edits the store | yes, it detaches the session | no |
 | survives a wrong id | refuses it and says why | n/a — it takes one id from a menu | deletes the wrong session |
 
-Neither tool is a superset of the other: `dsh-session-cleaner` deletes *any* session and cleans up the
-workspace records, which is what a person clicking a menu item wants. This plugin deletes only what is
-already hidden, and its whole design is about being unable to delete anything else.
+Neither tool is a superset of the other: `dsh-session-cleaner` reaches its deletion through a menu item
+and an HTTP route, so a person clicks instead of naming ids. This plugin's whole design is about being
+unable to delete anything nobody printed in a listing — and since v0.2.0 it does delete unarchived
+sessions too, so the "already hidden" restriction is gone from the list of differences.
 
 ## Questions
 
@@ -214,8 +220,9 @@ deleted session's row may linger in the UI until the runtime refreshes — see t
 above.
 
 **Will it delete sessions that are not archived?**
-No. The candidate set is the archive list, looked up by id: an unarchived session is never looked up,
-not merely filtered out.
+Yes. Archiving is the product's way to hide a session, not this plugin's permission to delete one: the
+store is the index, so an unarchived session is a candidate and can be deleted by id like any other. The
+listing shows each session's archive state because it tells you whether the row is already hidden.
 
 **Can a deletion be undone?**
 No. Each session's directory is unlinked file by file, and there is no trash to restore from: the
@@ -245,14 +252,16 @@ profile's `package.json` should list `dsh-cleaner`; if both are true and the too
 restart the app — a window keeps the plugin list it booted with.
 
 **It lists nothing, and the disk is still full.**
-Only archived sessions can be candidates, and the listing reports the size of the whole store next to the
-reclaimable bytes: 4 MiB of candidates against a 90 MiB store means the rest is live sessions, the
-projection cache and the attachment store, none of which this plugin removes.
+The listing reports the size of the whole store next to what it found: nothing listed against a 90 MiB
+store means the sessions are gone and the space is held by something this plugin does not remove — the
+projection cache and the attachment store.
 
 **A refusal names a reason I do not understand.**
-Two are worth spelling out: `not an archived session; archive it first to make it a candidate` (the log is
-on disk, the session is simply not hidden yet) and `archived, but no session directory is stored; already
-deleted` (a second call with the same ids, or a session deleted from another window).
+The reasons are: `a live agent holds this session (status: …)` — its work is still running, so wait for
+it; `no session directory is stored under that id` — a second call with the same ids, or a session
+deleted from another window; and `its directory is not a candidate: …`, where the reason after the colon
+names the shape this plugin refuses to touch (a link, or a directory holding something that is not a
+file).
 
 **A deletion says `Partially removed`.**
 A file could not be unlinked — usually a lock held by an indexer or an antivirus. The answer names the file
@@ -264,16 +273,15 @@ The host reads the bundle when it starts: `git pull` updates the files, but a ru
 and the locale it loaded. Restart.
 
 **A deleted session is still in the sidebar.**
-Name its id in one more `delete_archived_sessions` call. Three records keep a session on screen after its
-log is gone: the project's membership, the archive set, and the window's own persisted sidebar view. The
-plugin asks the registry to drop the first two (the answer says `The workspace records dropped them…`), and
-the answer also tells you whether the host's session list still names the id. The third is the window's
-business, and the bundle's browser half repairs it: it drops the ids the view kept that the host no longer
+Three records keep a session on screen after its log is gone: the project's membership, the archive set,
+and the window's own persisted sidebar view. The plugin handles the first two — the answer says which —
+and the bundle's browser half repairs the third: it drops the ids the view kept that the host no longer
 lists, at every page load and when the window regains focus, so **the row is gone the next time the page
-loads — nothing to click**. A page that is already open when the deletion happens keeps its copy until it
-loads again, because no host event rewrites a view the renderer already holds. To clear one immediately,
-switch the sidebar's ordering away from *manual* and back, or drag a session: the client then rewrites the
-view from the members it actually has.
+loads — nothing to click**. One case is stated rather than fixed: a session the host still holds in memory
+is still drawn by a window, and no plugin can evict it, so its row stays until the host releases it, which
+a restart does. The answer says so when it happens (`the host still holds that session in memory`). To
+clear such a row immediately, switch the sidebar's ordering away from *manual* and back, or drag a
+session.
 
 ## Compatibility
 
@@ -319,7 +327,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 }), null, 2)))"
 ```
 
-`planCleanup` only reads: it is safe to run at any time, and it is the same call `list_archived_sessions`
+`planCleanup` only reads: it is safe to run at any time, and it is the same call `list_session_logs`
 makes. It never deletes; `applyCleanup` is the only function that does.
 
 ## Documents
@@ -333,6 +341,11 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why two tools, and why explicit ids? | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
 | Why are links and irregular directories refused? | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | Why is a plan checked again when it is executed? | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
+| Why does it detach a deleted session instead of editing the workspace file? | [ADR 0006](docs/adr/0006-detach-by-asking.md) |
+| Why does the bundle carry a browser half? | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md) |
+| Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
+| Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) |
+| Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |

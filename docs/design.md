@@ -69,23 +69,28 @@ Read from the installed asar, not from memory. The JSONL backend stores one sess
   the sessions someone remembers by name — and nothing else is read from it, nothing is written to it, and
   a missing or unreadable file costs the title and nothing more.
 
-The workspace storage file is read-only here: `global.archivedSessionIds` is the only field this plugin
-reads, and the plugin never writes the file. A deleted id stays in that list and becomes an id with no
-directory, which the listing reports as already gone.
+The workspace storage file is read-only here, and since [ADR 0010](adr/0010-no-archive-precondition.md) it
+is read only to **report**: `global.archivedSessionIds` says whether a listed session is archived and which
+archived ids no longer have a directory. It is not a gate. The plugin never writes the file, so a deleted
+id stays in that list and becomes an id with no directory, which the listing reports as already gone.
 
 ## 4. The candidate state matrix
 
-Selection is driven by the archive list, not by the disk: the engine walks the disk once to build a map
-of session directories, then looks up **only the archived ids**. An unarchived session is not filtered
-out — it is never a candidate by construction, because nothing looks it up.
+Selection is driven by the disk, not by the archive list: the engine walks the storage root once and every
+session directory it finds is a candidate unless something protects it. `decodeSegment` turns the directory
+name back into the session id, which is what makes the store its own index — the escape is injective, so
+the name is a complete record of the id.
 
-| Archived | Directory state | Protected | What happens |
+| Directory state | Protected | Archived | What happens |
 |---|---|---|---|
-| no | any | any | never considered; not even listed |
-| yes | absent | any | `already_gone`: reported with the id, nothing removed. This is the second-run state. |
-| yes | a real directory of regular files | yes | `protected`: reported with the reason, kept |
-| yes | a real directory of regular files | no | `candidate`: listed with its bytes; removed when named |
-| yes | a link, or a directory holding anything but regular files | any | `skipped`: reported with the path and the reason; never entered, never removed — and **not** `already_gone`, because the log is still there |
+| absent | any | no | not listed as a candidate; if an archived id names it, `already_gone` |
+| absent | any | yes | `already_gone`: reported with the id, nothing removed. This is the second-run state. |
+| a real directory of regular files | yes | any | `protected`: reported with the reason, kept |
+| a real directory of regular files | no | any | `candidate`: listed with its bytes and its archive state; removed when named |
+| a link, or a directory holding anything but regular files | any | any | `skipped`: reported with the path and the reason; never entered, never removed — and **not** `already_gone`, because the log is still there |
+
+The archive column is a fact the listing prints, not a decision: an unarchived session is as deletable as
+an archived one, and a person reads the flag to know whether that row is already hidden in their sidebar.
 
 Two consequences worth stating: an archived id with no directory is not an error, and a directory this
 plugin refuses to touch is not a failure — both are ordinary answers, because a deletion run has to be
@@ -105,23 +110,23 @@ tell "wait for its work" apart from "the harness merely has it loaded".
 
 ## 5. The deletion path
 
-1. Re-read `global.archivedSessionIds`. The plan is a description of the past; this is the deliberate
-   act, and an id restored between the listing and now must survive it. A workspace file that cannot be
-   read or parsed throws here, before anything is removed. Why every step below is repeated rather than
-   trusted: [ADR 0005](adr/0005-re-verify-at-execution.md).
-2. Resolve the session storage root once (`realpath`). A root that is itself a link is followed to its
-   target on purpose; containment is then measured against that target, so nothing escapes it.
-3. For each candidate, in order: still archived? does the directory name still encode this id (a plan
-   naming someone else's path is refused, so the report cannot lie)? `lstat` a real directory (a link is
-   refused)? its `realpath` inside the root? every entry directly inside a regular file? Only then:
-   `lstat` each file for its size, `unlink` it, and `rmdir` the directory.
-4. Report `removed` (id, path, file count, bytes), `removed_bytes` (measured at unlink time, so it is
+1. Resolve the session storage root once (`realpath`). A root that is itself a link is followed to its
+   target on purpose; containment is then measured against that target, so nothing escapes it. There is
+   no archive read here any more: since [ADR 0010](adr/0010-no-archive-precondition.md) no candidate
+   depends on the archive list, and re-reading it would only re-introduce the refusal that rule removed.
+2. For each candidate, in order: does the directory name still encode this id (a plan naming someone
+   else's path is refused, so the report cannot lie)? `lstat` a real directory (a link is refused)? its
+   `realpath` inside the root? every entry directly inside a regular file? Only then: `lstat` each file
+   for its size, `unlink` it, and `rmdir` the directory. Why every step is repeated rather than trusted:
+   [ADR 0005](adr/0005-re-verify-at-execution.md).
+3. Report `removed` (id, path, file count, bytes), `removed_bytes` (measured at unlink time, so it is
    what actually left the disk), `failed` (with the bytes freed before the failure) and `refused` (with
    the reason). One candidate's failure does not abort the sweep. The listing carries two more facts a
    person needs to decide: `modified`, the newest file's write time in each candidate directory, and
    `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
    be judged.
-5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.6. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
+4. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
+5. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
    is gone, archived or not, because a ghost row is exactly what a person is looking at when they name it
    and an earlier deletion may already have unarchived it. The plugin never edits the workspace store:
    `detachSession` runs on the registry's own mutation chain, and the workspace controller's `follow()`
@@ -132,19 +137,19 @@ tell "wait for its work" apart from "the harness merely has it loaded".
    sidebar only when that list is fetched again. The harness has no "this log is gone" event to publish,
    which is the same absence that makes this plugin necessary.
 
-Both of the last two steps are reports about a deletion that already happened, and neither can veto one.
+6. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
+   what a window draws its session rows from, and it is a different service from the persistence seam: a
+   session can be gone from the store and still be named there, which is why a row can outlive the log. The
+   answer reports it instead of promising a screen it cannot see — and the *same* answer decides step 5: an
+   id the list still names keeps both its project membership and its archive entry, because the sidebar
+   hides an archived row of a project and shows the row of an ungrouped one
+   ([ADR 0009](adr/0009-two-records-two-cases.md)).
+
+The last three steps are reports about a deletion that already happened, and none of them can veto one.
 The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a
 read that throws, a registry that is absent and a detach that fails are each described in the answer — and
 `verify.backend: 'not-asked'` is what a call that removed nothing answers with, while the detach is still
 asked for the ids it was given.
-
-7. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
-   what a window draws its session rows from, and it is a different service from the persistence seam: a
-   session can be gone from the store and still be named there, which is why a row can outlive the log. The
-   answer reports it instead of promising a screen it cannot see — and the *same* answer decides step 6: an
-   id the list still names keeps both its project membership and its archive entry, because the sidebar
-   hides an archived row of a project and shows the row of an ungrouped one
-   ([ADR 0009](adr/0009-two-records-two-cases.md)).
 
 Where the promise stops: the sidebar also renders from a view the window persists for itself
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
@@ -184,10 +189,10 @@ model. `scripts/check.mjs` is what covers that half.
 
 ## 8. Failure modes
 
-- **The backend changes its storage layout or its id escaping.** Archived ids stop matching directory
-  names: the listing reports `0 candidates`, every archived id as `already_gone`, and `stored_sessions`
-  greater than zero. Safe — nothing is deleted — and visible in the answer, but silent in the sense that
-  no error is raised. This is the one coupling to another package in the repository.
+- **The backend changes its storage layout or its id escaping.** The store stops yielding candidates:
+  the listing reports `0 candidates` with a non-zero store, and every archived id as `already_gone`. Safe
+  — nothing is deleted — and visible in the answer, but silent in the sense that no error is raised. This
+  is the one coupling to another package in the repository.
 - **A session directory gains a nested directory.** It is refused and reported rather than removed, the
   listing says why, and the id is not called `already_gone`: the log is still on disk. A human decides
   what it is.
@@ -197,7 +202,9 @@ model. `scripts/check.mjs` is what covers that half.
   the answer that knows the directory exists, which is why it is printed rather than counted.
 - **Two deletions run at once.** The second finds the files gone or unlink fails; both are reported, and
   nothing outside the candidate set is touched.
-- **The workspace file is corrupt.** Listing and deletion throw before removing anything.
+- **The workspace file is corrupt.** A listing or a deletion throws before removing anything: the archive
+  flag and the `already_gone` list come from that file, and a file that exists but cannot be read is an
+  error rather than "nothing is archived".
 - **A session id has two directories** — a moved cwd, a copied tree, a restored backup. The scan keeps
   one as the candidate and reports the other as skipped, so the store total is not silently short;
   deleting the reported one makes the other a candidate on the next run.

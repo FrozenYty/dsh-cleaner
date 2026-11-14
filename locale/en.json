@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cleaner",
-    "description": "Deletes archived logs, never a live session."
+    "description": "Deletes stored logs, never a live session."
   }
 }

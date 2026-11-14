@@ -3,18 +3,31 @@
  *
  * Every case here builds its own storage root and workspace file under `tests/.tmp`, and passes those
  * two paths to the engine — no test in this file can reach a real ~/.dsh even if it wanted to. The
- * fixture is the one the acceptance describes: three archived sessions, one live session, one empty
- * project directory, and (in the later cases) the two shapes the engine must refuse to touch.
+ * fixture is the one the acceptance describes: three archived sessions, one session that is **not**
+ * archived, one empty session directory, one empty project directory, and (in the later cases) the two
+ * shapes the engine must refuse to touch.
+ *
+ * The contract under test: the store is the index. A session whose log is on disk is a candidate whether
+ * or not it is archived — archiving is the product's way to hide a session, not this plugin's gate — and
+ * the archive list is only read to *report* facts (how many ids are archived, which archived ids no longer
+ * have a directory). What still protects a session is its protection entry: the caller, or a busy agent.
  */
 
 import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readdir, rm, rmdir, symlink, writeFile, chmod } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import test, { before, beforeEach, after } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { after, before, beforeEach, test } from 'node:test'
 
-import { applyCleanup, encodeSegment, planCleanup, readArchivedIds, scanStoredSessions } from '../engine.js'
+import {
+  applyCleanup,
+  decodeSegment,
+  encodeSegment,
+  planCleanup,
+  readArchivedIds,
+  scanStoredSessions,
+} from '../engine.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const TMP = join(here, '.tmp')
@@ -28,7 +41,11 @@ const ARCHIVED = [
   { id: 'session-archived-3', project: '--D-BETA--', files: { 'session.v4.jsonl.zstd': 12345 } },
 ]
 const ARCHIVED_BYTES = 1000 + 2000 + 500 + 12345
+const ARCHIVED_IDS = ARCHIVED.map((entry) => entry.id)
 const LIVE = { id: 'session-live-1', project: '--D-ALPHA--', files: { 'session.v4.jsonl.zstd': 777 } }
+/** Every session directory the fixture stores, in the order a person would not care about. */
+const STORED_IDS = [...ARCHIVED_IDS, LIVE.id, 'session-empty-1']
+const STORED_BYTES = ARCHIVED_BYTES + 777
 
 /** Write one session directory exactly as the JSONL backend lays it out. */
 async function writeSession({ id, project, files }, root = ROOT) {
@@ -38,7 +55,7 @@ async function writeSession({ id, project, files }, root = ROOT) {
   return dir
 }
 
-/** The workspace storage file, with only the field this engine reads filled in. */
+/** The workspace storage file, with only the fields this engine reads filled in. */
 async function writeWorkspace(ids) {
   await mkdir(dirname(WORKSPACE), { recursive: true })
   await writeFile(
@@ -51,17 +68,18 @@ async function writeWorkspace(ids) {
   )
 }
 
-async function buildFixture({ archived = ARCHIVED.map((entry) => entry.id) } = {}) {
+async function buildFixture({ archived = ARCHIVED_IDS } = {}) {
   await rm(TMP, { recursive: true, force: true })
   for (const session of ARCHIVED) await writeSession(session)
   await writeSession(LIVE)
-  // An empty project directory, and an empty session directory whose id is not archived.
+  // An empty project directory, and an empty session directory that nobody archived.
   await mkdir(join(ROOT, '--D-EMPTY--'), { recursive: true })
   await mkdir(join(ROOT, '--D-ALPHA--', 'session-empty-1'), { recursive: true })
   await writeWorkspace(archived)
 }
 
 const plan = (options = {}) => planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, ...options })
+const ids = (entries) => entries.map((entry) => entry.id).sort()
 
 before(async () => {
   await rm(TMP, { recursive: true, force: true })
@@ -75,96 +93,88 @@ after(async () => {
   await rm(TMP, { recursive: true, force: true })
 })
 
-test('a dry run lists exactly the archived sessions on disk, counts their bytes, and deletes nothing', async () => {
+test('a dry run lists every session on disk, says which are archived, counts their bytes, and deletes nothing', async () => {
   const listing = await plan()
 
-  assert.deepEqual(listing.candidates.map((candidate) => candidate.id).sort(), [
-    'session-archived-1',
-    'session-archived-2',
-    'session-archived-3',
-  ])
-  assert.equal(listing.total_bytes, ARCHIVED_BYTES)
+  assert.deepEqual(ids(listing.candidates), STORED_IDS.sort())
+  assert.equal(listing.total_bytes, STORED_BYTES)
   assert.equal(listing.archived_ids, 3)
   assert.equal(listing.stored_sessions, 5)
-  // 15845 archived + 777 live; the empty session directory adds nothing.
-  assert.equal(listing.stored_bytes, ARCHIVED_BYTES + 777)
+  assert.equal(listing.stored_bytes, STORED_BYTES)
   assert.deepEqual(listing.already_gone, [])
   assert.deepEqual(listing.protected, [])
-  // The listing describes 3 files in the first directory and 1 in each of the others.
+  // The archive flag is a fact about the product, not a gate: a person reads it to know whether the row
+  // is already hidden, and the answer still offers the session for deletion.
   assert.deepEqual(
-    listing.candidates.map((candidate) => candidate.files.length).sort(),
-    [1, 1, 2],
+    listing.candidates.filter((candidate) => candidate.archived).map((candidate) => candidate.id).sort(),
+    ARCHIVED_IDS.slice().sort(),
   )
-  // The last write is a real timestamp, because it is what a person uses to judge an old session.
+  assert.deepEqual(
+    listing.candidates.filter((candidate) => !candidate.archived).map((candidate) => candidate.id).sort(),
+    [LIVE.id, 'session-empty-1'].sort(),
+  )
+  // The listing describes 3 files in the first directory and 1 in each of the others.
+  assert.deepEqual(listing.candidates.map((candidate) => candidate.files.length).sort(), [0, 1, 1, 1, 2])
+  // The last write is a real timestamp where one exists, because it is what a person uses to judge age.
   for (const candidate of listing.candidates) {
-    assert.match(candidate.modified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
-    assert.ok(Date.now() - Date.parse(candidate.modified) < 60 * 60 * 1000)
+    if (candidate.files.length === 0) assert.equal(candidate.modified, null)
+    else assert.match(candidate.modified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
   }
   // A tool result has to be lossless JSON: an `undefined` field would silently vanish here.
   assert.deepEqual(JSON.parse(JSON.stringify(listing)), listing)
 
   for (const candidate of listing.candidates) assert.ok(existsSync(candidate.path), `${candidate.path} must survive a dry run`)
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id, 'session.v4.jsonl.zstd')))
 })
 
-test('a deletion removes the three archived directories and leaves the live session and the empty directory', async () => {
-  const listing = await plan()
+test('a deletion removes exactly the ids it was given, archived or not', async () => {
+  const named = ['session-archived-1', 'session-archived-3', LIVE.id]
+  const listing = await plan({ only: named })
   const report = await applyCleanup(listing)
 
-  assert.deepEqual(report.removed.map((entry) => entry.id).sort(), [
-    'session-archived-1',
-    'session-archived-2',
-    'session-archived-3',
-  ])
-  assert.equal(report.removed_bytes, ARCHIVED_BYTES)
+  assert.deepEqual(ids(report.removed), named.slice().sort())
+  assert.equal(report.removed_bytes, 1000 + 2000 + 12345 + 777)
   assert.deepEqual(report.failed, [])
   assert.deepEqual(report.refused, [])
-
   for (const candidate of listing.candidates) assert.equal(existsSync(candidate.path), false, `${candidate.path} must be gone`)
-  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false)
-  assert.equal(existsSync(join(ROOT, '--D-BETA--', 'session-archived-3')), false)
-  // Untouched: the live session, the empty project directory, the empty session directory, and the
-  // project directories themselves — a project directory is not a session.
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id, 'session.v4.jsonl.zstd')))
-  assert.ok(existsSync(join(ROOT, '--D-EMPTY--')))
+  // Untouched: what was not named, the empty project directory, and the project directories themselves —
+  // a project directory is not a session.
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-empty-1')))
-  assert.deepEqual((await readdir(join(ROOT, '--D-ALPHA--'))).sort(), ['session-empty-1', LIVE.id])
+  assert.ok(existsSync(join(ROOT, '--D-EMPTY--')))
+  assert.deepEqual((await readdir(join(ROOT, '--D-ALPHA--'))).sort(), ['session-archived-2', 'session-empty-1'])
 })
 
-test('a session that is on disk but not archived survives a deletion run', async () => {
-  const before = new Set(await readdir(join(ROOT, '--D-ALPHA--')))
-  assert.ok(before.has(LIVE.id))
+test('archiving is not a gate: a session without an archive entry is a candidate and is deleted by name', async () => {
+  const listing = await plan({ only: [LIVE.id, 'session-empty-1'] })
+  assert.deepEqual(ids(listing.candidates), [LIVE.id, 'session-empty-1'].sort())
 
-  const listing = await plan()
-  await applyCleanup(listing)
-
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), 'an unarchived session must never be a candidate')
-  assert.ok(await readArchivedIds(WORKSPACE).then((ids) => !ids.includes(LIVE.id)))
-
-  // Asked for by name, an unarchived id is refused with a reason instead of failing the call.
-  const asked = await plan({ only: [LIVE.id] })
-  assert.deepEqual(asked.candidates, [])
-  assert.deepEqual(asked.requested, [
-    { id: LIVE.id, reason: 'not an archived session; archive it first to make it a candidate' },
-  ])
-  const nothing = await applyCleanup(asked)
-  assert.deepEqual(nothing.removed, [])
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)))
+  const report = await applyCleanup(listing)
+  assert.deepEqual(ids(report.removed), [LIVE.id, 'session-empty-1'].sort())
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), false)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-empty-1')), false)
 })
 
-test('a refusal says whether the id needs archiving or does not exist at all', async () => {
-  const asked = await plan({ only: [LIVE.id, 'session-never-existed'] })
+test('the archive entry of a candidate does not decide anything at deletion time', async () => {
+  const listing = await plan({ only: ['session-archived-3'] })
+  // The person unarchives it after seeing the list, before approving the deletion.
+  await writeWorkspace(['session-archived-1', 'session-archived-2'])
 
-  assert.deepEqual(asked.candidates, [])
+  const report = await applyCleanup(listing)
+  assert.deepEqual(ids(report.removed), ['session-archived-3'])
+  assert.deepEqual(report.refused, [])
+  assert.equal(existsSync(join(ROOT, '--D-BETA--', 'session-archived-3')), false)
+})
+
+test('a refusal says the id is protected, its directory is refused, or nothing is stored under it', async () => {
+  const asked = await plan({ only: ['session-never-existed', 'session-archived-2'] })
+
+  assert.deepEqual(ids(asked.candidates), ['session-archived-2'])
   assert.deepEqual(asked.requested, [
-    { id: LIVE.id, reason: 'not an archived session; archive it first to make it a candidate' },
-    { id: 'session-never-existed', reason: 'not an archived session, and no log is stored under that id' },
+    { id: 'session-never-existed', reason: 'no session directory is stored under that id' },
   ])
   const report = await applyCleanup(asked)
-  assert.deepEqual(report.removed, [])
-  // Nothing was a candidate, so the deletion had nothing to re-check: the reasons live in the plan, and
-  // the tool answer merges plan.requested with report.refused.
   assert.deepEqual(report.refused, [])
+  assert.deepEqual(ids(report.removed), ['session-archived-2'])
 })
 
 test('a named id with no log is reported as unlogged whether or not it is still archived', async () => {
@@ -175,25 +185,25 @@ test('a named id with no log is reported as unlogged whether or not it is still 
   const asked = await plan({ only: ['session-never-existed', ARCHIVED[0].id] })
   assert.deepEqual(asked.unlogged.sort(), ['session-never-existed', ARCHIVED[0].id].sort())
   assert.deepEqual(asked.already_gone, [ARCHIVED[0].id])
+  assert.deepEqual(asked.requested, [
+    { id: 'session-never-existed', reason: 'no session directory is stored under that id' },
+    { id: ARCHIVED[0].id, reason: 'no session directory is stored under that id; already deleted' },
+  ])
   const report = await applyCleanup(asked)
   assert.deepEqual(report.removed, [])
 })
 
-test('a second run reports no candidate rather than an error, and says why', async () => {
-  const first = await plan()
+test('a second run reports what is left rather than an error, and says why the old ids are gone', async () => {
+  const first = await plan({ only: ARCHIVED_IDS })
   await applyCleanup(first)
 
   const second = await plan()
-  assert.deepEqual(second.candidates, [])
-  assert.equal(second.total_bytes, 0)
+  assert.deepEqual(ids(second.candidates), [LIVE.id, 'session-empty-1'].sort())
+  assert.equal(second.total_bytes, 777)
   assert.equal(second.archived_ids, 3)
-  assert.deepEqual(second.already_gone.sort(), [
-    'session-archived-1',
-    'session-archived-2',
-    'session-archived-3',
-  ])
+  assert.deepEqual(second.already_gone.sort(), ARCHIVED_IDS.slice().sort())
 
-  const again = await applyCleanup(second)
+  const again = await applyCleanup({ ...second, candidates: [] })
   assert.deepEqual(again.removed, [])
   assert.deepEqual(again.failed, [])
   assert.equal(again.removed_bytes, 0)
@@ -201,14 +211,14 @@ test('a second run reports no candidate rather than an error, and says why', asy
   // The same ids asked for by name are refused, not treated as a failure.
   const asked = await plan({ only: ['session-archived-1'] })
   assert.deepEqual(asked.requested, [
-    { id: 'session-archived-1', reason: 'archived, but no session directory is stored; already deleted' },
+    { id: 'session-archived-1', reason: 'no session directory is stored under that id; already deleted' },
   ])
 })
 
 test('the protected ids are listed and kept — the session running the command cannot delete itself', async () => {
   const listing = await plan({ protect: [{ id: 'session-archived-2', reason: 'the session running this command' }] })
 
-  assert.deepEqual(listing.candidates.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-3'])
+  assert.deepEqual(ids(listing.candidates), ['session-archived-1', 'session-archived-3', LIVE.id, 'session-empty-1'].sort())
   assert.deepEqual(listing.protected, [{
     id: 'session-archived-2',
     path: join(ROOT, '--D-ALPHA--', 'session-archived-2'),
@@ -217,20 +227,8 @@ test('the protected ids are listed and kept — the session running the command 
   }])
 
   const report = await applyCleanup(listing)
-  assert.equal(report.removed.length, 2)
+  assert.equal(report.removed.length, 4)
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
-})
-
-test('the archive list is re-read at deletion time: a session restored in between is kept', async () => {
-  const listing = await plan()
-  // The person unarchives one of them after seeing the list, before approving it.
-  await writeWorkspace(['session-archived-1', 'session-archived-2'])
-
-  const report = await applyCleanup(listing)
-
-  assert.deepEqual(report.removed.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
-  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'no longer archived' }])
-  assert.ok(existsSync(join(ROOT, '--D-BETA--', 'session-archived-3', 'session.v4.jsonl.zstd')))
 })
 
 test('a link is refused at both levels and never followed out of the storage root', async (t) => {
@@ -249,21 +247,14 @@ test('a link is refused at both levels and never followed out of the storage roo
   // A junction is removed with rmdir, never with a recursive delete: the target is not this test's
   // to remove, and the next fixture reset must not have to guess.
   try {
-    await writeWorkspace([...ARCHIVED.map((entry) => entry.id), 'session-archived-4'])
-
     const listing = await plan()
     // The linked session directory is not a candidate; the linked project directory is reported.
-    assert.deepEqual(listing.candidates.map((entry) => entry.id).sort(), [
-      'session-archived-1',
-      'session-archived-2',
-      'session-archived-3',
-    ])
+    assert.deepEqual(ids(listing.candidates), STORED_IDS.sort())
     const skipped = listing.skipped.map((entry) => entry.path)
     assert.ok(skipped.includes(linkedSession), 'the linked session directory must be reported, not entered')
     assert.ok(skipped.includes(linkedProject), 'the linked project directory must be reported, not entered')
 
-    const report = await applyCleanup(listing)
-    assert.deepEqual(report.refused, [])
+    await applyCleanup(listing)
     assert.ok(existsSync(join(OUTSIDE, 'keep.bin')), 'the link target must be untouched')
     assert.ok(existsSync(linkedSession), 'the link itself is not removed')
     assert.ok(existsSync(linkedProject))
@@ -278,7 +269,6 @@ test('a session directory holding a nested directory is refused rather than remo
   await mkdir(join(nested, 'artifacts'), { recursive: true })
   await writeFile(join(nested, 'artifacts', 'part.bin'), Buffer.alloc(11, 1))
   await writeFile(join(nested, 'session.v4.jsonl.zstd'), Buffer.alloc(12, 1))
-  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), 'session-archived-5'])
 
   const listing = await plan()
   assert.equal(listing.candidates.some((entry) => entry.id === 'session-archived-5'), false)
@@ -286,18 +276,18 @@ test('a session directory holding a nested directory is refused rather than remo
   // The directory exists, so the log is not gone: reporting it as already deleted would be a lie about
   // the disk. Its measurable bytes still belong to the store, so the total does not omit them.
   assert.deepEqual(listing.already_gone, [])
-  assert.equal(listing.stored_bytes, ARCHIVED_BYTES + 777 + 12)
+  assert.equal(listing.stored_bytes, STORED_BYTES + 12)
 
   const asked = await plan({ only: ['session-archived-5'] })
   assert.equal(asked.requested.length, 1)
   assert.match(
     asked.requested[0].reason,
-    /^archived, but its directory is not a candidate: holds a non-file entry \(artifacts\)/,
+    /^its directory is not a candidate: holds a non-file entry \(artifacts\)/,
   )
 
-  const report = await applyCleanup(listing)
+  const report = await applyCleanup({ ...listing, candidates: listing.candidates.filter((entry) => entry.id === 'session-archived-1') })
+  assert.deepEqual(ids(report.removed), ['session-archived-1'])
   assert.ok(existsSync(join(nested, 'artifacts', 'part.bin')), 'nothing inside the refused directory was removed')
-  assert.equal(report.removed.length, 3)
 })
 
 test('a session directory that cannot be read is reported, and its id is not called already gone', {
@@ -315,7 +305,7 @@ test('a session directory that cannot be read is reported, and its id is not cal
     assert.ok(listing.skipped.some((entry) => entry.path === dir && /cannot be listed/.test(entry.reason)))
 
     assert.equal(listing.requested.length, 1)
-    assert.match(listing.requested[0].reason, /^archived, but its directory is not a candidate: cannot be listed/)
+    assert.match(listing.requested[0].reason, /^its directory is not a candidate: cannot be listed/)
 
     const report = await applyCleanup(listing)
     assert.deepEqual(report.removed, [])
@@ -326,27 +316,36 @@ test('a session directory that cannot be read is reported, and its id is not cal
   }
 })
 
-test('the directory name is the backend escape, so an id that needs one is still found', async () => {
+test('the directory name is the backend escape, and it decodes back to the id', async () => {
   const id = 'session-\u00fcn\u00efcode'
   assert.equal(encodeSegment(id), 'session-~00FCn~00EFcode')
+  assert.equal(decodeSegment('session-~00FCn~00EFcode'), id)
   assert.equal(encodeSegment('.'), '~002E')
-  assert.equal(encodeSegment('..'), '~002E~002E')
+  assert.equal(decodeSegment('~002E'), '.')
+  assert.equal(decodeSegment('~002E~002E'), '..')
   assert.equal(encodeSegment('session-plain.A-1'), 'session-plain.A-1')
+  assert.equal(decodeSegment('session-plain.A-1'), 'session-plain.A-1')
+  // Every id this backend can store survives a round trip, which is what lets the store be its own index.
+  for (const raw of ['session-1', 'a b', 'x\u0000y', '~', 'c:d', '../../outside', 'session-\u00fcn\u00efcode']) {
+    assert.equal(decodeSegment(encodeSegment(raw)), raw)
+  }
 
   const dir = join(ROOT, '--D-ALPHA--', 'session-~00FCn~00EFcode')
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'session.v4.jsonl.zstd'), Buffer.alloc(321, 5))
-  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), id])
 
   const listing = await plan()
-  assert.ok(listing.candidates.some((entry) => entry.id === id && entry.bytes === 321))
+  const candidate = listing.candidates.find((entry) => entry.id === id)
+  assert.ok(candidate, 'an id that needs escaping is found from its directory name alone')
+  assert.equal(candidate.bytes, 321)
+  assert.equal(candidate.archived, false)
 
-  const report = await applyCleanup(listing)
-  assert.ok(report.removed.some((entry) => entry.id === id))
+  const report = await applyCleanup({ ...listing, candidates: [candidate] })
+  assert.deepEqual(ids(report.removed), [id])
   assert.equal(existsSync(dir), false)
 })
 
-test('an unreadable archive list is an error, and a missing one is simply an empty archive', async () => {
+test('an unreadable archive list is an error, and a missing one leaves the store as the only index', async () => {
   await writeFile(WORKSPACE, '{ this is not json')
   await assert.rejects(() => plan(), /is not valid JSON/)
 
@@ -356,46 +355,46 @@ test('an unreadable archive list is an error, and a missing one is simply an emp
   await rm(WORKSPACE)
   const listing = await plan()
   assert.equal(listing.archived_ids, 0)
-  assert.deepEqual(listing.candidates, [])
+  // No archive file is a fresh installation, not an empty store: every session on disk is still offered.
+  assert.deepEqual(ids(listing.candidates), STORED_IDS.sort())
+  assert.deepEqual(listing.candidates.filter((candidate) => candidate.archived), [])
 
-  const report = await applyCleanup(listing)
+  const report = await applyCleanup({ ...listing, candidates: [] })
   assert.deepEqual(report.removed, [])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', LIVE.id)), 'nothing was deleted')
 })
 
-test('an empty archived session directory is a candidate with zero bytes and no write time', async () => {
-  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-6')
-  await mkdir(dir, { recursive: true })
-  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), 'session-archived-6'])
+test('an empty session directory is a candidate with zero bytes and no write time', async () => {
+  const listing = await plan({ only: ['session-empty-1'] })
 
-  const listing = await plan()
-  assert.deepEqual(listing.candidates.find((entry) => entry.id === 'session-archived-6'), {
-    id: 'session-archived-6',
-    path: dir,
+  assert.deepEqual(listing.candidates, [{
+    id: 'session-empty-1',
+    path: join(ROOT, '--D-ALPHA--', 'session-empty-1'),
     bytes: 0,
     files: [],
     modified: null,
-  })
+    archived: false,
+  }])
 
   const report = await applyCleanup(listing)
-  assert.equal(existsSync(dir), false)
-  assert.equal(report.removed.find((entry) => entry.id === 'session-archived-6').bytes, 0)
+  assert.equal(report.removed.find((entry) => entry.id === 'session-empty-1').bytes, 0)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-empty-1')), false)
 })
 
 test('a candidate that vanished between the listing and the deletion is refused, not failed', async () => {
-  const listing = await plan()
+  const listing = await plan({ only: ARCHIVED_IDS })
   await rm(join(ROOT, '--D-BETA--', 'session-archived-3'), { recursive: true })
 
   const report = await applyCleanup(listing)
 
-  assert.deepEqual(report.removed.map((entry) => entry.id).sort(), ['session-archived-1', 'session-archived-2'])
+  assert.deepEqual(ids(report.removed), ['session-archived-1', 'session-archived-2'])
   assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'already deleted; nothing to remove' }])
   assert.deepEqual(report.failed, [])
 })
 
 test('a candidate replaced by a file between the listing and the deletion is refused', async () => {
   const target = join(ROOT, '--D-ALPHA--', 'session-archived-1')
-  const listing = await plan()
+  const listing = await plan({ only: ARCHIVED_IDS })
   await rm(target, { recursive: true })
   await writeFile(target, 'not a directory')
 
@@ -429,18 +428,15 @@ test('a tampered plan cannot delete outside the session storage root', async () 
 })
 
 test('a plan whose path names a different session than its id is refused', async () => {
-  const listing = await plan()
-  const [first, second, ...rest] = listing.candidates
-  // Both ids are archived and both paths are inside the root, so containment alone would not notice
-  // that each one now points at the other's session — and the report would name the wrong session.
-  const swapped = {
-    ...listing,
-    candidates: [{ ...first, path: second.path }, { ...second, path: first.path }, ...rest],
-  }
+  const listing = await plan({ only: ['session-archived-1', 'session-archived-3'] })
+  const [first, second] = listing.candidates
+  // Both paths are inside the root, so containment alone would not notice that each one now points at
+  // the other's session — and the report would name the wrong session.
+  const swapped = { ...listing, candidates: [{ ...first, path: second.path }, { ...second, path: first.path }] }
 
   const report = await applyCleanup(swapped)
 
-  assert.deepEqual(report.removed.map((entry) => entry.id), ['session-archived-3'])
+  assert.deepEqual(report.removed, [])
   assert.equal(report.refused.length, 2)
   assert.match(report.refused[0].reason, /the path names a different session/)
   assert.ok(existsSync(first.path))
@@ -454,14 +450,14 @@ test('an id that tries to traverse is inert, because the escape makes it one pat
   // The separators are escaped; the dots are safe characters and stay literal, which is harmless
   // because the whole segment is neither `.` nor `..`.
   assert.equal(encodeSegment(nasty), '..~002F..~002Foutside')
-  await writeWorkspace([...ARCHIVED.map((entry) => entry.id), nasty])
+  await writeWorkspace([...ARCHIVED_IDS, nasty])
 
   const listing = await plan()
-  assert.equal(listing.candidates.length, 3)
+  assert.deepEqual(ids(listing.candidates), STORED_IDS.sort())
   assert.ok(listing.already_gone.includes(nasty))
 
-  const report = await applyCleanup(listing)
-  assert.equal(report.refused.length, 0)
+  const report = await applyCleanup({ ...listing, candidates: [] })
+  assert.deepEqual(report.removed, [])
   assert.ok(existsSync(join(OUTSIDE, 'keep.bin')), 'nothing outside the resolved id was reached')
 })
 
@@ -477,6 +473,7 @@ test('the id escape always yields one inert path segment', () => {
     assert.equal(encoded.includes('\\'), false)
     assert.notEqual(encoded, '.')
     assert.notEqual(encoded, '..')
+    assert.equal(decodeSegment(encoded), raw)
   }
 })
 
@@ -494,7 +491,7 @@ test('a second directory with the same session id is reported, not silently igno
     'the duplicate is reported',
   )
   // Whichever one was reported, deleting it makes the other a candidate on the next run.
-  await applyCleanup(listing)
+  await applyCleanup({ ...listing, candidates: [candidate] })
   const second = await plan()
   assert.ok(second.candidates.some((entry) => entry.id === 'session-archived-1'))
   assert.ok(existsSync(duplicate) || existsSync(original))
@@ -521,10 +518,10 @@ test('a file that cannot be unlinked is reported, and the session stays a candid
     assert.match(report.failed[0].error, /cannot be removed/)
     assert.ok(existsSync(file), 'a failure leaves the session where it was')
 
-    // The promise the README makes about this state: the id is still archived and still on disk, so the
-    // next run offers it again and the same call can be repeated.
+    // The promise the README makes about this state: the log is still on disk, so the next run offers it
+    // again and the same call can be repeated.
     const again = await plan({ only: ['session-archived-2'] })
-    assert.deepEqual(again.candidates.map((candidate) => candidate.id), ['session-archived-2'])
+    assert.deepEqual(ids(again.candidates), ['session-archived-2'])
     assert.deepEqual(again.requested, [])
   } finally {
     await chmod(dir, 0o755)
@@ -534,6 +531,7 @@ test('a file that cannot be unlinked is reported, and the session stays a candid
 test('the engine rejects arguments it cannot honour', async () => {
   assert.throws(() => encodeSegment(''), /non-empty string/)
   assert.throws(() => encodeSegment(42), /non-empty string/)
+  assert.throws(() => decodeSegment(''), /non-empty string/)
 
   await writeWorkspace([7])
   await assert.rejects(() => readArchivedIds(WORKSPACE), /every archived session id must be a non-empty string/)
@@ -563,13 +561,7 @@ test('a plan that names a store that is not there fails loudly, and so does a ma
 
 test('the scanner reports what it found without deciding anything', async () => {
   const { stored, skipped } = await scanStoredSessions(ROOT)
-  assert.deepEqual([...stored.keys()].sort(), [
-    'session-archived-1',
-    'session-archived-2',
-    'session-archived-3',
-    'session-empty-1',
-    LIVE.id,
-  ])
+  assert.deepEqual([...stored.keys()].sort(), STORED_IDS.sort())
   assert.equal(stored.get('session-archived-1').bytes, 3000)
   assert.deepEqual(skipped, [])
 
