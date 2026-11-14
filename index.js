@@ -265,7 +265,7 @@ function listIds(ids) {
  */
 function listLogs(ctx, exec) {
   return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
-    .then((plan) => ({ ...plan, human_command: humanCommand }))
+    .then((plan) => ({ ...plan, human_command: humanCommand, client_half: clientHalf }))
 }
 
 /**
@@ -346,6 +346,9 @@ function renderList(value) {
   // The one fact about this plugin that lives in a registry rather than on disk, and the one that failed
   // silently once: whether the human command is actually registered in the profile that is running.
   lines.push(`Human command: /clean — ${value.human_command}`)
+  // What the window half last reported about itself. It is the only way to see that half from here: a browser
+  // half that loads but fails to contribute anything is otherwise invisible, which cost several releases.
+  lines.push(`Window half: ${value.client_half}`)
   for (const candidate of value.candidates) {
     lines.push(
       `  ${title(candidate)}${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
@@ -440,7 +443,7 @@ const LIST_VALUE = {
   type: 'object',
   required: [
     'sessions_root', 'workspace_file', 'archived_ids', 'stored_sessions', 'stored_bytes', 'candidates',
-    'total_bytes', 'already_gone', 'protected', 'skipped', 'requested', 'human_command',
+    'total_bytes', 'already_gone', 'protected', 'skipped', 'requested', 'human_command', 'client_half',
   ],
   properties: {
     sessions_root: { type: 'string' },
@@ -455,6 +458,7 @@ const LIST_VALUE = {
     skipped: { type: 'array', items: { type: 'object' } },
     requested: { type: 'array', items: { type: 'object' } },
     human_command: { type: 'string' },
+    client_half: { type: 'string' },
   },
 }
 
@@ -556,6 +560,17 @@ export function apply(ctx) {
  */
 let humanCommand = 'not registered yet'
 
+/**
+ * What the window half last said about itself, recorded from `/clean --state <json>` and printed by the next
+ * listing.
+ *
+ * A browser half has no channel to the host except the command registry, so it borrows that one: it answers
+ * silently, nothing lands in a transcript, and the next listing can say "the window half loaded, the shortcut
+ * service was there, the registration was refused because …". Before this, a half that loaded and contributed
+ * nothing was indistinguishable from a half that never loaded.
+ */
+let clientHalf = 'nothing heard from a window yet'
+
 /** The `/clean` definition, kept beside the registration so the two cannot drift. */
 function CLEAN_COMMAND(ctx) {
   return {
@@ -567,6 +582,12 @@ function CLEAN_COMMAND(ctx) {
       if (agent === undefined) {
         return { kind: 'error', text: 'clean needs the Session it was run from: without one the running session cannot be protected' }
       }
+      const reported = stateReport(rawInput)
+      if (reported !== undefined) {
+        clientHalf = reported
+        // No text: a diagnostic must not put a line in anybody's transcript.
+        return { kind: 'success' }
+      }
       const named = rawInput.split(/[\s,]+/).map((token) => token.trim()).filter((token) => token.length > 0)
       if (named.length === 0) {
         const listing = await listLogs(ctx, exec)
@@ -577,4 +598,28 @@ function CLEAN_COMMAND(ctx) {
       return { kind: 'success', text: renderDelete(report) }
     },
   }
+}
+
+/**
+ * The window half's own account of itself, if this line carries one.
+ *
+ * `/clean --state {"inject":true,…}` → a one-line summary. Anything that is not a JSON object is not a state
+ * report, so a `/clean --state` typed by hand still lists the logs.
+ * @param rawInput - the command's input, exactly as given.
+ * @returns the summary to record, or `undefined` when this is not a state report.
+ */
+function stateReport(rawInput) {
+  if (!rawInput.startsWith('--state ')) return undefined
+  let state
+  try {
+    state = JSON.parse(rawInput.slice('--state '.length))
+  } catch {
+    return undefined
+  }
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) return undefined
+  const parts = []
+  for (const key of ['inject', 'service', 'register', 'catalog', 'menu']) {
+    if (state[key] !== undefined) parts.push(`${key}=${String(state[key])}`)
+  }
+  return parts.length === 0 ? 'the window half sent an empty state' : parts.join('  ')
 }

@@ -79,6 +79,9 @@ window.__ModuleLoader__.load({
        * @param ctx - the browser plugin context.
        */
       apply(ctx) {
+        /** The ids the host named last, so the report below has a session to speak through. */
+        let lastListed = []
+
         /**
          * Ask the host and prune. An unanswerable or empty list prunes nothing: a view is evidence of what
          * a person arranged, and it is only ever repaired against a list that proves an id is gone.
@@ -92,6 +95,7 @@ window.__ModuleLoader__.load({
           }
           const live = idsOf(answer)
           if (live.size === 0) return
+          lastListed = [...live]
           let dropped = 0
           try {
             dropped = pruneView(window.localStorage, live)
@@ -231,14 +235,20 @@ window.__ModuleLoader__.load({
          * and is remappable there — a global key listener would have been invisible and unconfigurable.
          *
          * The registration **waits for the service** instead of reading `ctx.get('shortcuts')` once while this
-         * half loads: that is the same trap the host half had, and it is how the keycap went missing while the
-         * row and everything else kept working — a client service that mounts after this plugin is simply not
+         * half loads: that is the same trap the host half had, and it is how a keycap can go missing while the
+         * row and everything else keep working — a client service that mounts after this plugin is simply not
          * there yet, the registration is skipped, and nothing says so. `ctx.inject` holds the callback until
          * the service exists, and the child scope is disposed with this plugin.
+         *
+         * Every step records what happened in `state`, which the half sends to the host so that a listing can
+         * say it: a surface that silently does nothing is the failure mode this plugin has already paid for
+         * twice, and a person should not need a console to find out why a key is missing.
          */
+        const state = { inject: typeof ctx.inject === 'function', service: 'not seen', register: 'not attempted', catalog: 'not read' }
         const registerShortcut = (scope) => {
           const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
           try {
+            state.service = typeof scope.shortcuts?.register === 'function' ? 'present' : 'unusable'
             scope.effect(() => scope.shortcuts.register({
               id: SHORTCUT_ID,
               label,
@@ -257,14 +267,19 @@ window.__ModuleLoader__.load({
                 return { status: 'handled', run: () => runClean(sessionId) }
               },
             }))
+            state.register = 'registered'
           } catch (error) {
             // Isolated like every contribution: a registry that refuses this definition costs the key only.
+            // The reason is kept, because "refused" without a reason is the same silence one layer down.
+            state.register = `refused: ${error instanceof Error ? error.message : String(error)}`
             console.error('dsh-cleaner: the shortcut was refused', error)
           }
         }
 
         return ctx.effect(() => {
-          void prune()
+          // The report speaks through a session, so it waits for the list that names one; the second call
+          // covers a service that mounted after this half and finished registering a moment later.
+          void prune().then(() => report())
           // A deletion made while this window was in the background is covered when it comes back.
           const onFocus = () => void prune()
           window.addEventListener('focus', onFocus)
@@ -281,7 +296,13 @@ window.__ModuleLoader__.load({
           // the fallback is for a Context without that Core API, where the service must already be there.
           if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
           else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
-          else console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
+          else {
+            state.service = 'not seen'
+            console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
+          }
+          // What the window did, told to the host so that the next listing can say it out loud — the catalogue
+          // question is answered a moment later, because the registration may be waiting for a service.
+          setTimeout(report, 2000)
           return () => {
             window.removeEventListener('focus', onFocus)
             try {
@@ -291,6 +312,35 @@ window.__ModuleLoader__.load({
             }
           }
         })
+
+        /**
+         * Tell the host what this half managed to do, through the one channel a browser half has: the command
+         * registry. `/clean --state <json>` is recorded by the host and printed by the next listing, and it
+         * answers silently, so nothing lands in anybody's transcript.
+         *
+         * This exists because "the row is there but the key is missing" is invisible from the host side, and
+         * the alternative is asking a person to open a console and read an error for us.
+         */
+        function report() {
+          try {
+            const catalog = ctx.get('shortcuts')?.catalog?.getSnapshot?.()
+            state.catalog = Array.isArray(catalog)
+              ? (catalog.some((entry) => entry?.id === SHORTCUT_ID) ? 'holds the id' : 'does not hold the id')
+              : 'not readable'
+          } catch {
+            state.catalog = 'not readable'
+          }
+          state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
+          const sessionId = lastListed[0]
+          if (typeof sessionId !== 'string' || sessionId.length === 0) return
+          try {
+            void Promise.resolve(
+              ctx.remote.commands.execute(sessionId, `/clean --state ${JSON.stringify(state)}`, []),
+            ).catch(() => {})
+          } catch {
+            // A client without the command namespace simply says nothing.
+          }
+        }
       },
     }
   },

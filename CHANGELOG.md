@@ -7,6 +7,19 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.15] - 2026-11-14
+
+- **The window half now says what it managed to do, and a listing prints it.** A browser half that loads but
+  cannot contribute anything is invisible from the host side, and "the row is there but the key is missing"
+  has now cost several rounds of guessing. It has exactly one channel to the host — the command registry — so
+  it borrows it: two seconds after a page load it runs `/clean --state {…}` with its own account
+  (`inject=… service=… register=… catalog=… menu=…`), the host records it, answers **silently** so nothing
+  lands in a transcript, and the next listing carries it as `client_half` plus one line: `Window half: …`.
+  A `--state` that is not a JSON object is not a report, so the flag can never make the command quiet on a
+  person.
+- The state is kept even when a registration is refused: `register=refused: <reason>`. "Refused" without a
+  reason is the same silence one layer down — the failure mode this plugin has already paid for three times.
+
 ## [0.2.14] - 2026-11-14
 
 - **The shortcut waits for its service, which is why the keycap was missing.** Registering it read

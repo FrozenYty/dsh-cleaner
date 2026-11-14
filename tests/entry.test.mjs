@@ -756,6 +756,34 @@ test('the command and the tool answer the same thing for the same ids', async ()
   assert.equal(commandValue.text, toolText)
 })
 
+test('the command records what a window reports, and answers without a line', async () => {
+  // The browser half has no channel to the host except this registry, so it borrows the command: `/clean
+  // --state {…}` is recorded and the next listing says it. Silent on purpose — a diagnostic must not put a
+  // line in anybody's transcript.
+  const tools = install()
+  const state = { inject: true, service: 'present', register: 'registered', catalog: 'holds the id', menu: 'menu service present' }
+  const recorded = await tools.commands.get('clean').handler({
+    commandId: 'command-1',
+    agent: caller,
+    rawInput: `--state ${JSON.stringify(state)}`,
+    attachments: [],
+  })
+  assert.equal(recorded.kind, 'success')
+  assert.equal(recorded.text, undefined, 'nothing is written into the transcript')
+
+  const listing = await run(tools.get('list_session_logs'), {})
+  assert.match(listing.client_half, /register=registered/)
+  assert.match(listing.client_half, /catalog=holds the id/)
+  assert.match(text(tools.get('list_session_logs'), listing), /Window half: inject=true/)
+
+  // A `--state` that is not a JSON object is not a report: it is handed to the ordinary path, and what was
+  // recorded stays as it was. The flag can therefore never make the command go quiet on a person.
+  const before = (await run(tools.get('list_session_logs'), {})).client_half
+  const listed = await command(tools, '--state nonsense')
+  assert.equal(listed.kind, 'success')
+  assert.equal((await run(tools.get('list_session_logs'), {})).client_half, before)
+})
+
 test('the command refuses in the answer instead of throwing, and keeps the caller', async () => {
   const tools = install()
   const gone = await command(tools, 'session-never-existed')

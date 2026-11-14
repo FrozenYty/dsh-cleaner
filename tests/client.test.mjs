@@ -38,7 +38,9 @@ function storage(initial = {}) {
 function register(page = { __ModuleLoader__: { load: () => {} } }) {
   const loaded = []
   page.__ModuleLoader__ = { load: (definition) => loaded.push(definition) }
-  const context = { window: page }
+  // A page has timers, so the sandbox has them too: the half uses one to report itself after the services
+  // have had their chance to mount.
+  const context = { window: page, setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: (id) => globalThis.clearTimeout(id) }
   vm.createContext(context)
   vm.runInContext(source, context, { filename: 'client.js' })
   assert.equal(loaded.length, 1, 'the file registers exactly one client plugin')
@@ -337,12 +339,13 @@ test('a session menu item runs the command for that session, and nothing else', 
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
-  // Compared field by field: the arguments come from the page's realm, so their arrays are not this
-  // realm's arrays even when they hold the same values.
-  assert.equal(executed.length, 1)
-  assert.equal(executed[0].sessionId, 'session-archived-1')
-  assert.equal(executed[0].line, '/clean session-archived-1')
-  assert.equal(executed[0].attachments.length, 0)
+  // The click is one call; a state report the half makes on its own is a different line and not a second
+  // deletion. Compared field by field: the arguments come from the page's realm.
+  const clicks = executed.filter((call) => !String(call.line).startsWith('/clean --state '))
+  assert.equal(clicks.length, 1)
+  assert.equal(clicks[0].sessionId, 'session-archived-1')
+  assert.equal(clicks[0].line, '/clean session-archived-1')
+  assert.equal(clicks[0].attachments.length, 0)
 
   // No target, no item: the menu must not offer a deletion it cannot name.
   assert.equal((await entry.resolve(undefined)).length, 0)
@@ -476,6 +479,27 @@ test('a shortcut service that mounts after the page still gets the binding', () 
     effect: (callback) => callback(),
   })
   assert.deepEqual(definitions.map((definition) => definition.id), ['session.delete-log'])
+})
+
+test('the half reports what it managed to do, through the command it already has', async () => {
+  // The channel exists because "the row is there but the key is missing" is invisible from the host side, and
+  // asking a person to read a console for us is not a diagnostic. The report answers silently, so no
+  // transcript grows a line.
+  const { executed } = mount({
+    views: {},
+    answer: [{ sessionId: 'session-live-1' }],
+    menus: true,
+    shortcuts: true,
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const report = executed.find((call) => String(call.line).startsWith('/clean --state '))
+  assert.ok(report, 'the half spoke')
+  assert.equal(report.sessionId, 'session-live-1', 'through a session the host named')
+  const state = JSON.parse(String(report.line).slice('/clean --state '.length))
+  assert.equal(state.register, 'registered')
+  assert.equal(state.catalog, 'holds the id')
+  assert.equal(state.menu, 'menu service present')
 })
 
 test('a page without the menus service still prunes the view', async () => {

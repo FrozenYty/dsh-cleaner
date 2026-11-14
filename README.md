@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.14.
+- Current version: v0.2.15.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -375,6 +375,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
+
 
 
 
