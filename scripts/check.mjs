@@ -96,6 +96,24 @@ if (manifest !== undefined) {
   for (const required of ['index.js', 'engine.js']) {
     if (!(manifest.files ?? []).some((entry) => entry === required)) fail(`package.json: files must include ${required}`)
   }
+  // The browser half is declared in the manifest, published, importable, and registered under the package
+  // name: the page's loader finds it by the id in that call, so a mismatch would load nothing at all.
+  const client = manifest.dsh?.client
+  if (client !== undefined) {
+    if (client.platform !== 'web') fail('package.json: dsh.client.platform must be "web"')
+    if (client.immediately !== true) fail('package.json: dsh.client.immediately must be true, so a row is gone on the next load')
+    if (!Array.isArray(client.inject) || client.inject.length === 0) {
+      fail('package.json: dsh.client.inject must name the client package that serves the session list')
+    }
+    if (manifest.exports?.['./client'] !== './client.js') fail('package.json: exports["./client"] must point at ./client.js')
+    if (!(manifest.files ?? []).includes('client.js')) fail('package.json: files must include client.js')
+    const half = read('client.js')
+    if (half !== undefined) {
+      if (!half.includes('window.__ModuleLoader__.load(')) fail('client.js: must register through window.__ModuleLoader__.load')
+      if (!half.includes(`id: '${pluginName}'`)) fail(`client.js: the registered id must be the package name (${pluginName})`)
+      if (/\brequire\s*\(\s*['"]/.test(half)) fail('client.js: imports a module; the browser half depends on nothing')
+    }
+  }
   // The published set is the bundle, not the repository: tests, documents and the gate are for whoever
   // works here, and shipping them in the tarball would be a silent expansion of what a profile installs.
   for (const entry of manifest.files ?? []) {

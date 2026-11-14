@@ -66,11 +66,11 @@ A release adds its section in the same pull request that writes the change, so t
   directory is missing, and only its owner can drop it. The plugin still writes no workspace record: the
   answer reports whether the detach happened, was impossible (no registry mounted) or failed per id, and
   none of that can fail a deletion whose files are already gone ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
-- The last holder of a deleted session's row is named: the running window's own persisted sidebar view
-  (`localStorage["dsh.workspace.view.v5"]`), re-read on every start, which no host plugin can reach. With
-  the store, the project records, the archive set and the session list all clean, the README now says where
-  the row lives and what clears it — **a restart of the app, not a page reload**, which the fifth live run
-  settled ([ADR 0006](docs/adr/0006-detach-by-asking.md), fourth and fifth amendments).
+- The last holder of a deleted session's row is named, and so is the way out of it: the running window's own
+  persisted sidebar view (`localStorage["dsh.workspace.view.v5"]`), which is rewritten from the members the
+  window actually has when the sidebar re-orders — **a sort switch or a drag, no restart and no page
+  reload**. Measured on this machine: the persisted view went from 11 stale ids to 0, with the buckets
+  shrinking by exactly the deleted count ([ADR 0006](docs/adr/0006-detach-by-asking.md), sixth amendment).
 - The deletion answer stops claiming more than the detach can do. A live run showed the rows leaving their
   project and reappearing under *ungrouped*: the project records change at once, but an open window keeps
   the session list it fetched and the row leaves only when that list is fetched again — a page reload, not
@@ -88,8 +88,30 @@ A release adds its section in the same pull request that writes the change, so t
 - An id whose log is gone is now handled whatever its archive state: naming it in `delete_archived_sessions`
   detaches it from its project, unarchives it when it is still archived, and has the session list asked
   about it — because an earlier deletion can leave a row whose session is no longer archived at all.
-- Repository checks (`scripts/check.mjs`) and 48 fixture tests, both run by CI with Node 22 and Node 24
-  on all three platforms.
+- The bundle now carries a **browser half** (`client.js`) that prunes the window's own sidebar view. After
+  a deletion, the last thing that could keep a row alive was `localStorage["dsh.workspace.view.v5"]`, which
+  the client re-reads on every start and nothing rewrote for a host-side fact. At every page load — and when
+  the window regains focus — the half asks the host for the session list and drops the ids a stored view
+  kept that the list no longer names, so the row is gone the next time the page loads with nothing to
+  click. It imports nothing, writes only when it actually dropped something, treats an unanswerable list
+  as nothing to do, and leaves one small mark (`dsh-cleaner.client.v1`) so the pass can be seen from
+  outside the page ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
+- A resident agent no longer blocks a deletion, and a refusal now says which state it saw. The protection
+  used to be "any agent the registry lists for that session", which refused a session whose work had
+  stopped but whose agent the harness still kept in memory — a refusal a person cannot act on. Now the
+  caller is always kept, another session is kept only while its agent's status is something other than
+  `idle` (an agent reporting none counts as busy), and the reason carries the status:
+  `a live agent holds this session (status: running)` ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
+  Verified live: a session reported `status: idle` was deleted — 49,720 bytes, the store going from 30
+  directories to 29 — and nothing recreated its log.
+- Which workspace record a deletion touches is now decided per id, by asking the host's own session list
+  first. A session the host still holds keeps **both** its project membership and its archive entry — the
+  sidebar hides an archived row of a project and shows the row of an ungrouped one, so dropping either is
+  what made a deleted session hop from *archived under its project* to *visible under ungrouped*. A session
+  the host has let go loses both, as before ([ADR 0009](docs/adr/0009-two-records-two-cases.md)).
+- Repository checks (`scripts/check.mjs`) and 58 fixture tests, both run by CI with Node 22 and Node 24
+  on all three platforms. The browser half is tested by evaluating the same file the page evaluates, so a
+  mistake in it fails a test instead of a person's sidebar.
 - `SECURITY.md` states what the plugin trusts and the blast radius, because a plugin whose job is
   deletion owes that answer.
 - One line carries the plugin wherever a person meets it — the card in the plugin list, both READMEs,

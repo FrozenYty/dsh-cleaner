@@ -18,10 +18,21 @@ can only delete ids it is given by name.
 |---|---|---|
 | Bundle entry | `index.js`, `cordis.patch.yml`, `locale/*.json`, `icon.svg` | the Harness services (`ctx.tools`, `ctx.get`), `DSH_HOME`, and the two tool definitions |
 | Deletion engine | `engine.js` | two filesystem paths and nothing else — no Harness import, no environment |
+| Browser half | `client.js` | one storage key family in the page (`dsh.workspace.view.*`) and the session list the host serves — no import, no build step |
 
 The engine takes the session storage root and the workspace storage file as arguments. That is what
 makes every test a fixture test: the bundle entry is the only place that resolves a path from the
 environment, and the tests for it point `DSH_HOME` at their own tree.
+
+The browser half is the plugin's second consumer and its only artifact inside the window. It exists for one
+reason: after a deletion the sidebar can keep a row whose session is gone, because that row lives in the
+window's own persisted view and no host event rewrites it. The half prunes the stored view against the
+session list the host serves, at every page load and when the window regains focus, so the row is gone the
+next time the page loads without anyone touching the sidebar — [ADR 0007](adr/0007-browser-half-prunes-the-view.md).
+Its rules are deliberately dull: prune only ids the host no longer lists, write only when something was
+dropped (plus one small mark under `dsh-cleaner.client.v1`), and treat an unanswerable list as "nothing to
+do". It imports nothing, so the page's loader can evaluate the file as it stands, and
+`tests/client.test.mjs` drives exactly that file.
 
 The bundle entry imports no `@deepseek-ai` package. A profile-linked bundle resolves bare specifiers
 from its own directory, where none is installed, so the import would fail the load — see
@@ -86,8 +97,11 @@ gone. `already_gone` therefore means *the disk holds nothing under that id*, and
 still contributes the bytes that could be measured to the store total.
 
 `protected` is filled by the bundle entry, not the engine: the Session running the command
-(`exec.agent.session.id`) and every Session a live agent holds (`ctx.agents.list()`). The caller is
-first, because that is the one the contract names.
+(`exec.agent.session.id`) first, because that is the one the contract names, and then every Session whose
+agent is **busy** — any status other than `idle`, including an agent that reports none. A resident-but-idle
+agent is not a writer, and an archived session cannot start a model step anyway, so it does not block a
+deletion ([ADR 0008](adr/0008-busy-not-resident.md)); the refusal carries the status it saw, so a person can
+tell "wait for its work" apart from "the harness merely has it loaded".
 
 ## 5. The deletion path
 
@@ -107,8 +121,7 @@ first, because that is the one the contract names.
    person needs to decide: `modified`, the newest file's write time in each candidate directory, and
    `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
    be judged.
-5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
-6. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
+5. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.6. Ask the workspace registry to detach the ids that were removed — and any id the caller named whose log
    is gone, archived or not, because a ghost row is exactly what a person is looking at when they name it
    and an earlier deletion may already have unarchived it. The plugin never edits the workspace store:
    `detachSession` runs on the registry's own mutation chain, and the workspace controller's `follow()`
@@ -128,15 +141,20 @@ asked for the ids it was given.
 7. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
    what a window draws its session rows from, and it is a different service from the persistence seam: a
    session can be gone from the store and still be named there, which is why a row can outlive the log. The
-   answer reports it instead of promising a screen it cannot see.
+   answer reports it instead of promising a screen it cannot see — and the *same* answer decides step 6: an
+   id the list still names keeps both its project membership and its archive entry, because the sidebar
+   hides an archived row of a project and shows the row of an ungrouped one
+   ([ADR 0009](adr/0009-two-records-two-cases.md)).
 
 Where the promise stops: the sidebar also renders from a view the window persists for itself
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
-and it is re-read on every start. A deleted session keeps its slot there until that view is rebuilt, which
-is why a row can survive a reload, the store, the project records, the archive set and the session list all
-being clean — and why the rebuild that works is a restart of the app, not a page reload. No host plugin can
-reach a browser storage key, so the deletion promises the records and the disk — the screen belongs to the
-window.
+and it is re-read on every start. The browser half prunes that view against the host's list at every page
+load, so a deleted session's row is gone the next time the page loads — no gesture, no restart. What the
+plugin still cannot do is take the row off a page that is *already* open: the view lives in the renderer's
+own memory once hydrated, nothing in the harness publishes "this log is gone" for it to re-render on, and
+reloading somebody's conversation to hide a row would be the worse trade. The heavier manual repair, if a
+page must be clean before it loads again, is a sort switch or a drag — measured: 11 stale ids to 0, because
+the client then rewrites the view from the members it actually has.
 
 ## 6. Why files are unlinked one at a time
 

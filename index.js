@@ -92,7 +92,12 @@ function protections(ctx, exec) {
     if (agent?.id === undefined) continue
     const id = String(agent.id)
     if (protect.some((entry) => entry.id === id)) continue
-    protect.push({ id, reason: 'a live agent holds this session' })
+    // An idle agent is resident only: nothing is being written, and an archived session cannot start a
+    // model step anyway (the Host's archive gate refuses one), so its log is not going to be appended to
+    // under this call. A busy one is being written right now, and that is the case this guards.
+    if (agent.status === 'idle') continue
+    const status = typeof agent.status === 'string' ? ` (status: ${agent.status})` : ''
+    protect.push({ id, reason: `a live agent holds this session${status}` })
   }
   return protect
 }
@@ -159,19 +164,29 @@ async function verifyRemoved(ctx, ids) {
  * profile without the registry still answers.
  * @param ctx - plugin context.
  * @param ids - the ids the deletion removed, and the named ids whose logs were already gone.
- * @returns `{registry, detached, unarchived, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
+ * @param stillListed - the ids the host's own session list still names; those stay archived on purpose,
+ *   because a session the host still lists is drawn by a window, and an archived row is the hidden one.
+ * @returns `{registry, detached, unarchived, kept_archived, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
  */
-async function forgetSessions(ctx, ids) {
+async function forgetSessions(ctx, ids, stillListed = new Set()) {
   const registry = 'workspaceRegistry'
   const workspaces = ctx.get(registry)
   if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
   const detached = []
   const unarchived = []
+  const kept = []
   const failed = []
   const fail = (id, error) => failed.push({ id, error: error instanceof Error ? error.message : String(error) })
   try {
     const archived = typeof workspaces.archivedSessionIds === 'object' ? workspaces.archivedSessionIds : []
     for (const id of ids) {
+      // A session the host still lists is one a window still draws a row for — the sidebar hides an
+      // archived row of a project, and shows the row of an ungrouped one. So for those ids both records
+      // stay exactly as they are: dropping either is what turns a hidden row into a visible one.
+      if (stillListed.has(id)) {
+        kept.push(id)
+        continue
+      }
       try {
         const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
         if (holder !== undefined) await holder.detachSession(id)
@@ -191,9 +206,8 @@ async function forgetSessions(ctx, ids) {
   } catch (error) {
     return { registry, error: error instanceof Error ? error.message : String(error) }
   }
-  return failed.length === 0
-    ? { registry, detached, unarchived }
-    : { registry, detached, unarchived, failed }
+  const answer = { registry, detached, unarchived, kept_archived: kept }
+  return failed.length === 0 ? answer : { ...answer, failed }
 }
 
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
@@ -278,14 +292,26 @@ function renderDelete(value) {
   } else if (value.workspace?.failed?.length > 0) {
     const ids = value.workspace.failed.map((entry) => entry.id)
     lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
-  } else if (value.workspace?.detached?.length > 0) {
+  } else if ((value.workspace?.detached?.length ?? 0) > 0) {
     const orphans = value.workspace.orphans?.length ?? 0
     const unarchived = value.workspace.unarchived?.length ?? 0
     lines.push(
       `The workspace records dropped them (${value.workspace.detached.length} detached`
       + (unarchived > 0 ? `, ${unarchived} unarchived` : '')
-      + '); a window that is already open keeps its own copy of that list until the app restarts.'
+      + '); a window that is already open keeps its own copy of that list until it rewrites it (a sort'
+      + ' switch or a drag) or restarts.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
+    )
+  }
+  // A session the host still holds in memory keeps both its project and its archive entry, because the
+  // sidebar hides an archived row of a project and shows the row of an ungrouped one. That is the honest
+  // end state: the log is gone, the row is the archived one, and it disappears when the host lets go.
+  const kept = value.workspace?.kept_archived?.length ?? 0
+  if (kept > 0) {
+    lines.push(
+      `${kept} of the ids stayed where they were: the host still holds ${kept === 1 ? 'that session' : 'those sessions'}`
+      + ' in memory, so a window still draws a row for it, and an archived row of a project is the one the'
+      + ' sidebar hides. The row goes when the host releases the session — a restart does.',
     )
   }
   if (value.query?.still_listed?.length > 0) {
@@ -404,6 +430,11 @@ export function apply(ctx) {
       // those names, archived or not, so nothing is dropped that the plugin was not asked about.
       const orphans = plan.unlogged
       const drop = [...removedIds, ...orphans]
+      // Ask the host what it still lists *before* deciding the archive set: a session it still names is one
+      // a window still draws, and an archived row is the one the sidebar hides. Unarchiving such an id is
+      // what puts a ghost row on screen, so those stay archived on purpose.
+      const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
+      const stillListed = new Set(Array.isArray(query.still_listed) ? query.still_listed : [])
       return {
         sessions_root: paths.sessionsRoot,
         removed: report.removed,
@@ -413,8 +444,8 @@ export function apply(ctx) {
         refused: [...plan.requested, ...report.refused],
         workspace: drop.length === 0
           ? { registry: 'not-asked' }
-          : { orphans, ...await forgetSessions(ctx, drop) },
-        query: drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop),
+          : { orphans, ...await forgetSessions(ctx, drop, stillListed) },
+        query,
         verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
       }
     },

@@ -150,7 +150,11 @@ delete_archived_sessions { session_ids: ["session-36560858-…", "session-177a4f
 The workspace file is never written. A deleted id stays in the archive list; it is simply an id with
 no directory, which the listing reports as already gone. The project's session list is not written either:
 the registry detaches the deleted ids when asked, which is what makes their sidebar rows go away at once
-([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+([ADR 0006](docs/adr/0006-detach-by-asking.md)). Which of those two records is touched is decided per id by
+asking the host's own session list first, because a session it still holds in memory is still drawn by a
+window ([ADR 0009](docs/adr/0009-two-records-two-cases.md)). The one copy no host-side step can reach is the
+window's own sidebar view, so the bundle carries a browser half that prunes it at every page load
+([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
 
 ## What it does not do
 
@@ -158,6 +162,11 @@ the registry detaches the deleted ids when asked, which is what makes their side
   is the project's session list, and it touches it by asking: the workspace registry detaches the ids it
   just deleted, so their rows leave the sidebar instead of waiting for a restart. The plugin writes no
   workspace record itself ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+- **Never a session whose work is running.** The session executing the command is always kept, and so is
+  any session whose agent is busy; the refusal names the status (`a live agent holds this session (status:
+  running)`) so the reason is something to act on. An agent that is merely resident — archived work has
+  stopped, the harness still keeps the object in memory — does not block the deletion
+  ([ADR 0008](docs/adr/0008-busy-not-resident.md)).
 - **No projection cache eviction.** The harness keeps per-session projections under
   `storages/session_projcache/`, and this plugin reads one row from them — the title it shows beside an
   id — and writes nothing: a deleted session may keep a stale row and its cache file until the runtime
@@ -258,12 +267,13 @@ and the locale it loaded. Restart.
 Name its id in one more `delete_archived_sessions` call. Three records keep a session on screen after its
 log is gone: the project's membership, the archive set, and the window's own persisted sidebar view. The
 plugin asks the registry to drop the first two (the answer says `The workspace records dropped them…`), and
-the answer also tells you whether the host's session list still names the id. If it does not, and the row is
-still drawn, then the copy is `localStorage["dsh.workspace.view.v5"]` inside the running window — a
-`sessionOrderByAccount` map written by the client and re-read on every start. Clicking such a row shows
-`session/not-found`, which is the proof that nothing on the host still knows the session. No plugin can
-reach a browser storage key: **restart the app** and the row is gone — a page reload is not enough, and this
-was measured, not assumed.
+the answer also tells you whether the host's session list still names the id. The third is the window's
+business, and the bundle's browser half repairs it: it drops the ids the view kept that the host no longer
+lists, at every page load and when the window regains focus, so **the row is gone the next time the page
+loads — nothing to click**. A page that is already open when the deletion happens keeps its copy until it
+loads again, because no host event rewrites a view the renderer already holds. To clear one immediately,
+switch the sidebar's ordering away from *manual* and back, or drag a session: the client then rewrites the
+view from the members it actually has.
 
 ## Compatibility
 
