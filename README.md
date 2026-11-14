@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.2.
+- Current version: v0.2.3.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -86,7 +86,9 @@ A session's own **⋯ menu** carries the same thing as one row — *删除会话
 language, drawn in red with the product's own trash glyph, and placed **after** *归档会话* (Archive) so a
 destructive row never sits next to the action people use most. It is a data contribution to the menu, not a
 renderer: the bundle supplies the label, the icon key and the click, and the sidebar draws it like its own
-actions.
+actions. The row appears only when the host really has the `clean` command — the window half reloads with
+the page and the host half only with the process, and a row whose command the host has never heard of turns
+a click into ordinary text, which reads as a failure that never happened.
 
 ## Install
 

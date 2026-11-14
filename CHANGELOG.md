@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.3] - 2026-11-14
+
+- **The menu row appears only when the command it runs exists.** A window half reloads with the page and
+  the host half only reloads with the process, so right after an update the menu could offer a row whose
+  command the host had never heard of. Clicking it is admitted as ordinary text, the session's own agent
+  answers instead, and the person reads a failure for a deletion that never happened — which is exactly
+  what happened the first time this row was clicked. The half now asks the host for that session's command
+  list, once per session, and contributes no row when `clean` is missing. A list that cannot be read
+  fails open, because a row that works is better than a row that hides
+  ([ADR 0011](docs/adr/0011-one-operation-two-callers.md), amendment).
+
 ## [0.2.2] - 2026-11-14
 
 - The session menu row now reads how a person describes the act: **删除会话** / *Delete session* (it was

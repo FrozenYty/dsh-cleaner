@@ -63,7 +63,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale } = {}) {
+function mount({ views, list, answer, menus, locale, commands } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -74,6 +74,7 @@ function mount({ views, list, answer, menus, locale } = {}) {
   const calls = []
   const cleanup = []
   const executed = []
+  const listed = []
   const registered = []
   const registrations = new Map()
   const ctx = {
@@ -86,6 +87,12 @@ function mount({ views, list, answer, menus, locale } = {}) {
         },
       },
       commands: {
+        list: async (sessionId) => {
+          listed.push(sessionId)
+          if (commands === undefined) return [{ name: 'clean', description: 'stub' }]
+          if (typeof commands === 'function') return commands(sessionId)
+          return commands
+        },
         execute: async (sessionId, line, attachments) => {
           executed.push({ sessionId, line, attachments })
           return { commandId: 'command-1', result: { kind: 'success' } }
@@ -115,7 +122,7 @@ function mount({ views, list, answer, menus, locale } = {}) {
     },
   }
   plugin(register(page)).apply(ctx)
-  return { store, calls, listeners, cleanup, executed, registered, registrations }
+  return { store, calls, listeners, cleanup, executed, registered, registrations, listed }
 }
 
 const VIEW = (buckets) => JSON.stringify({ groupBy: 'workspace-tree', orderBy: 'manual', sessionOrderByAccount: buckets })
@@ -245,7 +252,7 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(typeof entry.resolve, 'function')
   assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
 
-  const [item] = entry.resolve({ sessionId: 'session-archived-1' })
+  const [item] = await entry.resolve({ sessionId: 'session-archived-1' })
   assert.equal(item.label, 'Delete session', 'the label follows the window language')
   assert.equal(typeof item.run, 'function')
   // Presentation, in the product's own vocabulary: red, after the built-in rows, with the trash glyph the
@@ -264,8 +271,8 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(executed[0].attachments.length, 0)
 
   // No target, no item: the menu must not offer a deletion it cannot name.
-  assert.equal(entry.resolve(undefined).length, 0)
-  assert.equal(entry.resolve({}).length, 0)
+  assert.equal((await entry.resolve(undefined)).length, 0)
+  assert.equal((await entry.resolve({})).length, 0)
 
   // The contribution goes away with the plugin.
   assert.equal(registrations.size, 1)
@@ -273,9 +280,58 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(registrations.size, 0)
 })
 
-test('the menu label is Chinese when the window is', () => {
+test('the menu label is Chinese when the window is', async () => {
   const { registered } = mount({ views: {}, answer: [], menus: true, locale: 'zh-CN' })
-  assert.equal(registered[0].resolve({ sessionId: 'session-1' })[0].label, '删除会话')
+  const [item] = await registered[0].resolve({ sessionId: 'session-1' })
+  assert.equal(item.label, '删除会话')
+})
+
+test('a host that has no clean command contributes no row at all', async () => {
+  // The window half reloads with the page and the host half only reloads with the process, so this is the
+  // normal state right after an update — and a row that runs an unknown command is worse than no row: the
+  // click becomes ordinary text, the session's agent answers, and the person reads a failure that never
+  // happened.
+  const { registered, executed, listed } = mount({
+    views: {},
+    answer: [],
+    menus: true,
+    commands: [{ name: 'compact', description: 'some other command' }],
+  })
+
+  assert.equal((await registered[0].resolve({ sessionId: 'session-1' })).length, 0)
+  assert.deepEqual(listed, ['session-1'], 'the host was asked which commands it has')
+  assert.deepEqual(executed, [], 'and nothing was executed')
+})
+
+test('the command list is asked once per session, and an unreadable list keeps the row', async () => {
+  const asked = []
+  const { registered } = mount({
+    views: {},
+    answer: [],
+    menus: true,
+    commands: (sessionId) => {
+      asked.push(sessionId)
+      return [{ name: 'clean', description: 'stub' }]
+    },
+  })
+
+  const entry = registered[0]
+  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
+  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
+  assert.deepEqual(asked, ['session-1'], 'the second open reuses the answer')
+
+  // A second session is its own question: scoped commands shadow globals per agent.
+  await entry.resolve({ sessionId: 'session-2' })
+  assert.deepEqual(asked, ['session-1', 'session-2'])
+
+  // A list call that throws is not evidence against the command, so the row stays.
+  const failing = mount({
+    views: {},
+    answer: [],
+    menus: true,
+    commands: () => { throw new Error('gateway down') },
+  })
+  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
 })
 
 test('a page without the menus service still prunes the view', async () => {
