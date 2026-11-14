@@ -7,6 +7,14 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.7] - 2026-11-14
+
+- **`danger` is back**, so the row reads exactly like *删除工作区*: the product's destructive colour with the
+  trash glyph it registers. 0.2.6 removed the colour on an earlier reading of the same note; the decision
+  now is to match the workspace delete rather than to stand out from it. The triple the workspace row uses
+  is `danger` + `icon: { key: 'workspace.delete' }` (+ a separator the session menu does not need), and this
+  row carries the first two.
+
 ## [0.2.6] - 2026-11-14
 
 - **The row is neutral, not red.** `danger` is gone: the label and the trash glyph already say what the row
