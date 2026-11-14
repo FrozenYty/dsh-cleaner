@@ -162,7 +162,24 @@ out of it, and both were mine:
 The lesson kept: a surface that silently does nothing is worse than one that visibly cannot, so a fact a
 person needs (is the command registered?) belongs in the answer they already read, not in a log.
 
-### Amendment — the key returns without the hint, and the row moves up (same day, on request)
+### Amendment — the window half reports through the command (same day, after a key went missing)
+
+A browser half that loads and contributes nothing looks exactly like a browser half that never loaded: the
+row is there, the pruning works, and the keycap is simply absent. Nothing on the host side can tell the
+difference, and three rounds of guessing went into a fault that one sentence of self-report would have
+named.
+
+So the half borrows the only channel it has — the command registry it already uses at click time — and runs
+`/clean --state {…}` two seconds after a page load. The host records it, answers **silently** (`{kind:
+'success'}` with no text, so no transcript grows a line), and the next listing prints it:
+
+```
+Window half: inject=true  service=present  register=refused: <reason>  catalog=does not hold the id  menu=menu service present
+```
+
+This is the third time this plugin has paid for a silent failure, and the rule is now explicit: **a fact a
+person needs belongs in the answer they already read**, and a refusal keeps its reason rather than becoming
+a boolean. The same reasoning put `human_command` in the listing in 0.2.11 for the host half.
 
 - **`order: 350`**, between fork (300) and copy-id (450): "put it under 分叉会话". A plain number, and the
   whole of the position question — 归档会话 is a component row the product renders after every data
