@@ -161,3 +161,18 @@ out of it, and both were mine:
 
 The lesson kept: a surface that silently does nothing is worse than one that visibly cannot, so a fact a
 person needs (is the command registered?) belongs in the answer they already read, not in a log.
+
+### Amendment — the key returns without the hint, and the row moves up (same day, on request)
+
+- **`order: 350`**, between fork (300) and copy-id (450): "put it under 分叉会话". A plain number, and the
+  whole of the position question — 归档会话 is a component row the product renders after every data
+  contribution, so "last" was never a seat this plugin could take with an order.
+- **Ctrl+Shift+D is registered again**, with the product's platform table, isolated in its own `try`/`catch`
+  so a refusal costs the key and nothing else. It reads the session from the sidebar's own persisted
+  selection — `dsh.sessions.current` holding `{ sessionId, subagentAddress? }`, read out of the workspace
+  package's client half rather than guessed — and reports `blocked` when that cannot be read.
+- **`commandId` is deliberately left off the row.** It is what prints the keys beside the label, and it is
+  the one piece that plausibly took *every* session's menu down in 0.2.4: this row is contributed to every
+  session menu, and a contribution the popup cannot render is every popup broken. The binding works without
+  it; the hint returns when the catalogue entry can be checked against a running catalogue instead of
+  assumed. The test asserts `commandId === undefined`, so adding it later is a decision and not a drift.

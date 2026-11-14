@@ -7,6 +7,20 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.12] - 2026-11-14
+
+- **Seated after 分叉会话** (`order: 350`, between fork 300 and copy-id 450), on request: the row is where a
+  person looks for it, not at the bottom of the menu.
+- **Ctrl+Shift+D is back** — registered through `ctx.shortcuts.register` with the product's own platform
+  table, so it shows up in the shortcut settings and is remappable there. It acts on the session the window
+  shows, read from the sidebar's own persisted selection (`dsh.sessions.current`, `{ sessionId }`), reports
+  `blocked` instead of guessing when that cannot be read, and runs the same command as the row.
+- **No `commandId` on the row**, deliberately: printing the keys beside the label is the one piece that
+  plausibly took *every* session's menu down in 0.2.4, and this row lives in all of them. The key works
+  without it; the hint comes back only once the catalogue entry can be checked against a running catalogue.
+- The shortcut registration is isolated like every other contribution: a registry that refuses the
+  definition costs the key, never the row or the view pruning.
+
 ## [0.2.11] - 2026-11-14
 
 - **The human command now registers even when the command registry mounts after this bundle.** The

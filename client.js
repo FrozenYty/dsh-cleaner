@@ -22,6 +22,7 @@ window.__ModuleLoader__.load({
     const VIEW_PREFIX = 'dsh.workspace.view.'
     const ACCOUNT_KEY = 'sessionOrderByAccount'
     const MARK_KEY = 'dsh-cleaner.client.v1'
+    const SHORTCUT_ID = 'session.delete-log'
 
     /**
      * The ids a session-list answer names, whichever field its records carry.
@@ -150,14 +151,19 @@ window.__ModuleLoader__.load({
          * host something while the menu was opening found a way to take the menu down with it.
          *
          * Presentation, in the product's own vocabulary:
-         * - `order: 9000` sorts it after every other session action this build registers (pin 100, rename
-         *   200, fork 300, copy-id 450, archive 600), so it is the last contribution in the menu.
+         * - `order: 350` seats it directly after 分叉会话 (fork 300) and before 复制 Session ID (450), which is
+         *   where it was asked to go. It is a plain number: the menu sorts data contributions by it and
+         *   renders the product's own component rows after them.
          * - `danger` and the icon key are the pair the workspace plugin uses for its own delete row, so this
          *   row reads exactly like *删除工作区* does: the product's destructive treatment, with the trash
          *   glyph it registers in the shared `contextMenu.icon` slot. Borrowing that key is deliberate —
          *   re-drawing the glyph here would be a guess at the neighbours' stroke, size and colour, and this
          *   bundle cannot resolve `@deepseek-ai/dsh-client-ui-primitives` to import the real one. If that
          *   plugin is ever absent the key resolves to nothing and the row loses its icon rather than failing.
+         * - **no `commandId`**: it would print Ctrl+Shift+D beside the label, and that association is the one
+         *   piece that plausibly took the whole popup down in 0.2.4 (a row the overlay cannot render is every
+         *   session's menu broken, because this row is in all of them). The key works without it; the hint
+         *   waits until the catalogue entry can be checked against a running catalogue instead of assumed.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -165,7 +171,7 @@ window.__ModuleLoader__.load({
           return menus.register({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
-            order: 9000,
+            order: 350,
             resolve: (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
@@ -180,26 +186,84 @@ window.__ModuleLoader__.load({
           })
         }
 
+        /**
+         * The session the window is looking at, read from the sidebar's own persisted selection.
+         *
+         * The workspace plugin keeps it in `dsh.sessions.current` as `{ sessionId, subagentAddress? }` (read
+         * from that package's client half, not guessed), which is what lets a global key act on the
+         * conversation the person is in. A shape this does not recognise means no session, and the shortcut
+         * says so instead of guessing one.
+         */
+        const currentSessionId = () => {
+          try {
+            const parsed = JSON.parse(window.localStorage.getItem('dsh.sessions.current'))
+            const id = parsed?.sessionId ?? parsed?.id
+            return typeof id === 'string' && id.length > 0 ? id : undefined
+          } catch {
+            return undefined
+          }
+        }
+
+        /**
+         * Ctrl+Shift+D (⌘⇧D on macOS): the keyboard path to the same act, on the session the window shows.
+         *
+         * Registered with the product's own default table, so the binding appears in the shortcut settings
+         * and is remappable there — a global key listener would have been invisible and unconfigurable.
+         * Isolated like every contribution: a registry that refuses this definition costs the key, never the
+         * row or the view pruning.
+         */
+        const registerShortcut = () => {
+          const shortcuts = ctx.get('shortcuts')
+          if (shortcuts === undefined || typeof shortcuts.register !== 'function') return undefined
+          const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
+          return shortcuts.register({
+            id: SHORTCUT_ID,
+            label,
+            aliases: ['delete session'],
+            defaults: {
+              'desktop:macos': binding,
+              'desktop:windows': binding,
+              'desktop:linux': binding,
+              'web:macos': binding,
+              'web:windows': binding,
+              'web:linux': binding,
+            },
+            resolve: () => {
+              const sessionId = currentSessionId()
+              if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
+              return { status: 'handled', run: () => runClean(sessionId) }
+            },
+          })
+        }
+
         return ctx.effect(() => {
           void prune()
           // A deletion made while this window was in the background is covered when it comes back.
           const onFocus = () => void prune()
           window.addEventListener('focus', onFocus)
           // Every contribution is optional and isolated: a service that refuses this plugin's definition
-          // must cost the menu row, never the view pruning or another plugin's menu. The rule was learned
-          // the hard way — a rejected registration took the whole menu down with it once.
+          // must cost that one thing, never the rest. The rule was learned the hard way — a contribution the
+          // popup could not render took every session's menu down with it once.
           let unregisterMenu
+          let unregisterShortcut
           try {
             unregisterMenu = registerMenu()
           } catch (error) {
             console.error('dsh-cleaner: the session menu row was refused', error)
           }
+          try {
+            unregisterShortcut = registerShortcut()
+          } catch (error) {
+            console.error('dsh-cleaner: the shortcut was refused', error)
+          }
           return () => {
             window.removeEventListener('focus', onFocus)
-            try {
-              unregisterMenu?.()
-            } catch {
-              // A disposer that throws must not stop the rest of the cleanup.
+            for (const unregister of [unregisterMenu, unregisterShortcut]) {
+              try {
+                unregister?.()
+              } catch {
+                // A disposer that throws must not stop the rest of the cleanup.
+              }
             }
           }
         })
