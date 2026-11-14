@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.13] - 2026-11-14
+
+- **The keycap prints beside the label.** `commandId` is set — but only when the shortcut catalogue really
+  holds this plugin's id, read synchronously from the same store the overlay reads
+  (`ctx.shortcuts.catalog.getSnapshot()`). The overlay's lookup is a plain
+  `catalog.find((entry) => entry.id === action.commandId)`, so a *dangling* association is the one shape this
+  bundle will not ship: 0.2.4 named a static one and took every session menu down with it. Present → the keys
+  print; absent, unreadable or malformed catalogue → no association, no hint, and the row still works.
+- Three tests pin it: the hint is claimed when the catalogue has the id, withheld when it does not, and
+  withheld — without throwing — when reading the catalogue fails.
+
 ## [0.2.12] - 2026-11-14
 
 - **Seated after 分叉会话** (`order: 350`, between fork 300 and copy-id 450), on request: the row is where a

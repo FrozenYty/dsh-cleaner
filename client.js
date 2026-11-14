@@ -160,10 +160,12 @@ window.__ModuleLoader__.load({
          *   re-drawing the glyph here would be a guess at the neighbours' stroke, size and colour, and this
          *   bundle cannot resolve `@deepseek-ai/dsh-client-ui-primitives` to import the real one. If that
          *   plugin is ever absent the key resolves to nothing and the row loses its icon rather than failing.
-         * - **no `commandId`**: it would print Ctrl+Shift+D beside the label, and that association is the one
-         *   piece that plausibly took the whole popup down in 0.2.4 (a row the overlay cannot render is every
-         *   session's menu broken, because this row is in all of them). The key works without it; the hint
-         *   waits until the catalogue entry can be checked against a running catalogue instead of assumed.
+         * - **`commandId`, but only when the catalogue really holds it**: that association is what prints the
+         *   keys beside the label, and the overlay looks it up with `catalog.find((entry) => entry.id ===
+         *   action.commandId)` — a plain `.find`, so an entry that is missing would silently cost the hint
+         *   rather than fail. 0.2.4 broke every session menu with a static `commandId`, so this one is read
+         *   from the live catalogue at the moment the menu resolves: present → the keys print, absent → no
+         *   association at all, and never a dangling one.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -180,10 +182,28 @@ window.__ModuleLoader__.load({
                 label: label(),
                 icon: { key: 'workspace.delete' },
                 danger: true,
+                ...shortcutHint(),
                 run: () => runClean(sessionId),
               }]
             },
           })
+        }
+
+        /**
+         * `{ commandId }` when the shortcut catalogue holds this plugin's key, otherwise nothing.
+         *
+         * A synchronous read of the catalogue the overlay itself reads, guarded twice: a service, a store or a
+         * malformed row must cost the hint and never the menu. This is the difference between 0.2.4 — a static
+         * `commandId` that took every popup down — and a hint that can only appear when it can be rendered.
+         */
+        const shortcutHint = () => {
+          try {
+            const catalog = ctx.get('shortcuts')?.catalog?.getSnapshot?.()
+            const found = Array.isArray(catalog) && catalog.some((entry) => entry?.id === SHORTCUT_ID)
+            return found ? { commandId: SHORTCUT_ID } : {}
+          } catch {
+            return {}
+          }
         }
 
         /**

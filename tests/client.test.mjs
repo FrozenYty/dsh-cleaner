@@ -135,6 +135,15 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
             registeredShortcuts.push(definition)
             return () => {}
           },
+          // The overlay reads the catalogue to print keys beside a label; the bundle reads the same store to
+          // decide whether it may name it at all.
+          catalog: {
+            getSnapshot: () => {
+              if (shortcuts === 'loading') throw new Error('the catalogue is not readable yet')
+              if (shortcuts === 'empty') return []
+              return registeredShortcuts.map((definition) => ({ id: definition.id, label: definition.label() }))
+            },
+          },
         }
       }
       if (name === 'locale') {
@@ -298,7 +307,20 @@ test('a session menu item runs the command for that session, and nothing else', 
   assert.equal(entry.order, 350, 'after fork (300), before copy-id (450)')
   assert.equal(item.afterContent, undefined, 'the footer group renders before the component rows')
   assert.equal(item.icon.key, 'workspace.delete')
-  assert.equal(item.commandId, undefined, 'no catalogue coupling: the keys print only once that can be verified')
+
+  // The keys print beside the label only through `commandId`, and only when the catalogue really holds the id:
+  // 0.2.4 named a static one and took every session menu down with it.
+  const hinted = mount({ views: {}, answer: [], menus: true, shortcuts: true })
+  const [withHint] = hinted.registered[0].resolve({ sessionId: 'session-archived-1' })
+  assert.equal(withHint.commandId, 'session.delete-log', 'the catalogue has it, so the hint is claimed')
+
+  const unhinted = mount({ views: {}, answer: [], menus: true, shortcuts: 'empty' })
+  const [withoutHint] = unhinted.registered[0].resolve({ sessionId: 'session-archived-1' })
+  assert.equal(withoutHint.commandId, undefined, 'the catalogue does not have it, so nothing is claimed')
+
+  const broken = mount({ views: {}, answer: [], menus: true, shortcuts: 'loading' })
+  const [noCrash] = broken.registered[0].resolve({ sessionId: 'session-archived-1' })
+  assert.equal(noCrash.commandId, undefined, 'an unreadable catalogue costs the hint, not the row')
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
