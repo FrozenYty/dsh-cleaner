@@ -7,6 +7,18 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.9] - 2026-11-14
+
+- **The row is back on a host that has the command.** The 0.2.8 guard awaited the command list *inside* the
+  menu's `resolve`, so a call that did not settle hid the row exactly where it mattered — on a freshly
+  restarted host, which is the state the guard was written for. The question is now asked in the
+  background and `resolve` only reads the answer: a definite "no" hides the row, an unanswered question
+  offers it, and a click that learns the truth (`execute` answered `undefined`) records it for the next
+  menu. The page load also warms the question with the first session the host names, so a stale window
+  usually hides the row before it is ever opened.
+- The cost of being wrong is now one click that does nothing, and that click is remembered — not a row that
+  silently never appears.
+
 ## [0.2.8] - 2026-11-14
 
 - **A row that cannot be verified is not offered.** The command check used to fail *open* — an unreadable

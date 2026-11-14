@@ -316,11 +316,11 @@ test('the menu label is Chinese when the window is', async () => {
   assert.equal(item.label, '删除会话')
 })
 
-test('a host that has no clean command contributes no row at all', async () => {
+test('a host that has no clean command stops offering the row', async () => {
   // The window half reloads with the page and the host half only reloads with the process, so this is the
-  // normal state right after an update — and a row that runs an unknown command is worse than no row: the
-  // click becomes ordinary text, the session's agent answers, and the person reads a failure that never
-  // happened.
+  // normal state right after an update. The question is asked in the background — it must not be awaited
+  // inside `resolve`, because a call that never settles would hide the row forever — and a definite "no"
+  // hides it from the next menu on.
   const { registered, executed, listed } = mount({
     views: {},
     answer: [],
@@ -328,12 +328,15 @@ test('a host that has no clean command contributes no row at all', async () => {
     commands: [{ name: 'compact', description: 'some other command' }],
   })
 
-  assert.equal((await registered[0].resolve({ sessionId: 'session-1' })).length, 0)
+  const entry = registered[0]
+  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1, 'the question is still in flight')
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 0, 'the host answered, and it has no clean')
   assert.deepEqual(listed, ['session-1'], 'the host was asked which commands it has')
   assert.deepEqual(executed, [], 'and nothing was executed')
 })
 
-test('the command list is asked once per session, and an unreadable list hides the row', async () => {
+test('the command list is asked once per session, and an unreadable list keeps the row', async () => {
   const asked = []
   const { registered } = mount({
     views: {},
@@ -347,22 +350,25 @@ test('the command list is asked once per session, and an unreadable list hides t
 
   const entry = registered[0]
   assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
+  await new Promise((resolve) => setImmediate(resolve))
   assert.equal((await entry.resolve({ sessionId: 'session-1' })).length, 1)
-  assert.deepEqual(asked, ['session-1'], 'the second open reuses the answer')
+  assert.deepEqual(asked, ['session-1'], 'the same session is asked about once')
 
   // A second session is its own question: scoped commands shadow globals per agent.
   await entry.resolve({ sessionId: 'session-2' })
-  assert.deepEqual(asked, ['session-1', 'session-2'])
+  assert.deepEqual(asked.slice(0, 2), ['session-1', 'session-2'])
 
-  // A list call that throws is not evidence that the command exists, so no row is offered: a click that
-  // fails reads worse than a row that is missing.
+  // A list call that throws is no evidence against the command, so the row stays: hiding a row that works
+  // is the mistake the first version of this guard made.
   const failing = mount({
     views: {},
     answer: [],
     menus: true,
     commands: () => { throw new Error('gateway down') },
   })
-  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 0)
+  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
 })
 
 test('a click that reaches a host without the command stops offering the row', async () => {

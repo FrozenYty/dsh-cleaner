@@ -104,6 +104,10 @@ window.__ModuleLoader__.load({
           } catch {
             // The mark is a courtesy; losing it costs nothing.
           }
+          // Warm the command question with the first session the host named, so the menu can hide the row
+          // immediately on a host that has no `clean` — the answer is representative because the command is
+          // registered globally, and a scoped shadow would only cost one click.
+          askAbout([...live][0])
         }
 
         /** The menu label in the language the window is showing, without a dictionary to register. */
@@ -118,29 +122,34 @@ window.__ModuleLoader__.load({
         }
 
         /**
-         * Whether the host actually has the command this row runs.
+         * Whether the host has the command this row runs — asked in the background, never waited for.
          *
-         * A row that runs a command the host does not know is worse than no row at all: the click either does
-         * nothing or surfaces a failure for a deletion that never happened. That is exactly what a window
-         * shows when the browser half is newer than the loaded bundle — the normal state right after an
-         * update, because this half reloads with the page and the host half only reloads with the process.
+         * A row that runs a command the host does not know is worse than no row: the click does nothing and
+         * the person reads a failure for a deletion that never happened. That is the state of a window whose
+         * host half is older, because this half reloads with the page and the host half only with the
+         * process.
          *
-         * Asked once per session and remembered. A list that cannot be read counts as **absent**: a row that
-         * cannot be verified must not be offered, because the alternative is offering a click that fails.
+         * The check cannot be *awaited inside* the menu's `resolve`, though: if the call never settles, the
+         * row never appears at all — which is exactly what happened when this was first written, in the one
+         * state where the answer mattered most. So the answer is a cache that is filled in the background
+         * (and by the click itself, which learns from an `undefined` execution), and `resolve` only *reads*
+         * it: a definite "no" hides the row, and anything else offers it. The cost of being wrong is one
+         * click that does nothing, and that click records the truth for the next menu.
          */
         const knownCommands = new Map()
-        const commandExists = async (sessionId) => {
-          if (knownCommands.has(sessionId)) return knownCommands.get(sessionId)
-          let known = false
-          try {
-            const answer = await ctx.remote.commands.list(sessionId)
-            const items = Array.isArray(answer) ? answer : answer?.items
-            known = (Array.isArray(items) ? items : []).some((entry) => entry?.name === 'clean')
-          } catch {
-            // No answer is not evidence that the command exists: hide the row rather than offer it.
-          }
-          knownCommands.set(sessionId, known)
-          return known
+        const asked = new Set()
+        const askAbout = (sessionId) => {
+          if (asked.has(sessionId)) return
+          asked.add(sessionId)
+          void Promise.resolve(ctx.remote.commands.list(sessionId))
+            .then((answer) => {
+              const items = Array.isArray(answer) ? answer : answer?.items
+              if (!Array.isArray(items)) return
+              knownCommands.set(sessionId, items.some((entry) => entry?.name === 'clean'))
+            })
+            .catch(() => {
+              // No answer is no evidence: the row stays, and the first click will report the truth.
+            })
         }
 
         /**
@@ -183,10 +192,13 @@ window.__ModuleLoader__.load({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
             order: 9000,
-            resolve: async (target) => {
+            resolve: (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
-              if (!await commandExists(sessionId)) return []
+              askAbout(sessionId)
+              // Only a definite "no" hides the row: an unanswered question must not cost the person a row
+              // that works — that mistake is what the first version of this guard made.
+              if (knownCommands.get(sessionId) === false) return []
               return [{
                 id: 'dsh-cleaner.delete-log',
                 label: label(),
