@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.4.
+- Current version: v0.2.5.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -83,14 +83,11 @@ decision you have already made. Both callers end in one implementation, so a per
 calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
 
 A session's own **⋯ menu** carries the same thing as one row — *删除会话* / *Delete session*, in the window's
-language, drawn in red with the product's own trash glyph, sorted last of every session action, with
-**Ctrl+Shift+D** (⌘⇧D) printed beside it. That key deletes the session the window is looking at, and it is a
-real binding in the product's shortcut table: it shows up in the shortcut settings and can be remapped
-there. It is a data contribution to the menu, not a renderer: the bundle supplies the label, the icon key,
-the key and the click, and the sidebar draws it like its own actions. The row appears only when the host
-really has the `clean` command — the window half reloads with the page and the host half only with the
-process, and a row whose command the host has never heard of turns a click into ordinary text, which reads
-as a failure that never happened.
+language, drawn in red with the product's own trash glyph, sorted last of every session action. It is a data
+contribution to the menu, not a renderer: the bundle supplies the label, the icon key and the click, and the
+sidebar draws it like its own actions. The row appears only when the host really has the `clean` command —
+the window half reloads with the page and the host half only with the process, and a row whose command the
+host has never heard of turns a click into ordinary text, which reads as a failure that never happened.
 
 ## Install
 
@@ -378,3 +375,4 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
+

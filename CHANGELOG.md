@@ -7,6 +7,19 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.5] - 2026-11-14
+
+- **The Ctrl+Shift+D shortcut is withdrawn**, and the session menu works again. Declaring it in the shortcut
+  catalogue (or the `commandId` that printed it beside the label) made every session's ⋯ menu answer
+  `操作失败` in the window: the overlay renders our row inside every session menu, and a contribution it
+  cannot render takes the whole popup with it. The row keeps its label, its red, its trash glyph and its
+  last-place order; the key can come back once its catalogue entry can be verified against a running
+  catalogue rather than assumed.
+- **Every contribution is now registered in isolation.** A service that refuses this plugin's definition
+  costs the row and nothing else — the view pruning and every other plugin's menu keep working — and the
+  refusal is reported to the page's console instead of being thrown into the plugin's `apply`.
+  ([ADR 0011](docs/adr/0011-one-operation-two-callers.md), amendment).
+
 ## [0.2.4] - 2026-11-14
 
 - **The row is the last thing in the menu, and it has a key.** `order: 9000` sorts it after every session

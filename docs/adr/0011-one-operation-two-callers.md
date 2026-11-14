@@ -117,3 +117,22 @@ Two more requests, both answered from the product's tables rather than from tast
   global shortcut has no target — and when that cannot be read the shortcut reports `blocked` rather than
   guessing. It runs through the same command guard as the row: a host without `clean` receives nothing at
   all, instead of a line of text that reads as a failure.
+
+### Amendment — the key is withdrawn, and why nothing may throw (same day, after it broke the menu)
+
+Declaring that shortcut made **every** session's ⋯ menu answer `操作失败`. The likely mechanism, from the
+packages' own documentation: the overlay renders this plugin's row inside every session menu, the shortcut
+catalogue "rejects duplicate ids and overlapping default combinations" and its "errors while publishing an
+accepted command catalog propagate to the caller", and a contribution the popup cannot render takes the
+popup with it — our row is in every session's menu, so one bad entry is every menu.
+
+Two things changed as a result:
+
+- **The shortcut is withdrawn** until its catalogue entry can be checked against a running catalogue instead
+  of assumed. The row keeps its label, its red, its trash glyph and its last-place order; what went away is
+  the key and the `commandId` that printed it.
+- **Every registration in the browser half is isolated**: `try`/`catch` around the contribution, a reported
+  failure instead of a thrown one, and a disposer that cannot take the rest of the cleanup with it. The rule
+  this plugin now follows is the one the failure taught: *a contribution this bundle cannot make must cost
+  the row and nothing else.* A test mounts the half against a menus service that refuses the definition and
+  asserts the view is still pruned and nothing throws.

@@ -104,6 +104,13 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
     get: (name) => {
       if (name === 'contextMenus') {
         if (!menus) return undefined
+        if (menus === 'refuse') {
+          return {
+            register: () => {
+              throw new Error('the menu service refused this contribution')
+            },
+          }
+        }
         return {
           register: (definition) => {
             registered.push(definition)
@@ -281,9 +288,8 @@ test('a session menu item runs the command for that session, and nothing else', 
   // print beside the label.
   assert.equal(item.danger, true)
   assert.equal(entry.order, 9000, 'after every session action the build registers, Archive (600) included')
-  assert.equal(item.afterContent, undefined, 'the footer group renders before the built-in rows')
+  assert.equal(item.afterContent, undefined, 'the footer group renders before the component rows')
   assert.equal(item.icon.key, 'workspace.delete')
-  assert.equal(item.commandId, 'session.delete-log')
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
@@ -358,56 +364,18 @@ test('the command list is asked once per session, and an unreadable list keeps t
   assert.equal((await failing.registered[0].resolve({ sessionId: 'session-3' })).length, 1)
 })
 
-test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the window shows', async () => {
-  const { shortcuts, executed } = mount({
-    views: {},
-    answer: [],
-    shortcuts: true,
-    current: 'session-live-1',
+test('a registration the host refuses costs the row and nothing else', async () => {
+  // Learned the hard way: a contribution this bundle could not register once took the whole menu down with
+  // it, so every registration is isolated and a failure is reported instead of thrown.
+  const { store, registered } = mount({
+    views: { 'dsh.workspace.view.v5': VIEW({ '': ['session-gone-1', 'session-live-1'] }) },
+    answer: [{ sessionId: 'session-live-1' }],
+    menus: 'refuse',
   })
-
-  assert.equal(shortcuts.length, 1)
-  const [shortcut] = shortcuts
-  assert.equal(shortcut.id, 'session.delete-log', 'the id the menu row points at with commandId')
-  assert.equal(typeof shortcut.label, 'function')
-  assert.equal(shortcut.label(), 'Delete session')
-  for (const platform of ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:windows', 'web:macos', 'web:linux']) {
-    // Serialised, because the definition was built in the page's realm: its objects are not this realm's.
-    assert.equal(
-      JSON.stringify(shortcut.defaults[platform]),
-      JSON.stringify({ code: 'KeyD', modifiers: ['primary', 'shift'] }),
-      platform,
-    )
-  }
-
-  const resolved = shortcut.resolve()
-  assert.equal(resolved.status, 'handled')
-  resolved.run()
   await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(executed.length, 1)
-  assert.equal(executed[0].sessionId, 'session-live-1')
-  assert.equal(executed[0].line, '/clean session-live-1')
-})
 
-test('the shortcut says why it cannot act instead of guessing a session', () => {
-  const { shortcuts } = mount({ views: {}, answer: [], shortcuts: true })
-  const resolved = shortcuts[0].resolve()
-  assert.equal(resolved.status, 'blocked')
-  assert.equal(resolved.reason, 'no session is open')
-})
-
-test('the shortcut stays silent on a host that has no clean command', async () => {
-  const { shortcuts, executed } = mount({
-    views: {},
-    answer: [],
-    shortcuts: true,
-    current: 'session-live-1',
-    commands: [{ name: 'compact', description: 'some other command' }],
-  })
-
-  shortcuts[0].resolve().run()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(executed, [], 'no line is handed to a host that does not know the command')
+  assert.deepEqual(registered, [], 'the contribution was refused')
+  assert.equal(store.getItem('dsh.workspace.view.v5').includes('session-gone-1'), false, 'the view is still pruned')
 })
 
 test('a page without the menus service still prunes the view', async () => {
