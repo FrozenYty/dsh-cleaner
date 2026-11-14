@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.15.
+- Current version: v0.2.16.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -359,6 +359,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 |---|---|
 | What does the plugin promise, and how do I install it? | this README |
 | How does it keep those promises, and what is a candidate? | [docs/design.md](docs/design.md) |
+| Which product interfaces does it use, and what does it own because none exists? | [docs/seams.md](docs/seams.md) |
 | Why is removal out-of-band, and what does the seam provide? | [ADR 0001](docs/adr/0001-out-of-band-deletion.md) |
 | Why does the bundle half import nothing? | [ADR 0002](docs/adr/0002-zero-import-bundle-half.md) |
 | Why two tools, and why explicit ids? | [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md) |
@@ -375,6 +376,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
+
 
 
 

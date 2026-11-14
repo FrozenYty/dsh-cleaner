@@ -23,6 +23,8 @@ window.__ModuleLoader__.load({
     const ACCOUNT_KEY = 'sessionOrderByAccount'
     const MARK_KEY = 'dsh-cleaner.client.v1'
     const SHORTCUT_ID = 'session.delete-log'
+    const LOCALE_NS = 'dsh-cleaner'
+    const LABEL_KEY = 'session.delete'
 
     /**
      * The ids a session-list answer names, whichever field its records carry.
@@ -111,15 +113,38 @@ window.__ModuleLoader__.load({
           }
         }
 
-        /** The menu label in the language the window is showing, without a dictionary to register. */
+        /**
+         * The row's label in the window's language, through the product's own dictionary service.
+         *
+         * `ctx.locale.register(ns, { en, zh })` contributes the strings and `ctx.locale.bind(ns)` reads them
+         * back with the product's fallback chain (any language we do not translate lands on `en`). That is the
+         * official seam; the earlier version guessed the language from `getLocale().active` and hard-coded two
+         * literals, which is the shape this plugin keeps having to unlearn.
+         *
+         * A locale service that cannot answer costs the language, never the item: the English string is the
+         * last resort, and it is what an untranslated window shows anyway.
+         */
         const label = () => {
-          let active = ''
           try {
-            active = String(ctx.get('locale')?.getLocale?.().active ?? '')
+            const locale = ctx.get('locale')
+            if (typeof locale?.bind === 'function') {
+              const text = locale.bind(LOCALE_NS)(LABEL_KEY)
+              if (typeof text === 'string' && text.length > 0 && text !== LABEL_KEY) return text
+            }
           } catch {
             // A locale service that cannot answer costs the language, never the item.
           }
-          return active.toLowerCase().startsWith('zh') ? '删除会话' : 'Delete session'
+          return 'Delete session'
+        }
+
+        /** Contribute this plugin's two strings to the product's dictionary, and nothing else. */
+        const registerDictionary = () => {
+          const locale = ctx.get('locale')
+          if (locale === undefined || typeof locale.register !== 'function') return undefined
+          return locale.register(LOCALE_NS, {
+            en: { [LABEL_KEY]: 'Delete session' },
+            zh: { [LABEL_KEY]: '删除会话' },
+          })
         }
 
         /**
@@ -292,6 +317,12 @@ window.__ModuleLoader__.load({
           } catch (error) {
             console.error('dsh-cleaner: the session menu row was refused', error)
           }
+          let unregisterDictionary
+          try {
+            unregisterDictionary = registerDictionary()
+          } catch (error) {
+            console.error('dsh-cleaner: the dictionary was refused', error)
+          }
           // The key waits for its service, so it is registered through `inject` (disposed with this plugin);
           // the fallback is for a Context without that Core API, where the service must already be there.
           if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
@@ -305,10 +336,12 @@ window.__ModuleLoader__.load({
           setTimeout(report, 2000)
           return () => {
             window.removeEventListener('focus', onFocus)
-            try {
-              unregisterMenu?.()
-            } catch {
-              // A disposer that throws must not stop the rest of the cleanup.
+            for (const unregister of [unregisterMenu, unregisterDictionary]) {
+              try {
+                unregister?.()
+              } catch {
+                // A disposer that throws must not stop the rest of the cleanup.
+              }
             }
           }
         })
