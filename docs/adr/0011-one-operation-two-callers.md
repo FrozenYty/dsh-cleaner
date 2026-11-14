@@ -138,3 +138,26 @@ Two things changed as a result:
   this plugin now follows is the one the failure taught: *a contribution this bundle cannot make must cost
   the row and nothing else.* A test mounts the half against a menus service that refuses the definition and
   asserts the view is still pruned and nothing throws.
+
+### Amendment — the guard is gone, and the command was never registered (same day, at the third look)
+
+The row kept disappearing and reappearing, and each fix chased the previous one. Two separate mistakes came
+out of it, and both were mine:
+
+- **The guard was answering the wrong question.** For three releases the row asked the host whether `clean`
+  existed before offering itself: awaited inside `resolve` it hid the row on a freshly restarted host
+  (0.2.8), asked in the background a synchronous throw escaped `resolve` and took the whole popup down
+  (0.2.9). It is **removed**: `resolve` is synchronous, asks nothing, and the contribution's only call is the
+  click, wrapped so that an unknown command or a refusing transport cannot surface (0.2.10). A click whose
+  worst case is "nothing happens" beats every failure the guard produced.
+- **The host had never registered the command at all.** `ctx.get('commands')` was read *once while the
+  bundle loaded*; in a profile where the registry mounts later that lookup answers `undefined` and the
+  registration was skipped **silently** — so the row was real, the command was not, and the guard had been
+  telling the truth the whole time: the click did nothing because there was nothing to run. The registration
+  now waits for the service (`ctx.inject(['commands'], …)`, the Core API that turns the callback into a child
+  plugin with `inject`), and **every listing reports the outcome** as `human_command` plus one rendered line
+  (0.2.11). That fact lives in a registry rather than on disk, and it is the difference between a row that
+  deletes and a row that does nothing — it should have been in the listing from the start.
+
+The lesson kept: a surface that silently does nothing is worse than one that visibly cannot, so a fact a
+person needs (is the command registered?) belongs in the answer they already read, not in a log.

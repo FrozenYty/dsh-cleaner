@@ -127,7 +127,7 @@ window.__ModuleLoader__.load({
          * popup down (`操作失败，请重试`). A click whose worst case is "nothing happens" is the cheaper trade.
          *
          * Every failure mode here is silent by design: an unknown command answers `undefined`, a missing
-         * namespace throws inside the `try`, and the person sees no row… no, sees the row and nothing else.
+         * namespace throws inside the `try`, and the person sees the row and nothing else.
          */
         const runClean = (sessionId) => {
           try {
