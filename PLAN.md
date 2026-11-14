@@ -39,12 +39,15 @@ Written after a night of live failures, which are the reason each item exists.
 
 3. **The row always goes.** — **implemented** (v0.2.1,
    [ADR 0012](docs/adr/0012-archive-never-unarchive.md)); the live proof is the last open item.
-   The deletion detaches the id from its project **and archives it**, and never unarchives: the sidebar's
-   default filter is `!archived.has(id)`, and the workspace feed publishes the change to every open window,
-   so the row disappears the moment the call returns.
+   The deletion detaches the id from its project **and archives it**, before the files go, and never
+   unarchives: the sidebar's default filter is `!archived.has(id)`, and the workspace feed publishes the
+   change to every open window, so the row disappears the moment the call returns. The order is forced by
+   the registry (`archiveSession` refuses a session that is neither live nor in persistence), and a removal
+   that fails gets its archive entry back.
    - Met in tests: an unarchived session is archived by the deletion (the case that used to leave a visible
-     row); an already-archived one is not archived again; a wide `unarchiveSession` that throws is never
-     called.
+     row); an already-archived one is not archived again; the archive is asked for while the log is still on
+     disk; a candidate that vanishes before the sweep, and one whose unlink is denied, both get their
+     archive state back.
    - Not yet met in a real window: one deletion, watched live, with no reload.
 
 4. **The browser half must be seen running.** It is tested against a fake page and has never been observed
