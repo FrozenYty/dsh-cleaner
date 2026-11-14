@@ -7,6 +7,19 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.10] - 2026-11-14
+
+- **The guard is gone, and the row asks the host nothing.** Three releases tried to answer "does the host
+  have this command?" before offering the row: awaiting it inside `resolve` hid the row on a freshly
+  restarted host, asking in the background left a synchronous throw that took the whole menu down
+  (`操作失败，请重试`), and the guard itself could not see the one fact it needed. The contribution is now
+  **plain data**: a constant label in the window's language, an icon key, `danger`, `order` — and a single
+  call when it is clicked, wrapped so that neither an unknown command nor a refusing transport can surface
+  an error. The worst case is a click that does nothing, which is cheaper than every failure the guard
+  produced.
+- This also removes the plugin's only use of `commands.list` from the client half; `commands.execute` at
+  click time is the one client-callable entry point the product itself uses for the same purpose.
+
 ## [0.2.9] - 2026-11-14
 
 - **The row is back on a host that has the command.** The 0.2.8 guard awaited the command list *inside* the
