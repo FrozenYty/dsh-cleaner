@@ -1,3 +1,15 @@
+## [0.5.5] - 2026-11-15
+
+- **The command carrier no longer claims a deletion it cannot see.** It answers with "did a command match", not
+  with what it removed, so the notice now says *已发出删除请求——宿主的回执就在这个会话里* and the Host's own
+  answer in the conversation carries the outcome. A blank session genuinely has no log, and a notice that said
+  "deleted" there would have been one more quiet lie.
+- **The state report rides the command once per page load**, not after every click: the running Host parses a
+  command line and prints its answer in the conversation, so a report per click added a line to somebody's
+  transcript each time and taught them to ignore it.
+- The report records `handed to /clean (matched=…)` rather than `deleted over /clean`, for the same reason.
+
+## [0.5.4] - 2026-11-15
 ## [0.5.4] - 2026-11-15
 
 - **The keycap was missing because the registration was refused, and this is why.** The product's own validation

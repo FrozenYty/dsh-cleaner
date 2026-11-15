@@ -419,7 +419,7 @@ test('a Host without the route still deletes, through the command it does serve'
   assert.equal(deletion[0].sessionId, 'session-open-1')
   assert.equal(deletion[0].line, '/clean session-1', 'the host\'s own command, with the target as the argument')
   assert.equal(released.includes('session-open-1'), true, 'and the reference was released')
-  assert.match(lastState(requests).lastClick, /^deleted over \/clean \(matched=true\); route unavailable/)
+  assert.match(lastState(requests).lastClick, /^handed to \/clean \(matched=true\); route unavailable/)
 })
 
 test('the report rides the command when the route is absent', async () => {
@@ -617,7 +617,7 @@ test('a click says what it did, at the frame level', () => {
   return settle().then(() => {
     // The sentence is recorded for the report; the notice reads the same value, so a person sees what the
     // listing will say.
-    assert.match(lastState(clicked.requests).lastClick, /^deleted over \/clean/)
+    assert.match(lastState(clicked.requests).lastClick, /^handed to \/clean/)
   })
 })
 
