@@ -115,8 +115,16 @@ nothing.
 - **Never delete anything on disk outside `tests/` while running a command in this repository**, except
   in a tool call the person asked for, against ids they approved.
 - **An accepted ADR is closed.** To change a decision, write a new ADR that supersedes it.
-- **`CHANGELOG.md` is append-only in effect**: a released section is never rewritten; a new release adds
-  a section above it.
+- **Three records, three different questions — put a sentence in the one whose question it answers.**
+  `PLAN.md` answers *what is still owed, and how each item is proved*: the task board, where the only
+  checkboxes live. `PROGRESS.md` answers *what changed, why, and how it was checked that day*: an
+  append-only development log, one dated entry per day, written for whoever has to understand the decision
+  later. `CHANGELOG.md` answers *what a person who installs this bundle gets*: the release note, per
+  version. So a change with a user-visible effect adds a release note; a change whose **reason** or
+  **evidence** would otherwise be lost adds a log entry; a change to the remaining work edits the task
+  board — and nothing is written in two of them for the same reason. Both `PROGRESS.md` and a released
+  `CHANGELOG.md` section are append-only: a released section is never rewritten, and a log entry is never
+  edited after the fact.
 - **A problem outside your lane: report it, do not fix it.** One sentence in the PR description.
 
 ## 5. Verify and report

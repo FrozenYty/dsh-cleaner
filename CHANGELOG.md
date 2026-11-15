@@ -1,3 +1,15 @@
+## [0.5.27] - 2026-11-15
+
+- **The repository now says which file records what.** Three documents had started to overlap: `PLAN.md` held
+  task state plus prose about how the plugin used to work, `CHANGELOG.md` held the release notes, and the
+  *reason* a change was made lived only in commit messages. `AGENTS.md` §4 now states the split in one rule —
+  `PLAN.md` is what is still owed, `PROGRESS.md` is the append-only development log of why and how it was
+  checked, `CHANGELOG.md` is what a person who installs the bundle gets — and the new [PROGRESS.md](PROGRESS.md)
+  records the repository's arc in 19 dated entries, each naming the commits, pull request or ADR it rests on.
+- `scripts/check.mjs` covers both `PLAN.md` and `PROGRESS.md` as single-language root documents; `PLAN.md` had
+  been missing from that list, so the machine-path rule had never scanned it.
+
+## [0.5.26] - 2026-11-15
 ## [0.5.26] - 2026-11-15
 
 Tidying after the chain of fixes, with no behaviour change:

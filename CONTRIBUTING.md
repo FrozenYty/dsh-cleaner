@@ -55,6 +55,10 @@ trailer as another contributor.
 - Fill in the template: what changed, how it was verified, what else is affected.
 - **CI is the only gate.** When `check` is green on every leg the PR may merge.
 - Merge with **squash** — one change, one commit on `main`.
+- **Record the work in the file that answers its question** (`AGENTS.md` §4 has the long form): a
+  user-visible change adds a `CHANGELOG.md` section, the reason and the evidence of the change add a dated
+  entry to `PROGRESS.md`, and anything that changes what is still owed edits `PLAN.md`. Nothing is written
+  twice: the log entry says *why* and *how it was checked*, the release note says *what a person gets*.
 
 ## 5. What CI checks
 

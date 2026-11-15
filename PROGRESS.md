@@ -1,0 +1,127 @@
+# PROGRESS — the development log
+
+Append-only. One dated entry per day of work, newest last. Each entry records **why** a change was made and
+**how it was checked** — not which files moved, which `git log` already answers. A release that a user can see
+gets its own note in `CHANGELOG.md`; this file is for the reasoning and the evidence that would otherwise be
+lost.
+
+Dates are the commit dates, in the order the work happened.
+
+## 2026-11-13
+
+- **The repository exists, and a deletion is out-of-band maintenance rather than a product feature.**
+  The official persistence seam has no delete API, and the plugin does not pretend otherwise: it lists, takes
+  explicit ids, removes the named directories and reports the bytes (`7add4fd`, `7a4961e`, ADR
+  [0001](docs/adr/0001-out-of-band-deletion.md), [0003](docs/adr/0003-two-tools-with-explicit-ids.md)).
+  Consent is a mechanism, not a description — two tools, ids required, nothing defaulted. Verified with the
+  fixture engine tests; the first live run is recorded in `d7edb74`.
+- **Every guard is repeated against the live filesystem when a plan executes, and an id is bound to the path
+  it names.** A plan is data that has been sitting on disk since the listing, so the execution re-checks the
+  encoded name, the `lstat`, the `realpath` and the fact that every entry is a regular file (`2d6378c`,
+  `b5be136`, `ab9e726`, ADR [0005](docs/adr/0005-re-verify-at-execution.md)). Links and irregular directories
+  are refused rather than followed (ADR [0004](docs/adr/0004-refuse-links.md)). Verified by fixtures that
+  replace a directory between the listing and the deletion, and by one that renames an id to someone else's
+  path.
+- **CI became the proof of the `engines` claim: three systems, two Node majors** (`d774652`, `754feb4`,
+  `cc27f3e`, and `de31476` for the isolation flag that Node 22 and 24 spell differently). The matrix is the
+  claim, not decoration. Verified twice over: the six legs ran green, and a deliberate probe (`f9d3814`)
+  confirmed that a red check really blocks the merge — then it was reverted (`67973cb`).
+- **A deleted log still had a row, and the first answer was archiving.** The registry was asked to detach the
+  id from its project and to archive it (`52bad41`, `c45d1b6`, `11c00c3`, ADR
+  [0006](docs/adr/0006-detach-by-asking.md)), and the answer started reporting the host's own session list
+  when it still named a deleted id (`c47fbb5`, `712c789`, ADR [0009](docs/adr/0009-two-records-two-cases.md)).
+  **This mechanism was wrong and was replaced twice** — see the entries for 2026-11-15; it is recorded here
+  unedited because a log that only remembers successes is not a log.
+- **The plugin says what it does not reclaim.** The threat model, the "no bytes are freed until a purge"
+  boundary and the honest comparison with the other two ways to delete a log were written down (`551d54a`,
+  `25eaac2`, `7242b79`) — the reason being that a cleanup tool which overstates itself is worse than none.
+  A second person's first two questions were answered in the same pass (`44d05b8`) and their first failures
+  fixed in PR [#1](https://github.com/FrozenYty/dsh-cleaner/pull/1) (`942427f`).
+
+## 2026-11-14
+
+- **The archive dance was removed (v0.2.0).** A session no longer has to be archived before its log can be
+  deleted: the store is the index, and the archive file is read only to report (`8d94db7`, ADR
+  [0010](docs/adr/0010-no-archive-precondition.md)). The reason was a person's own complaint — the plugin was
+  refusing the very thing it existed to do. Verified on the three-system matrix, plus the test that a session
+  with no archive entry is a candidate and is deleted by name (`cace5be`).
+- **`/clean`, so the model is optional (v0.2.0).** The same operation behind the host's command registry,
+  with one implementation for both callers so the two cannot report different things (`60448e9`, ADR
+  [0011](docs/adr/0011-one-operation-two-callers.md)). Verified by a test that the command's answer for an id
+  equals the tool's answer for it.
+- **The menu row took two dozen commits before it could be trusted.** The row was contributed, then it
+  depended on a command that was not registered yet, then on a service that was not mounted, then on a
+  verification that could not run (`41508ff`, `451257a`, `73e64f1`, `b0ffd82`, `c684c9e`, `bef9b24`,
+  `d776987`, `1b34557`). The lesson written into ADR [0013](docs/adr/0013-reuse-the-client-sessions-service.md)
+  is that a contribution is data — it must not ask questions, hold a guard or have a failure path — and the
+  fix that finally held was the plainest one (`bef9b24`).
+- **Where the row sits is the product's call, and it is the footer.** Sorting inside one block could not put
+  it below 归档会话, so it became an `afterContent` action with its own order (`074b59b`, PR
+  [#52](https://github.com/FrozenYty/dsh-cleaner/pull/52); colour and icon in `3dd21b1`, `5cec8ee`,
+  `ea264cd`; ADR [0016](docs/adr/0016-row-below-archive.md), [0017](docs/adr/0017-row-belongs-in-footer.md)).
+  Verified in a real window, which is the only place that can confirm it.
+- **The window half could not reach the host, so the host served a route (v0.3.0).** This build's client root
+  has no `remote` service (`8688709`), and a message fired before the click's own turn never reached the
+  session (`e72a3af`); the answer was a small route the host registers and the window calls
+  (`d6b56dc`, ADR [0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). The transport itself was
+  a discovery: a `resource` route refuses a POST before matching, so the four routes had to be `handler`
+  routes (`d9969d9`), verified by a live POST that answered JSON and a page reload that kept working.
+
+## 2026-11-15
+
+- **One data directory, inside the workspace's `.agents` (v0.5.13).** The plugin's trash and index moved to
+  `<workspace>/.agents/cleaner`, beside `dsh-team` and `dsh-memory`, instead of a directory of its own under
+  the profile (`cc5af5a`, `0ab48d4`, PR [#56](https://github.com/FrozenYty/dsh-cleaner/pull/56), ADR
+  [0015](docs/adr/0015-our-own-data-directory.md)). Verified by a live listing whose `trash.root` is the
+  workspace path, and by a profile config that moves it.
+- **The trash became a page (v0.5.14–0.5.16).** A deletion should be visibly recoverable, so the settings seat
+  carries a trash that lists what is held, restores it and purges it (`f862fec`, PR
+  [#43](https://github.com/FrozenYty/dsh-cleaner/pull/43); `f9e6c64`, `8129e0e`, `bd49066`, ADR
+  [0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) amendment).
+- **Closing the plugin removes everything it contributed (v0.5.18).** Every contribution now lives inside the
+  plugin's own lifetime, so disabling it takes the menu row, the page, the shortcut and the dictionary with it
+  (`6a2ef7e`, PR [#61](https://github.com/FrozenYty/dsh-cleaner/pull/61), ADR
+  [0019](docs/adr/0019-contributions-follow-the-plugin-lifetime.md)). Verified live: with `include:cleaner`
+  disabled the route answered zero bytes, and re-enabling it restored the answer.
+- **A survey of eleven neighbours, and the correction it forced (v0.5.19–0.5.21).** `dsh-team`'s own comment
+  states the mechanism this plugin had attributed to archiving: the move drops the artifact out of the
+  session-query index, which is what makes the row disappear (`5980cb5`, PR
+  [#62](https://github.com/FrozenYty/dsh-cleaner/pull/62), ADR [0020](docs/adr/0020-what-the-neighbours-do.md)).
+  The same survey found the derived record this plugin never touched — the projection cache — and it now
+  travels with the log (`b946147`, PR [#63](https://github.com/FrozenYty/dsh-cleaner/pull/63), ADR
+  [0021](docs/adr/0021-derived-records-travel-with-the-log.md)). Verified by a delete-and-restore on a real
+  session, with the projection present in the trashed folder and back afterwards.
+- **A deletion across volumes, which taught the difference between a rename and a copy (v0.5.21).** The trash
+  is in the workspace and the store under the user profile, so `rename` answered `EXDEV` and **every deletion
+  of a session that had a log failed** — while the log-less ids the live checks had been using still
+  "worked" (`214aab8`, PR [#64](https://github.com/FrozenYty/dsh-cleaner/pull/64), ADR
+  [0022](docs/adr/0022-deletion-crosses-volumes.md)). The repair is a staged copy whose every file is compared
+  with its source before the source is removed; verified live, 453 946 bytes moved with `copied: true` in the
+  index, and the reverse transfer on restore.
+- **Five separate records could keep a row on screen, and each took its own release (v0.5.22–0.5.25).** The
+  log (v0.2.0), the projection (v0.5.20), the workspace membership (`53e4d8f`, PR
+  [#65](https://github.com/FrozenYty/dsh-cleaner/pull/65), ADR [0023](docs/adr/0023-detach-never-archive.md)),
+  the archive flag (`63dedc4`, PR [#67](https://github.com/FrozenYty/dsh-cleaner/pull/67), ADR
+  [0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md)) and finally the live session object
+  (`27dfca4`, PR [#68](https://github.com/FrozenYty/dsh-cleaner/pull/68), ADR
+  [0025](docs/adr/0025-a-deletion-releases-the-live-session.md)). The fifth one is the reason the earlier
+  "a restart clears it" answer was not the end: the store's own `detachEntered` emits `session/disposed`, and
+  a deletion now calls it. Verified live after each step — `archived_ids` unchanged by a detach, then empty
+  after the flag was dropped, then `still_listed` empty after the release — and by a window reload, which
+  cleared none of them.
+- **A notice matrix as a test, and a tidy that found a bug (v0.5.22, v0.5.26).** Every outcome a person can
+  reach got its own case, and writing it showed that a `/clean` which matched nothing was reported as "delete
+  requested" — reading as success while nothing had happened (`53e4d8f`, PR
+  [#65](https://github.com/FrozenYty/dsh-cleaner/pull/65)). The tidy afterwards moved the stale prose onto the
+  new mechanism — the delete receipt, `docs/design.md` §5, both READMEs and two fixtures (`e80ffdc`, PR
+  [#69](https://github.com/FrozenYty/dsh-cleaner/pull/69)).
+
+- **Three records were drifting into one another, so their jobs were written down (v0.5.27).** `PLAN.md` held
+  task state and stale mechanism prose, `CHANGELOG.md` held release notes that some of that prose belonged to,
+  and the *reason* behind a change — why the archive dance had to go, why a rename was not enough across
+  volumes — lived only in commit messages and ADRs. The split is one rule in `AGENTS.md` §4 (what is owed / why
+  it changed and how it was checked / what a user gets), and this file was reconstructed from the 89 commits,
+  the merged pull requests and the 25 ADRs rather than from memory: every entry names its commits, its PR or its
+  ADR, and nothing in it is a release note copied out of `CHANGELOG.md`. Verified by sampling three entries and
+  matching each hash's date and subject with `git show -s`, and by the repository gate, which now covers this
+  file: `ROOT_SINGLE_LANGUAGE` in `scripts/check.mjs` had been missing `PLAN.md` as well.

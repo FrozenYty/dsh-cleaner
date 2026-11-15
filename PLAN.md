@@ -7,6 +7,10 @@ layout gesture and no restart.
 
 Written after a night of live failures, which are the reason each item exists.
 
+This file holds **task state only**: what is still owed and how each item is proved. The reasoning behind a
+change and the evidence it was checked belong in `PROGRESS.md`, and what a person who installs the bundle
+gets belongs in `CHANGELOG.md`.
+
 ## Already done, and verified live
 
 - [x] A deletion removes a session's own directory and reports the exact bytes that left the disk.
@@ -82,8 +86,9 @@ Written after a night of live failures, which are the reason each item exists.
 ## Order
 
 1 (the rule) → 3 (the row, proven live) → 5 (the listing) → 2 (the command) → 6 (the menu) → 4 (the browser
-half's live proof, which can happen at any point). Every item lands with its test, its document and its
-entry in `CHANGELOG.md`, on a branch, with the six CI legs green — the same way everything tonight landed.
+half's live proof, which can happen at any point). Every item lands with its test, its document, its release
+note in `CHANGELOG.md`, its dated entry in `PROGRESS.md`, on a branch, with the six CI legs green — the same
+way everything tonight landed.
 
 Items 1 and 5 landed in v0.2.0. Item 4 needs one page load in the real window; item 3 needs one deletion of
 a session the host has let go.
