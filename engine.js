@@ -411,11 +411,12 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
 const TRASH_VERSION = 1
 
 /**
- * The directory this plugin owns, relative to the workspace it serves.
+ * The directory this plugin owns, relative to the **user's home** directory.
  *
- * One folder holds everything dsh-cleaner writes — the trash and its index. It is a *relative* name because
- * the absolute root belongs to a workspace, not to a machine, and it sits beside the memory notebook the
- * other bundles use, so a person finds all of an agent's own data in one place.
+ * One folder holds everything dsh-cleaner writes — the trash and its index. The base is the home directory and
+ * never a workspace, a profile default or the checkout: those move, and a data directory that moves is the one
+ * failure this plugin cannot undo. `~/.agents/<plugin>` is the machine-wide home for plugin data, chosen so that
+ * every bundle's own state sits in one place a person can open, back up and reason about.
  */
 export const CLEANER_DIR = '.agents/cleaner'
 
@@ -443,12 +444,16 @@ export const CONFIG_FIELDS = Object.freeze({
 })
 
 /**
- * The root of last resort: a machine with no workspace and no override still has somewhere for the bytes to go.
+ * The default data directory: the home directory's `.agents/cleaner`.
+ *
+ * It is the same answer on every machine, in every workspace and under every profile, which is the whole point:
+ * a location that cannot drift. A machine with neither a config field nor the environment override still has a
+ * destination for the bytes, and it is a directory a person can open.
  * @param home - the user's home directory.
- * @returns the frozen directory, outside any workspace.
+ * @returns the default directory.
  */
 export function frozenDataDir(home = homedir()) {
-  return join(home, '.dsh', 'cleaner')
+  return join(home, '.agents', 'cleaner')
 }
 
 /** The directory an operator configured, or undefined when none is set. */
@@ -471,23 +476,11 @@ function configuredDataDir(env) {
 export function resolveDataDir(env = process.env, home = homedir(), cwd) {
   const configured = configuredDataDir(env)
   if (configured !== undefined) return resolve(configured)
-  if (typeof cwd === 'string' && cwd !== '' && !isUnwritableBase(cwd)) return resolve(cwd, CLEANER_DIR)
+  // `cwd` is accepted and **ignored**, deliberately: it used to be the workspace leg, and a workspace moves. The
+  // parameter stays so a caller that still passes one cannot silently mean "write somewhere else"; the answer is
+  // the home directory's `.agents/cleaner` either way.
+  void cwd
   return frozenDataDir(home)
-}
-
-/**
- * Whether a candidate base is somewhere this plugin must never write.
- *
- * The Host's own installation is the one base that would be actively harmful: a `.agents` directory inside
- * the sealed asar, or beside the executable, is not a workspace and would either fail or litter an installation.
- * @param base - the candidate workspace root.
- * @returns true when the base must be skipped.
- */
-function isUnwritableBase(base) {
-  const absolute = resolve(base)
-  if (absolute.includes('app.asar')) return true
-  const executable = typeof process.execPath === 'string' ? resolve(process.execPath) : ''
-  return executable !== '' && (absolute === dirname(executable) || absolute.startsWith(`${dirname(executable)}${sep}`))
 }
 
 /** The trash root inside a data directory. */

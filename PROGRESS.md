@@ -146,3 +146,16 @@ Dates are the commit dates, in the order the work happened.
   found **outside** this repository and is reported rather than fixed: the profile's `pnpm-lock.yaml` still records
   the old root for all four plugins while its `package.json` points at the new one; the junctions are what
   actually resolve, so nothing is broken today.
+
+- **The data directory moved to the user's home directory, after the plugin was caught following the profile.**
+  The trash began appearing under the new folder's parent — empty — while the real one still held earlier deletions,
+  because the resolution order ended in "the workspace the registry names" and was bound once at load, when that
+  registry is often not yet mounted; the profile's *default directory* filled the gap, and it follows whatever was
+  opened last. Nothing was lost (that trash was empty), but a data directory that moves is the one failure this
+  plugin cannot undo, so the class was removed rather than patched: the location is the `dataDir` field, then
+  `DSH_CLEANER_DATA_DIR`, then `~/.agents/cleaner`, resolved per use, with a `cwd`-shaped argument accepted and
+  deliberately ignored. Proven both ways — the guard test failed before the fix with exactly the wrong path
+  (`.tmp-entry/the-profile-default/.agents/cleaner/trash' against `~/.agents/cleaner/trash`) and passes after it,
+  and `npm test` reports 125 tests / 122 pass / 0 fail with `node scripts/check.mjs` green. ADR 0026 supersedes
+  ADR 0015's location; its other rule (this plugin owns its own data directory) stands. The same trashes on this
+  machine were empty, so there was nothing to migrate.

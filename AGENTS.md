@@ -70,10 +70,12 @@ The load-bearing constraints, each with an ADR:
   ([ADR 0023](docs/adr/0023-detach-never-archive.md), which supersedes
   [ADR 0012](docs/adr/0012-archive-never-unarchive.md)'s mechanism); the record is written **after** the
   files, so a move that fails leaves the row where it was;
-- a deletion is one atomic rename into `<dataDir>/trash/`, inside the `.agents/cleaner` folder this plugin
-  owns, recoverable for 30 days, and only a purge frees bytes — never a timer, and never a listing
-  ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md),
-  [ADR 0015](docs/adr/0015-our-own-data-directory.md));
+- a deletion is one atomic rename into `<dataDir>/trash/`, under the user's home directory
+  (`~/.agents/cleaner`), recoverable for 30 days, and only a purge frees bytes — never a timer, and never a
+  listing; the location comes from the config field, the environment, or that home directory, and **never** from
+  a workspace, a profile default or the checkout, because a data directory that moves is the one failure this
+  plugin cannot undo ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md),
+  [ADR 0015](docs/adr/0015-our-own-data-directory.md), [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md));
 - archiving is not a precondition: the store is the index, and a session is a candidate when its directory
   is under the storage root, well formed and unprotected
   ([ADR 0010](docs/adr/0010-no-archive-precondition.md));
