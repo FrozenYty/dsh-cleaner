@@ -36,7 +36,7 @@
  * profile-linked bundle cannot import an @deepseek-ai package (dsh-team ADR 0002).
  */
 
-import { lstat, mkdir, readdir, readFile, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
@@ -628,9 +628,13 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
     }
     const folder = `${stamp}-${encodeSegment(check.id)}`
     const trashPath = join(trashRoot, folder)
+    let crossed = false
     try {
       await mkdir(trashRoot, { recursive: true })
-      await rename(check.path, trashPath)
+      // Across volumes when the trash is not on the store's device: `EXDEV` is the normal case once the data
+      // directory lives in the workspace, and a plain `rename` refused every session that had a log.
+      const transfer = await moveAcrossDevices(check.path, trashPath)
+      crossed = transfer.copied
     } catch (error) {
       failed.push({ id: check.id, path: check.path, error: `cannot be moved into the trash: ${error?.message ?? error}` })
       continue
@@ -643,6 +647,9 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
       files: check.files,
       bytes: check.bytes,
       folder,
+      // Says the transfer crossed a device boundary, which is the difference between an atomic rename and a
+      // verified copy: worth recording, because it is the case a reader would otherwise assume cannot happen.
+      ...(crossed ? { copied: true } : {}),
     }
     if (candidate.title !== undefined) entry.title = candidate.title
     // The projection is the product's derived record for this id — its title, its `cwd` and whether it is blank —
@@ -653,7 +660,7 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
     if (typeof plan.projections === 'string' && plan.projections.length > 0) {
       const projection = join(plan.projections, `${check.id}.json`)
       try {
-        await rename(projection, join(trashPath, 'projection.json'))
+        await moveAcrossDevices(projection, join(trashPath, 'projection.json'))
         entry.projection_path = projection
       } catch (error) {
         if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') {
@@ -867,7 +874,7 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
     if (typeof entry.projection_path === 'string' && entry.projection_path.length > 0) {
       try {
         await mkdir(dirname(entry.projection_path), { recursive: true })
-        await rename(join(held, 'projection.json'), entry.projection_path)
+        await moveAcrossDevices(join(held, 'projection.json'), entry.projection_path)
         projectionRestored = true
       } catch (error) {
         // A projection the restore could not put back is reported, never fatal: the log is the authority and the
@@ -879,7 +886,7 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
     }
     try {
       await mkdir(dirname(target), { recursive: true })
-      await rename(held, target)
+      await moveAcrossDevices(held, target)
     } catch (error) {
       failed.push({ id: entry.id, error: `cannot be put back at ${target}: ${error?.message ?? error}` })
       remaining.push(entry)
@@ -935,6 +942,68 @@ export async function purgeTrash(trashRoot, ids) {
   }
   await writeTrashIndex(trashRoot, remaining)
   return { purged, refused, failed }
+}
+
+/**
+ * Move one directory or one file, across devices when it has to be.
+ *
+ * `rename` is the whole point of this plugin's deletion: it is atomic, so a session is either in the store or in
+ * the trash and never half-way. It also fails with `EXDEV` the moment the two ends are on different volumes — which
+ * is the normal case once the trash lives in the workspace (`D:\MYPROJS\.agents\cleaner`) while the session store
+ * lives under the user profile (`C:\Users\…\.dsh\sessions`). A deletion that reported `EXDEV` looked like a refusal
+ * for every session that had a log.
+ *
+ * The fallback is the one `dsh-team`'s own trash documents — "the cross-device move fallback removes the source it
+ * has already copied" — with the order that keeps a crash safe: stage the copy under the trash, **verify** it file
+ * by file and byte by byte, and only then remove the source. A failure at any point leaves the source untouched, so
+ * the worst outcome is a duplicate, never a loss.
+ *
+ * Only regular files are copied: a candidate with anything else in it is refused long before this point
+ * ([ADR 0004](docs/adr/0004-refuse-links.md)), which is what makes a plain copy faithful.
+ * @param source - the file or directory to move.
+ * @param target - where it must end up, on the other side.
+ * @param options - `copy: true` forces the fallback, which is how a single-volume fixture exercises it.
+ * @returns `{ bytes, files, copied }`; `copied` says the rename was not usable.
+ */
+export async function moveAcrossDevices(source, target, { copy = false } = {}) {
+  if (!copy) {
+    try {
+      await rename(source, target)
+      // No measurement on this path: the caller already knows the file count and the bytes from its own plan, and
+      // measuring after the move would measure a path that no longer exists.
+      return { copied: false }
+    } catch (error) {
+      if (error?.code !== 'EXDEV') throw error
+    }
+  }
+  const staged = `${target}.copying`
+  const info = await lstat(source)
+  if (info.isFile()) {
+    await mkdir(dirname(staged), { recursive: true })
+    await copyFile(source, staged)
+    const [from, to] = await Promise.all([lstat(source), lstat(staged)])
+    if (from.size !== to.size) {
+      throw new Error(`the copy of ${basename(source)} is ${to.size} bytes against ${from.size}`)
+    }
+    await unlink(source)
+    await rename(staged, target)
+    return { bytes: to.size, files: 1, copied: true }
+  }
+  const reading = await readDirectoryFiles(source)
+  if (!reading.ok) throw new Error(reading.reason)
+  await mkdir(staged, { recursive: true })
+  for (const name of reading.files) {
+    await copyFile(join(source, name), join(staged, name))
+    const [from, to] = await Promise.all([lstat(join(source, name)), lstat(join(staged, name))])
+    if (from.size !== to.size) {
+      throw new Error(`the copy of ${name} is ${to.size} bytes against ${from.size}`)
+    }
+  }
+  // Verified first, removed second: the source is the only copy until every file has arrived.
+  for (const name of reading.files) await unlink(join(source, name))
+  await rmdir(source)
+  await rename(staged, target)
+  return { bytes: reading.bytes, files: reading.files.length, copied: true }
 }
 
 /**

@@ -1,3 +1,19 @@
+## [0.5.21] - 2026-11-15
+
+- **A deletion now works when the trash is on another volume — which it is on this machine.** The trash lives in the
+  workspace (`<workspace>/.agents/cleaner`) while the session store lives under the user profile, so `rename` answers
+  `EXDEV: cross-device link not permitted` and **every session that had a log failed to move**. Log-less ids still
+  "worked", which is what the live checks had been using, so the regression went unseen since the data directory
+  moved into the workspace. `dsh-team`'s trash had already documented the repair; it is now implemented:
+  `moveAcrossDevices` tries the rename, and on `EXDEV` stages a copy, **compares every file's size with its source**,
+  and removes the source only after the whole copy is verified. The same helper carries a projection file and the
+  reverse transfers a restore performs.
+- An index entry records `copied: true` when a transfer crossed a device, so a rename and a verified copy are
+  distinguishable in the receipt rather than assumed to be the same thing.
+- [ADR 0022](docs/adr/0022-deletion-crosses-volumes.md) records it, including the shape of the mistake: a live check
+  that only removed log-less sessions could not see a failure that only affects sessions with logs.
+
+## [0.5.20] - 2026-11-15
 ## [0.5.20] - 2026-11-15
 
 - **A deletion now takes the session's derived record with its log.** The projection cache
