@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.3.0.
+- Current version: v0.4.0.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -109,6 +109,37 @@ the window is showing, which is what keeps the running session protected on this
 ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). Every listing prints what that
 transport is (`Window transport: route /dsh-cleaner/ registered`), because a row that is drawn and cannot act
 looks exactly like one that works.
+
+## Where the data lives
+
+The trash is the only thing this plugin owns, and it is **not Harness data**: `DSH_HOME` holds the sessions,
+the workspace records and the profiles, and nothing in it belongs to this bundle.
+
+```
+<workspace>/.agents/cleaner/          everything this plugin writes
+    trash/
+        index.json                    what is held, when, and where it came from
+        <stamp>-<escaped-id>/         a deleted session's directory, byte for byte
+```
+
+It sits beside the memory notebook and the team roster, so an agent's own data is in one directory a person can
+open. Resolution order: the `dataDir` config field, then `DSH_CLEANER_DATA_DIR`, then
+`<workspace>/.agents/cleaner`, then `~/.dsh/cleaner` as the last resort. The Host's own installation is never
+used as a workspace — a `.agents` directory inside the sealed asar, or beside the executable, is not one.
+
+A profile changes any of it in its own patch row; the row id is `cleaner`:
+
+```yaml
+- id: cleaner
+  config:
+    dataDir: '.cleaner'     # absolute, or relative to the workspace
+    retentionDays: 30       # integer >= 1
+    trashLimit: 200         # integer >= 1
+```
+
+A present value that cannot be honoured fails the **load**, naming the field and what it saw — never the first
+deletion, hours later ([ADR 0015](docs/adr/0015-our-own-data-directory.md)). The two numbers are the rules that
+bound the trash, and the oldest entries go first.
 
 ## Install
 
@@ -394,6 +425,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
+| Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | Why is there a command as well as a tool? | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |

@@ -1,6 +1,6 @@
 # 0014 — The window reaches the host over an HTTP route, and a deletion becomes recoverable
 
-**Status:** accepted. Extends [ADR 0013](0013-reuse-the-client-sessions-service.md) (the Client's `sessions`
+**Status:** accepted, narrowed by [ADR 0015](0015-our-own-data-directory.md) (the trash no longer lives under DSH_HOME). Extends [ADR 0013](0013-reuse-the-client-sessions-service.md) (the Client's `sessions`
 service is still the official way to *act on* a session, but it cannot run an operation that has no agent),
 and reverses one promise of [ADR 0001](0001-out-of-band-deletion.md): the deletion is no longer immediate
 physical removal, it is a move into a trash this plugin owns.

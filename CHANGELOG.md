@@ -7,6 +7,30 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.4.0] - 2026-11-15
+
+- **The trash moved out of `DSH_HOME`, and became configurable.** `DSH_HOME` holds Harness data — sessions,
+  workspace records, profiles — and the trash is not that. Its default is now
+  `<workspace>/.agents/cleaner/trash/`, beside the memory notebook and the team roster, so everything this
+  plugin owns is in one directory a person can open ([ADR 0015](docs/adr/0015-our-own-data-directory.md)).
+- **A profile can move it or bound it**, through the bundle patch row `cleaner` — the same seat the sibling
+  bundle uses:
+  ```yaml
+  - id: cleaner
+    config: { dataDir: '.cleaner', retentionDays: 30, trashLimit: 200 }
+  ```
+  Resolution order is the config, then `DSH_CLEANER_DATA_DIR`, then the workspace, then `~/.dsh/cleaner`. The
+  Host's own installation is never used as a workspace: a base inside `app.asar`, or beside the executable, is
+  skipped rather than written into.
+- **A present value that cannot be honoured fails the load**, naming the field, the value it saw and the
+  minimum — not the first deletion, hours later, in front of somebody who just clicked.
+- **The trash is bounded by two rules instead of one**: the 30-day window, and a cap of 200 entries. Both are
+  applied by acts — a deletion, a restore, a purge — never by a timer, and never by a listing, which only
+  reports what they would do. The oldest entries go first, and each one freed is reported with its id and its
+  bytes.
+- The data directory is resolved once at load and printed by every listing, so where the bytes are is never a
+  question a person has to ask.
+
 ## [0.3.0] - 2026-11-15
 
 - **The sidebar row works, because the window now has a transport that does not need an agent.** The host half

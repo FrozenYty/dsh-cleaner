@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.3.0。
+- 当前版本：v0.4.0。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -85,6 +85,35 @@ session files”。这个 bundle 就是那次外部清理，它只守一条规�
 请求体里，这也是这条路上"正在运行的会话"依然受保护的原因
 （[ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)）。每条清单都会印出这条通道是什么
 （`Window transport: route /dsh-cleaner/ registered`），因为"画出来了但点不动"和"能用"看起来一模一样。
+
+## 数据放在哪里
+
+回收区是这个插件**唯一属于自己的数据**，而且它**不是 Harness 的数据**：`DSH_HOME` 里放的是会话、工作区记录
+和 profile，那里没有一样东西属于这个 bundle。
+
+```
+<工作区>/.agents/cleaner/             这个插件写的全部东西
+    trash/
+        index.json                    收了什么、什么时候、原来在哪
+        <时间戳>-<转义id>/            被删会话的目录，逐字节原样
+```
+
+它和记忆笔记本、团队成员名册并排放在一起，所以一个 agent 自己的数据都在一个能随手打开的目录里。解析顺序：
+`dataDir` 配置字段 → `DSH_CLEANER_DATA_DIR` → `<工作区>/.agents/cleaner` → 兜底的 `~/.dsh/cleaner`。**Host 自己的
+安装目录永远不会被当作工作区**——封在 asar 里的 `.agents`、或者可执行文件旁边，都不是工作区。
+
+要改就在自己的 patch 行里改，行 id 是 `cleaner`：
+
+```yaml
+- id: cleaner
+  config:
+    dataDir: '.cleaner'     # 绝对路径，或相对工作区
+    retentionDays: 30       # 整数，>= 1
+    trashLimit: 200         # 整数，>= 1
+```
+
+写了一个无法兑现的值会**在加载时**失败，并点名是哪个字段、看到了什么——而不是等到几小时后你点删除的那一刻
+（[ADR 0015](docs/adr/0015-our-own-data-directory.md)）。那两个数字就是约束回收区的两条规则，最旧的先走。
 
 ## 安装
 

@@ -37,7 +37,8 @@
  */
 
 import { lstat, mkdir, readdir, readFile, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /**
  * Escape one string to a single safe path segment, as `dsh-session-persistence-jsonl` does: safe
@@ -391,7 +392,7 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
  * Layout, all of it ours:
  *
  * ```
- * <DSH_HOME>/dsh-cleaner-trash/
+ * <dataDir>/trash/
  *   index.json                    { version: 1, entries: [{ id, path, trashed_at, files, bytes, title? }] }
  *   <stamp>-<encoded-id>/         the session's directory, byte for byte as it was
  * ```
@@ -406,10 +407,141 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
  */
 const TRASH_VERSION = 1
 
-/** The trash root for a DSH home, kept beside `sessions/` and never inside it. */
-export function trashRootOf(home) {
-  if (typeof home !== 'string' || home.length === 0) throw new Error('trashRootOf: a DSH home is required')
-  return join(home, 'dsh-cleaner-trash')
+/**
+ * The directory this plugin owns, relative to the workspace it serves.
+ *
+ * One folder holds everything dsh-cleaner writes — the trash and its index. It is a *relative* name because
+ * the absolute root belongs to a workspace, not to a machine, and it sits beside the memory notebook the
+ * other bundles use, so a person finds all of an agent's own data in one place.
+ */
+export const CLEANER_DIR = '.agents/cleaner'
+
+/** Environment override for that directory; tests use it too, so no test can reach a real workspace. */
+const DATA_DIR_ENV = 'DSH_CLEANER_DATA_DIR'
+
+/** How long a trashed session is kept when the plugin config says nothing. */
+export const DEFAULT_RETENTION_DAYS = 30
+
+/**
+ * How many trashed sessions are kept when the config says nothing.
+ *
+ * **The reason, not the number**: a trashed session on this machine averages a few hundred kilobytes, so two
+ * hundred is tens of megabytes against a store measured in gigabytes, and the error is irreversible — a pruned
+ * artifact has no bytes left to restore. A default belongs on the generous side when the cost is a rounding
+ * error and the failure cannot be undone.
+ */
+export const DEFAULT_TRASH_LIMIT = 200
+
+/** The config fields this plugin reads, each validated before anything is registered. */
+export const CONFIG_FIELDS = Object.freeze({
+  dataDir: 'dataDir',
+  retentionDays: 'retentionDays',
+  trashLimit: 'trashLimit',
+})
+
+/**
+ * The root of last resort: a machine with no workspace and no override still has somewhere for the bytes to go.
+ * @param home - the user's home directory.
+ * @returns the frozen directory, outside any workspace.
+ */
+export function frozenDataDir(home = homedir()) {
+  return join(home, '.dsh', 'cleaner')
+}
+
+/** The directory an operator configured, or undefined when none is set. */
+function configuredDataDir(env) {
+  const override = env?.[DATA_DIR_ENV]
+  if (typeof override === 'string' && override.trim() !== '') return override.trim()
+  return undefined
+}
+
+/**
+ * Resolve the plugin data directory: the configured override, then the workspace, then the frozen fallback.
+ *
+ * Every leg is a destination, never a guess: the frozen one is a real directory a person can open, which is
+ * what lets the plugin promise that a deletion always has somewhere to put the bytes.
+ * @param env - process environment.
+ * @param home - the user's home directory.
+ * @param cwd - the workspace this call speaks for, when one is known.
+ * @returns the absolute data directory.
+ */
+export function resolveDataDir(env = process.env, home = homedir(), cwd) {
+  const configured = configuredDataDir(env)
+  if (configured !== undefined) return resolve(configured)
+  if (typeof cwd === 'string' && cwd !== '' && !isUnwritableBase(cwd)) return resolve(cwd, CLEANER_DIR)
+  return frozenDataDir(home)
+}
+
+/**
+ * Whether a candidate base is somewhere this plugin must never write.
+ *
+ * The Host's own installation is the one base that would be actively harmful: a `.agents` directory inside
+ * the sealed asar, or beside the executable, is not a workspace and would either fail or litter an installation.
+ * @param base - the candidate workspace root.
+ * @returns true when the base must be skipped.
+ */
+function isUnwritableBase(base) {
+  const absolute = resolve(base)
+  if (absolute.includes('app.asar')) return true
+  const executable = typeof process.execPath === 'string' ? resolve(process.execPath) : ''
+  return executable !== '' && (absolute === dirname(executable) || absolute.startsWith(`${dirname(executable)}${sep}`))
+}
+
+/** The trash root inside a data directory. */
+export function trashRootOf(dataDir) {
+  if (typeof dataDir !== 'string' || dataDir.length === 0) throw new Error('trashRootOf: a data directory is required')
+  return join(dataDir, 'trash')
+}
+
+/** Render one rejected value so a message distinguishes `'30'` from `30` and shows `null` and `NaN`. */
+function describeValue(value) {
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number' && Number.isNaN(value)) return 'NaN'
+  if (value === null) return 'null'
+  if (typeof value === 'object') return JSON.stringify(value) ?? String(value)
+  return String(value)
+}
+
+/**
+ * Resolve the settings this plugin runs with, from the bundle patch row's `config`.
+ *
+ * The official rows in the Host declare integer fields with a default and `minimum: 1`, and refuse a value
+ * outside the range rather than clamping it. This mirrors that: an absent field takes its default, and a
+ * present wrong value fails the **load**, with the field, the value it saw and the minimum named — never the
+ * first deletion, hours later.
+ * @param config - the plugin config the loader passed from the patch row; `undefined` when nothing is set.
+ * @returns `{ dataDir?, retentionDays, trashLimit }`.
+ * @throws {TypeError} when a field is present and not what its contract says.
+ */
+export function resolveCleanerConfig(config) {
+  if (config === undefined || config === null) {
+    return { retentionDays: DEFAULT_RETENTION_DAYS, trashLimit: DEFAULT_TRASH_LIMIT }
+  }
+  if (typeof config !== 'object') {
+    throw new TypeError(`dsh-cleaner: config must be an object; received ${describeValue(config)}`)
+  }
+  const settings = { retentionDays: DEFAULT_RETENTION_DAYS, trashLimit: DEFAULT_TRASH_LIMIT }
+  const dataDir = config[CONFIG_FIELDS.dataDir]
+  if (dataDir !== undefined) {
+    if (typeof dataDir !== 'string' || dataDir.trim() === '') {
+      throw new TypeError(
+        `dsh-cleaner: config field "${CONFIG_FIELDS.dataDir}" must be a non-empty path; received ${describeValue(dataDir)}`,
+      )
+    }
+    settings.dataDir = dataDir.trim()
+  }
+  for (const [field, fallback] of [
+    [CONFIG_FIELDS.retentionDays, DEFAULT_RETENTION_DAYS],
+    [CONFIG_FIELDS.trashLimit, DEFAULT_TRASH_LIMIT],
+  ]) {
+    const value = config[field]
+    if (value === undefined) continue
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+      throw new TypeError(`dsh-cleaner: config field "${field}" must be an integer >= 1; received ${describeValue(value)}`)
+    }
+    settings[field] = value
+  }
+  return settings
 }
 
 /**
@@ -579,13 +711,15 @@ async function checkCandidate(candidate, root) {
  * What the trash holds, with the retention sweep applied on the way through.
  *
  * There is no timer anywhere in this plugin (ADR 0001): retention is enforced when somebody looks or acts,
- * which is the only moment it can matter.
+ * which is the only moment it can matter. Two rules run here — the age one, and the cap on how many entries
+ * are kept — and the **oldest go first**, because the newest entry is the mistake somebody is most likely to
+ * be undoing. Everything pruned is reported with its id and its bytes, so a person can see what it cost.
  * @param trashRoot - the resolved trash root.
- * @param options - `{ sessionsRoot?, purgeAfterDays?, now? }`.
+ * @param options - `{ sessionsRoot?, purgeAfterDays?, limit?, now? }`.
  * @returns `{ entries, purged, missing }`: entries still held, entries just purged, entries whose directory
  * vanished behind our back.
  */
-export async function listTrash(trashRoot, { sessionsRoot, purgeAfterDays = 0, now = new Date() } = {}) {
+export async function listTrash(trashRoot, { sessionsRoot, purgeAfterDays = 0, limit = 0, now = new Date() } = {}) {
   if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('listTrash: a trash root is required')
   const { entries } = await readTrashIndex(trashRoot)
   const running = []
@@ -606,22 +740,33 @@ export async function listTrash(trashRoot, { sessionsRoot, purgeAfterDays = 0, n
   }
   const purged = []
   let kept = running
+  const doomed = []
   if (purgeAfterDays > 0) {
     const cutoff = now.getTime() - purgeAfterDays * 86_400_000
-    const expired = running.filter(({ entry }) => {
-      const at = Date.parse(String(entry.trashed_at ?? ''))
-      return Number.isFinite(at) && at <= cutoff
-    })
-    for (const { entry, held } of expired) {
-      if (held === undefined) continue
-      const outcome = await purgeDirectoryIn(trashRoot, held)
-      purged.push({ id: entry.id, bytes: outcome.bytes, error: outcome.error })
+    for (const candidate of running) {
+      const at = Date.parse(String(candidate.entry.trashed_at ?? ''))
+      if (Number.isFinite(at) && at <= cutoff) doomed.push({ ...candidate, why: 'past the retention window' })
     }
-    const dropped = new Set(expired.map(({ entry }) => entry.id))
+  }
+  if (limit > 0) {
+    const held = running.filter(({ present }) => present)
+    const alreadyDoomed = new Set(doomed.map(({ entry }) => entry.id))
+    const rest = held
+      .filter(({ entry }) => !alreadyDoomed.has(entry.id))
+      .sort((left, right) => String(left.entry.trashed_at ?? '').localeCompare(String(right.entry.trashed_at ?? '')))
+    for (const candidate of rest.slice(0, Math.max(0, rest.length - limit))) {
+      doomed.push({ ...candidate, why: 'past the entry cap' })
+    }
+  }
+  for (const { entry, held, why } of doomed) {
+    if (held === undefined) continue
+    const outcome = await purgeDirectoryIn(trashRoot, held)
+    purged.push({ id: entry.id, bytes: outcome.bytes, error: outcome.error, why })
+  }
+  if (doomed.length > 0) {
+    const dropped = new Set(doomed.map(({ entry }) => entry.id))
     kept = running.filter(({ entry }) => !dropped.has(entry.id))
-    if (dropped.size > 0) {
-      await writeTrashIndex(trashRoot, kept.filter(({ present }) => present).map(({ entry }) => entry))
-    }
+    await writeTrashIndex(trashRoot, kept.filter(({ present }) => present).map(({ entry }) => entry))
   }
   return {
     entries: kept.filter(({ present }) => present).map(({ entry }) => entry),

@@ -1,11 +1,32 @@
 # dsh-cleaner bundle patch: insert this bundle's Host plugin.
 #
-# The row publishes two model-facing tools and has no browser half. Its id is the override target a
-# profile writes when it wants this row configured; keep it stable across releases for that reason.
+# The row publishes three model-facing tools, one human command and one window route. Its id is the override
+# target a profile writes when it wants this row configured; keep it stable across releases for that reason.
 #
-# Nothing here schedules anything. The row adds the ability to delete, not a policy that deletes:
-# there is no timer, no interval and no age threshold in this plugin, and a profile cannot configure
-# one into it. Removal only ever happens inside a tool call the model makes after the person approved
+# CONFIGURATION. A profile that wants different settings replaces this `config` with its own:
+#
+#     - id: cleaner
+#       config:
+#         dataDir: '.cleaner'                     # optional; absolute, or relative to the workspace
+#         retentionDays: 30                       # optional; integer >= 1
+#         trashLimit: 200                         # optional; integer >= 1
+#
+# `dataDir` defaults to `.agents/cleaner` inside the workspace this process speaks for — beside the memory
+# notebook, so everything an agent owns is in one place — and falls back to `~/.dsh/cleaner` when no workspace
+# is known. A relative value resolves against that workspace. The Host's own installation is never used as a
+# workspace: a `.agents` directory inside the sealed asar, or beside the executable, is not one.
+#
+# `retentionDays` and `trashLimit` are the two rules that let the trash be bounded: an entry older than the
+# window, or beyond the cap, is freed by the next deletion, restore or purge — never by a timer, and never by a
+# listing, because a listing must be safe to call on a trash of any size. The oldest entries go first, and each
+# one that is freed is reported with its id and its bytes.
+#
+# A field that is present and cannot be honoured fails the **load**, naming the field and the value it saw —
+# never the first deletion, hours later, in front of a person who just clicked delete.
+#
+# Nothing here schedules anything. The rows add the ability to delete, not a policy that deletes: there is no
+# timer, no interval and no background sweep in this plugin, and a profile cannot configure one into it.
+# Removal only ever happens inside a tool call, a command or a route request the person made after approving
 # the list (README, "The contract").
 - insert:
     - id: cleaner
