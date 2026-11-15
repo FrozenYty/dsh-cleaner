@@ -111,7 +111,13 @@ if (manifest !== undefined) {
     if (half !== undefined) {
       if (!half.includes('window.__ModuleLoader__.load(')) fail('client.js: must register through window.__ModuleLoader__.load')
       if (!half.includes(`id: '${pluginName}'`)) fail(`client.js: the registered id must be the package name (${pluginName})`)
-      if (/\brequire\s*\(\s*['"]/.test(half)) fail('client.js: imports a module; the browser half depends on nothing')
+      // The browser half takes React from the page's own module table — the documented shape for a Client
+      // module, and the only module it may ask for. Anything else would be a dependency a profile-linked
+      // bundle cannot install, which is the trap this rule exists for.
+      const asked = [...half.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu)].map((match) => match[1])
+      for (const name of asked) {
+        if (name !== 'react') fail(`client.js: requires "${name}"; the browser half may take only the page's own module table (react)`)
+      }
     }
   }
   // The published set is the bundle, not the repository: tests, documents and the gate are for whoever

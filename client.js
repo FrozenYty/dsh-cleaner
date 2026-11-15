@@ -24,11 +24,19 @@
 window.__ModuleLoader__.load({
   id: 'dsh-cleaner',
   factory(require) {
+    // React comes from the page's own module table — the documented shape for a Client module — so a panel
+    // needs no duplicate installation and no import of anything else.
+    const React = require('react')
+    const h = React.createElement
+
     const SHORTCUT_ID = 'session.delete-log'
     const LOCALE_NS = 'dsh-cleaner'
     const LABEL_KEY = 'session.delete'
     /** The host half's route prefix, and the only channel this half has. */
     const ROUTE = '/dsh-cleaner/'
+    /** The settings page this half contributes, and the seat it takes. */
+    const PANEL_ID = 'dsh-cleaner.trash'
+    const PANEL_SLOT = 'settings.section'
 
     /**
      * A one-line reason from anything that was thrown.
@@ -66,6 +74,7 @@ window.__ModuleLoader__.load({
           menu: 'not asked',
           dictionary: 'not asked',
           row: 'not contributed',
+          panel: 'not contributed',
           route: 'not called',
           current: 'not read',
           lastClick: 'none',
@@ -75,32 +84,70 @@ window.__ModuleLoader__.load({
         let rowRegistered = false
 
         /**
-         * The row's label in the window's language, through the product's own dictionary service.
+         * One string in the window's language, through the product's dictionary service.
          *
          * `ctx.locale.register(ns, { en, zh })` contributes the strings and `ctx.locale.bind(ns)` reads them
          * back with the product's fallback chain. A locale service that cannot answer costs the language,
          * never the item.
          */
-        const label = () => {
+        const text = (key, fallback) => {
           try {
             const locale = ctx.get('locale')
             if (typeof locale?.bind === 'function') {
-              const text = locale.bind(LOCALE_NS)(LABEL_KEY)
-              if (typeof text === 'string' && text.length > 0 && text !== LABEL_KEY) return text
+              const value = locale.bind(LOCALE_NS)(key)
+              if (typeof value === 'string' && value.length > 0 && value !== key) return value
             }
           } catch {
             // A locale service that cannot answer costs the language, never the item.
           }
-          return 'Delete session'
+          return fallback
         }
 
-        /** Contribute this plugin's two strings to the product's dictionary, and nothing else. */
+        /** The row's label in the window's language. */
+        const label = () => text(LABEL_KEY, 'Delete session')
+
+        /** Every string the trash panel needs, resolved when it renders rather than when it loads. */
+        const labels = () => ({
+          title: text('trash.title', 'Deleted sessions'),
+          subtitle: text('trash.subtitle', 'A deletion is a move: these directories are kept, and a restore puts one back where the session backend looks for it.'),
+          restore: text('trash.restore', 'Restore'),
+          purge: text('trash.purge', 'Delete for good'),
+          empty: text('trash.empty', 'Nothing is in the trash.'),
+          loading: text('trash.loading', 'Reading the trash…'),
+          unavailable: text('trash.unavailable', 'The host half did not answer. Restart the Harness to load it.'),
+          bytes: text('trash.bytes', 'bytes'),
+          trashed: text('trash.trashed', 'deleted'),
+        })
+
+        /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
         const registerDictionary = () => {
           const locale = ctx.get('locale')
           if (locale === undefined || typeof locale.register !== 'function') return undefined
           return locale.register(LOCALE_NS, {
-            en: { [LABEL_KEY]: 'Delete session' },
-            zh: { [LABEL_KEY]: '删除会话' },
+            en: {
+              [LABEL_KEY]: 'Delete session',
+              'trash.title': 'Deleted sessions',
+              'trash.subtitle': 'A deletion is a move: these directories are kept, and a restore puts one back where the session backend looks for it.',
+              'trash.restore': 'Restore',
+              'trash.purge': 'Delete for good',
+              'trash.empty': 'Nothing is in the trash.',
+              'trash.loading': 'Reading the trash…',
+              'trash.unavailable': 'The host half did not answer. Restart the Harness to load it.',
+              'trash.bytes': 'bytes',
+              'trash.trashed': 'deleted',
+            },
+            zh: {
+              [LABEL_KEY]: '删除会话',
+              'trash.title': '已删除的会话',
+              'trash.subtitle': '删除只是搬走：这些目录被保留着，"恢复"会把目录放回会话后端查找的位置。',
+              'trash.restore': '恢复',
+              'trash.purge': '彻底删除',
+              'trash.empty': '回收站是空的。',
+              'trash.loading': '正在读取回收站……',
+              'trash.unavailable': '宿主半边没有应答，重启 Harness 后会加载它。',
+              'trash.bytes': '字节',
+              'trash.trashed': '删除于',
+            },
           })
         }
 
@@ -292,6 +339,159 @@ window.__ModuleLoader__.load({
           void post('state', { state })
         }
 
+        /**
+         * A byte count a person can read at a glance.
+         *
+         * The one piece of arithmetic this panel does, kept a plain function so the formula is not buried in
+         * the render tree.
+         */
+        const formatBytes = (value) => {
+          const bytes = Number(value)
+          if (!Number.isFinite(bytes) || bytes < 0) return '—'
+          if (bytes < 1024) return `${bytes} B`
+          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+          return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
+        }
+
+        /**
+         * The trash panel: a settings page that makes "a deletion is recoverable" something a person can see
+         * and click, instead of a line they have to ask a model to print.
+         *
+         * Every act goes through the same route the menu row uses, so the panel and the row cannot drift, and
+         * every failure is shown in place — a page that silently keeps a stale list is worse than no page.
+         */
+        function TrashPanel() {
+          const [state, setState] = React.useState({ status: 'loading', entries: [], swept: [], error: undefined })
+          const [busy, setBusy] = React.useState(undefined)
+
+          const load = () => {
+            const caller = currentSessionId()
+            void post('trash', { op: 'list', ...(caller === undefined ? {} : { caller }) }).then((answer) => {
+              if (answer.error !== undefined) {
+                setState({ status: 'unavailable', entries: [], swept: [], error: answer.error })
+                return
+              }
+              const trash = answer.trash ?? {}
+              setState({
+                status: 'ready',
+                entries: Array.isArray(trash.entries) ? trash.entries : [],
+                swept: Array.isArray(answer.swept) ? answer.swept : [],
+                error: undefined,
+                root: trash.root,
+                retentionDays: trash.retention_days,
+              })
+            })
+          }
+
+          React.useEffect(load, [])
+
+          const act = (op, id) => {
+            setBusy(id)
+            const caller = currentSessionId()
+            void post('trash', { op, ids: [id], ...(caller === undefined ? {} : { caller }) }).then((answer) => {
+              setBusy(undefined)
+              if (answer.error !== undefined) {
+                setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
+                return
+              }
+              load()
+            })
+          }
+
+          const words = labels()
+          const rows = state.entries.map((entry) => h('div', {
+            key: entry.id,
+            style: {
+              display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0',
+              borderBottom: '1px solid var(--dsw-alias-border-l1, #2a2a2a)',
+            },
+          }, [
+            h('div', { key: 'what', style: { flex: '1 1 auto', minWidth: 0 } }, [
+              h('div', {
+                key: 'title',
+                style: { fontSize: '13px', color: 'var(--dsw-alias-label-primary, #e6e6e6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+              }, entry.title === undefined || entry.title === '' ? entry.id : `${entry.title}  ${entry.id}`),
+              h('div', {
+                key: 'meta',
+                style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #9a9a9a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+              }, `${formatBytes(entry.bytes)} · ${words.trashed} ${entry.trashed_at ?? '—'}`),
+            ]),
+            h('button', {
+              key: 'restore', type: 'button', disabled: busy !== undefined,
+              onClick: () => act('restore', entry.id),
+              style: buttonStyle(false),
+            }, words.restore),
+            h('button', {
+              key: 'purge', type: 'button', disabled: busy !== undefined,
+              onClick: () => act('purge', entry.id),
+              style: buttonStyle(true),
+            }, words.purge),
+          ]))
+
+          const body = state.status === 'loading'
+            ? h('p', { style: mutedStyle }, words.loading)
+            : state.status === 'unavailable'
+              ? h('p', { style: mutedStyle }, `${words.unavailable}${state.error === undefined ? '' : ` (${state.error})`}`)
+              : state.entries.length === 0
+                ? h('p', { style: mutedStyle }, words.empty)
+                : h('div', undefined, rows)
+
+          return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 2px 24px' } }, [
+            h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
+            h('p', { key: 'subtitle', style: { ...mutedStyle, margin: '0 0 6px', maxWidth: '64ch' } }, words.subtitle),
+            ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
+              `${state.swept.length} × ${state.swept.map((entry) => entry.id).join(', ')}`)]),
+            h('div', { key: 'body' }, body),
+            h('p', { key: 'where', style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' } }, `${state.root ?? ''}`),
+          ])
+        }
+
+        /** A control that looks like the product's own, in the same two intents. */
+        const buttonStyle = (danger) => ({
+          appearance: 'none',
+          minHeight: '30px',
+          padding: '0 12px',
+          borderRadius: '8px',
+          border: `1px solid ${danger ? 'color-mix(in srgb, #e5484d 45%, transparent)' : 'var(--dsw-alias-border-l2, #3a3a3a)'}`,
+          background: danger ? 'color-mix(in srgb, #e5484d 10%, transparent)' : 'var(--dsw-alias-bg-layer-1, #1b1b1b)',
+          color: danger ? '#e5484d' : 'var(--dsw-alias-label-secondary, #9a9a9a)',
+          fontSize: '12px',
+          fontWeight: 500,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        })
+
+        const mutedStyle = {
+          margin: 0,
+          fontSize: '12px',
+          lineHeight: 1.55,
+          color: 'var(--dsw-alias-label-tertiary, #7a7a7a)',
+        }
+
+        /**
+         * The panel's seat: one settings page, by the shape the product documents (`slots.inject` then
+         * `slots.register`), contributed only when the slot service exists.
+         *
+         * `ctx.inject(['slots'], …)` rather than a declared `inject`: the menu row, the key and the dictionary
+         * must keep working in a profile without a slot service, and a hard dependency would take all three
+         * down with the panel.
+         */
+        const registerPanel = (scope) => {
+          try {
+            scope.effect(() => scope.slots.inject(PANEL_SLOT, () => scope.slots.register({
+              name: PANEL_SLOT,
+              id: PANEL_ID,
+              order: 500,
+              label: () => labels().title,
+            }, TrashPanel)))
+            state.panel = 'contributed'
+          } catch (error) {
+            // Isolated like every contribution: a refused page costs the page, and the reason is reported.
+            state.panel = `refused: ${reasonOf(error)}`
+            console.error('dsh-cleaner: the trash panel was refused', error)
+          }
+        }
+
         return ctx.effect(() => {
           let unregisterMenu
           let unregisterDictionary
@@ -315,6 +515,10 @@ window.__ModuleLoader__.load({
             if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
             else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
             else console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
+            // The panel waits for the slot service, for the same reason and with the same fallback.
+            if (typeof ctx.inject === 'function') ctx.inject(['slots'], registerPanel)
+            else if (ctx.get('slots') !== undefined) registerPanel({ slots: ctx.get('slots'), effect: ctx.effect })
+            else console.warn('dsh-cleaner: no slot service yet, so the trash page is not contributed')
             // Report again now that every synchronous contribution has had its turn: the first report is sent
             // before anything can throw, and it cannot know yet what the row and the key did.
             report()
