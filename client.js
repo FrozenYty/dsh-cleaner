@@ -78,6 +78,7 @@ window.__ModuleLoader__.load({
           panel: 'not contributed',
           panel_icon: 'not contributed',
           route: 'not called',
+          report: 'not sent',
           current: 'not read',
           lastClick: 'none',
           fatal: undefined,
@@ -203,10 +204,49 @@ window.__ModuleLoader__.load({
         }
 
         /**
-         * Run the deletion for one session: the same operation the tool and the command run, over the route.
+         * The older carrier: run one of the host's own lines in the session in front of the person.
          *
-         * The target is named exactly once — in the body — and the caller is the session in front of the person,
-         * so the running session stays protected and the answer lands where they are looking.
+         * This is what makes the row work on a Host that predates the route, and it is not a fallback nobody
+         * uses: `/clean` has been registered since 0.2.18, while the route only exists from 0.3.0. A command is
+         * admitted by `sessions.retain(id)`, which is the same mechanism the sidebar uses to open a session —
+         * so a closed session is opened by this call rather than refused.
+         * @param caller - the session that carries the line; it is the one the host protects.
+         * @param line - the command line, exactly as a person would type it.
+         * @returns `{ ok, matched }` or `{ error }`; never rejects.
+         */
+        const commandViaSession = async (caller, line) => {
+          let reference
+          try {
+            const sessions = ctx.get('sessions')
+            if (sessions === undefined || typeof sessions.retain !== 'function') {
+              return { error: 'this Host has no sessions service' }
+            }
+            reference = sessions.retain(caller, { source: 'gateway' })
+            const binding = await reference.ready
+            const result = await binding.session.command(line)
+            if (result?.ok === false) return { error: result.error?.message ?? 'refused' }
+            return { ok: true, matched: result?.value?.matched }
+          } catch (error) {
+            return { error: reasonOf(error) }
+          } finally {
+            try {
+              reference?.release?.()
+            } catch {
+              // A reference that cannot be released must not cost the result.
+            }
+          }
+        }
+
+        /** Delete one session through the command the older Host serves. */
+        const cleanViaCommand = (caller, target) => commandViaSession(caller, `/clean ${target}`)
+
+        /**
+         * Run the deletion for one session: the same operation the tool and the command run.
+         *
+         * Two carriers, tried in one order and reported either way. The route answers with the deletion's own
+         * value, so the answer can be shown as it is; the command answers with "did a command match", so its
+         * result is reported for what it is instead of being dressed up as a receipt. The caller is the session
+         * in front of the person in both cases, which is what keeps the running session protected.
          */
         const runClean = (sessionId) => {
           const caller = currentSessionId()
@@ -218,16 +258,22 @@ window.__ModuleLoader__.load({
             return
           }
           state.lastClick = `asked for ${sessionId}`
-          void post('delete', { caller, ids: [sessionId] }).then((answer) => {
-            if (answer.error !== undefined) {
-              state.lastClick = `refused: ${answer.error}`
-            } else {
+          void post('delete', { caller, ids: [sessionId] }).then(async (answer) => {
+            if (answer.error === undefined) {
               const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
               const refused = Array.isArray(answer.refused) ? answer.refused : []
               state.lastClick = moved > 0
-                ? `deleted (recoverable under ${answer.trash?.root ?? 'the trash'})`
+                ? `deleted over the route (recoverable under ${answer.trash?.root ?? 'the trash'})`
                 : `nothing moved${refused.length > 0 ? `: ${refused[0]?.reason ?? 'refused'}` : ''}`
+              report()
+              return
             }
+            // The route is not there (a Host older than 0.3.0 answers 405): use the command it does serve.
+            const routeError = answer.error
+            const viaCommand = await cleanViaCommand(caller, sessionId)
+            state.lastClick = viaCommand.error === undefined
+              ? `deleted over /clean (matched=${String(viaCommand.matched)}); route unavailable (${routeError})`
+              : `refused: ${viaCommand.error}; route unavailable (${routeError})`
             report()
           })
         }
@@ -340,7 +386,26 @@ window.__ModuleLoader__.load({
           state.dictionary = keepRefusal(state.dictionary, ctx.get('locale')?.register === undefined ? 'no locale service' : 'locale service present')
           state.row = keepRefusal(state.row, rowRegistered ? 'contributed' : 'not contributed')
           state.current = currentSessionId() ?? 'none'
-          void post('state', { state })
+          void post('state', { state: { ...state, report: 'route' } }).then(async (answer) => {
+            if (answer.error === undefined) {
+              state.report = 'route'
+              return
+            }
+            // No route on this Host: the same sentence rides the command it does serve, and the next listing
+            // prints it either way. Without this the report is lost on every Host older than 0.3.0 — which is
+            // exactly the Host this half was being debugged on. The payload is written *before* it is sent, so
+            // the sentence that arrives also says how it arrived.
+            const caller = currentSessionId()
+            if (caller === undefined) {
+              state.report = `no route (${answer.error}) and no session to carry the command`
+              return
+            }
+            const payload = { ...state, report: `command (route unavailable: ${answer.error})` }
+            const carried = await commandViaSession(caller, `/clean --state ${JSON.stringify(payload)}`)
+            state.report = carried.error === undefined
+              ? payload.report
+              : `nowhere: route ${answer.error}; command ${carried.error}`
+          })
         }
 
         /**

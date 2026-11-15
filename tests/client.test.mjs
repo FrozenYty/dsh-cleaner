@@ -74,7 +74,7 @@ function rendered(node) {
  * Mount the half against a fake page and return what it did.
  * @param options - the optional client services, the route's answer, and the page's own state.
  */
-function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport } = {}) {
+function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport, commandsAnswer } = {}) {
   const page = {
     localStorage: {
       getItem: (name) => (name === 'dsh.sessions.current' && current !== undefined
@@ -91,6 +91,10 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
   const panels = new Map()
   const slotRequests = []
   const injections = []
+  /** The command carrier: what it retained, what it ran, and what it released. */
+  const retained = []
+  const commands = []
+  const released = []
   let pendingInject
 
   page.fetch = async (url, options) => {
@@ -175,6 +179,27 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
           },
         }
       }
+      if (name === 'sessions') {
+        if (sessions === 'absent') return undefined
+        // The documented shape: retain a session, await the binding, run a command in it, release it.
+        return {
+          retain: (sessionId, options) => {
+            retained.push({ sessionId, options })
+            return {
+              ready: Promise.resolve({
+                sessionId,
+                session: {
+                  command: async (line) => {
+                    commands.push({ sessionId, line })
+                    return commandsAnswer ?? { ok: true, value: { matched: true } }
+                  },
+                },
+              }),
+              release: () => released.push(sessionId),
+            }
+          },
+        }
+      }
       if (name === 'locale') {        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
         // the product's own fallback (an untranslated language lands on `en`).
         return {
@@ -235,6 +260,9 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
     panels,
     slotRequests,
     injections,
+    retained,
+    commands,
+    released,
     cleanup,
     pendingInject: () => pendingInject,
   }
@@ -329,7 +357,7 @@ test('an answer naming what moved is recorded as a deletion, and what was kept a
   })
   moved.registered[0].resolve({ sessionId: 'session-1' })[0].run()
   await settle()
-  assert.match(lastState(moved.requests).lastClick, /^deleted \(recoverable under D:\\home\\dsh-cleaner-trash\)/)
+  assert.match(lastState(moved.requests).lastClick, /^deleted over the route \(recoverable under D:\\home\\dsh-cleaner-trash\)/)
 
   const kept = mount({
     menus: true,
@@ -358,14 +386,56 @@ test('a route that is not there, or not JSON, costs the click and nothing else',
 })
 
 test('a refused deletion is recorded rather than thrown', async () => {
+  // Both carriers refuse: the route says the caller is missing, and the command says the session is busy. What
+  // a person must get is the reason, not a silent no-op and not a thrown page.
   const { registered, requests } = mount({
     menus: true,
     current: 'session-open-1',
+    sessions: true,
     answer: { __status: 500, error: 'a deletion needs a calling Agent' },
+    commandsAnswer: { ok: false, error: { message: 'the session is running' } },
   })
   registered[0].resolve({ sessionId: 'session-1' })[0].run()
   await settle()
-  assert.match(lastState(requests).lastClick, /refused: a deletion needs a calling Agent/)
+  assert.match(lastState(requests).lastClick, /^refused: the session is running; route unavailable \(a deletion needs a calling Agent\)/)
+})
+
+test('a Host without the route still deletes, through the command it does serve', async () => {
+  // This is the case that matters on a Host older than 0.3.0: `/clean` has been registered since 0.2.18, so the
+  // row must not depend on a route that only newer Hosts have. The command is carried by the session in front
+  // of the person, which is what keeps the running session protected.
+  const { registered, requests, retained, commands, released } = mount({
+    menus: true,
+    current: 'session-open-1',
+    sessions: true,
+    transport: 'refuse',
+  })
+  registered[0].resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+
+  assert.equal(retained.length >= 1, true, 'the carrier session was retained')
+  const deletion = commands.filter((call) => !call.line.startsWith('/clean --state '))
+  assert.equal(deletion.length, 1)
+  assert.equal(deletion[0].sessionId, 'session-open-1')
+  assert.equal(deletion[0].line, '/clean session-1', 'the host\'s own command, with the target as the argument')
+  assert.equal(released.includes('session-open-1'), true, 'and the reference was released')
+  assert.match(lastState(requests).lastClick, /^deleted over \/clean \(matched=true\); route unavailable/)
+})
+
+test('the report rides the command when the route is absent', async () => {
+  // The half has to be visible on the Host it is being debugged on. A report that only exists on newer Hosts is
+  // a report nobody reads at the moment it is needed.
+  const { requests, commands } = mount({ menus: true, current: 'session-open-1', sessions: true, transport: 'refuse' })
+  await settle()
+  const stateLine = commands.filter((call) => call.line.startsWith('/clean --state '))
+  assert.equal(stateLine.length >= 1, true, 'the state was carried by the command')
+  assert.match(lastStateOf(requests), /^command \(route unavailable:/)
+
+  function lastStateOf() {
+    // The route never answered, so read the state the command carried instead of the request log.
+    const carried = stateLine[stateLine.length - 1].line.slice('/clean --state '.length)
+    return JSON.parse(carried).report
+  }
 })
 
 test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the window shows', async () => {
