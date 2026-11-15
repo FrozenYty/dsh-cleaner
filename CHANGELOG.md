@@ -1,3 +1,22 @@
+## [0.5.2] - 2026-11-15
+
+- **The row no longer needs a restarted Host.** It tried one carrier — the HTTP route — which exists only from
+  0.3.0, so on the Host this was being debugged on every click ended in `405` and nothing else. It now tries the
+  route first and then **the `/clean` command the running Host already serves** (registered since 0.2.18),
+  carried by the session in front of the person through `ctx.sessions.retain(id)` → `binding.session.command`.
+  The evidence for that carrier, read from the live Client contract rather than assumed: `retain` "starts its
+  shared initial history opening", `reference.ready` settles that attempt, and the binding hands back an
+  `AgentContext` — an agent scope, which is what a command needs.
+- **The carrier is the session in front of the person, and only the target is closed.** That distinction is what
+  the previous attempts got wrong: a closed session cannot carry a command, but it does not have to — the one
+  the person is looking at can, and the target travels as the argument.
+- **The self-report now rides the command too** when there is no route, and it says which carrier delivered it
+  (`report=route` / `report=command (route unavailable: …)` / `report=nowhere: …`). Before this, every report was
+  lost on any Host older than 0.3.0 — which is exactly the Host being debugged.
+- The click's outcome says which carrier did the work (`deleted over the route` / `deleted over /clean`), so a
+  fallback is never mistaken for the primary path.
+
+## [0.5.1] - 2026-11-15
 # Changelog
 
 What each released version of this bundle contained, newest first, in the shape
