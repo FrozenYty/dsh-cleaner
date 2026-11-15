@@ -210,6 +210,7 @@ window.__ModuleLoader__.load({
               'trash.trashed': 'deleted',
               'notice.deleted': 'Deleted. The directory is in the trash and can be restored.',
               'notice.kept': 'Nothing was deleted',
+              'notice.requested': 'Delete requested — the Host\'s answer is in this conversation.',
               'notice.failed': 'Delete failed',
               'notice.working': 'Deleting…',
               'notice.noSession': 'Delete session: no session is open, so there is nothing to name as the caller.',
@@ -227,6 +228,7 @@ window.__ModuleLoader__.load({
               'trash.trashed': '删除于',
               'notice.deleted': '已删除。目录在回收站里，可以恢复。',
               'notice.kept': '没有删除',
+              'notice.requested': '已发出删除请求——宿主的回执就在这个会话里。',
               'notice.failed': '删除失败',
               'notice.working': '正在删除……',
               'notice.noSession': '删除会话：当前没有打开的会话，没有可以作为调用者的会话。',
@@ -355,10 +357,14 @@ window.__ModuleLoader__.load({
             const routeError = answer.error
             const viaCommand = await cleanViaCommand(caller, sessionId)
             state.lastClick = viaCommand.error === undefined
-              ? `deleted over /clean (matched=${String(viaCommand.matched)}); route unavailable (${routeError})`
+              ? `handed to /clean (matched=${String(viaCommand.matched)}); route unavailable (${routeError})`
               : `refused: ${viaCommand.error}; route unavailable (${routeError})`
+            // The command answers with "did a command match", not with what it deleted, so this carrier must not
+            // claim a deletion it cannot see. The Host prints its own answer in this conversation, which is where
+            // the outcome actually is — a blank session genuinely has no log to delete, and saying "deleted"
+            // there would be the kind of quiet lie that cost the most rounds here.
             notify(viaCommand.error === undefined
-              ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
+              ? text('notice.requested', 'Delete requested — the Host\'s answer is in this conversation.')
               : `${text('notice.failed', 'Delete failed')}: ${viaCommand.error}`)
             report()
           })
@@ -508,6 +514,10 @@ window.__ModuleLoader__.load({
               state.report = `no route (${answer.error}) and no session to carry the command`
               return
             }
+            // Once per page load on this carrier, deliberately: the running Host parses a command line, and its
+            // answer is printed in the conversation. A report after every click would add a line to somebody's
+            // transcript each time and teach them to ignore it.
+            if (state.report.startsWith('command')) return
             const payload = { ...state, report: `command (route unavailable: ${answer.error})` }
             const carried = await commandViaSession(caller, `/clean --state ${JSON.stringify(payload)}`)
             state.report = carried.error === undefined
