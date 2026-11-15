@@ -203,7 +203,6 @@ window.__ModuleLoader__.load({
           // "Trash" is what a person already calls this place on every desktop they use; "deleted sessions"
           // described the contents and read like a log title.
           title: text('trash.title', 'Trash'),
-          subtitle: text('trash.subtitle', 'Deleting only moves a directory. Restore puts it back.'),
           restore: text('trash.restore', 'Restore'),
           purge: text('trash.purge', 'Delete for good'),
           empty: text('trash.empty', 'The trash is empty.'),
@@ -221,7 +220,6 @@ window.__ModuleLoader__.load({
             en: {
               [LABEL_KEY]: 'Delete session',
               'trash.title': 'Trash',
-              'trash.subtitle': 'Deleting only moves a directory. Restore puts it back.',
               'trash.restore': 'Restore',
               'trash.purge': 'Delete for good',
               'trash.empty': 'The trash is empty.',
@@ -240,7 +238,6 @@ window.__ModuleLoader__.load({
             zh: {
               [LABEL_KEY]: '删除会话',
               'trash.title': '回收站',
-              'trash.subtitle': '删除只是搬走，可恢复。',
               'trash.restore': '恢复',
               'trash.purge': '彻底删除',
               'trash.empty': '回收站是空的。',
@@ -710,7 +707,6 @@ window.__ModuleLoader__.load({
 
           return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 2px 24px' } }, [
             h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
-            h('p', { key: 'subtitle', style: { ...mutedStyle, margin: '0 0 6px', maxWidth: '64ch' } }, words.subtitle),
             ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
               `${state.swept.length} × ${state.swept.map((entry) => entry.id).join(', ')}`)]),
             h('div', { key: 'body' }, body),

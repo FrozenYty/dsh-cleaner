@@ -588,7 +588,7 @@ test('the page\'s first render says what it is and that it is reading', () => {
   const tree = panels.get('settings.section|dsh-cleaner.trash').component()
   const words = rendered(tree).join(' ')
   assert.match(words, /Trash/)
-  assert.match(words, /Deleting only moves a directory/)
+  // No subtitle: the page says what it is and what it is doing, and nothing else.
   assert.match(words, /Reading the trash/)
 })
 

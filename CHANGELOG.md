@@ -1,3 +1,10 @@
+## [0.5.17] - 2026-11-15
+
+- **The trash page has no subtitle.** 删除只是搬走，可恢复。 explained what the heading, the empty state and the
+  restore button already say, so it is gone — and with it the dictionary entry, so there is no unused string left
+  behind. The page is now: 回收站 / 回收站是空的。/ the directory it reads.
+
+## [0.5.16] - 2026-11-15
 ## [0.5.16] - 2026-11-15
 
 - **The deletion answer has no `unlogged` field — that one belongs to the listing.** Asking the running Host for the
