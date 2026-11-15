@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.5.25。
+- 当前版本：v0.5.26。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -165,7 +165,8 @@ list_session_logs {}
 delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace records dropped them (6 detached): an archived session is hidden by the sidebar, so
+  The workspace records dropped them (6 detached, 6 unarchived, 5 live sessions released), and only a record
+  that still names a session draws it, so
   the rows are gone from every open window without a reload.
   The session persistence backend no longer lists any of them.
 ```
@@ -195,18 +196,21 @@ delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-�
 - `<DSH_HOME>/storages/session_projcache/sessions/<id>.json` —— 只读，只为一行：会话标题。它显示在 id
   旁边，好让一串 id 能对上你记得名字的那些会话。文件缺失、版本更旧或读不出来，只损失标题，别的都不受影响。
 
-workspace 文件永远不写，项目里的会话列表也不是插件写的：它**请** registry 把这些 id 从项目里摘掉，并且
-**归档**它们——这才是让那一行消失的开关（[ADR 0006](docs/adr/0006-detach-by-asking.md)）。侧边栏不画任何已归档
-会话，而 registry 会把这次改动推送给每个打开的窗口，所以**那一行当场就没了：不用刷新、不用重启、不用切排序**
-（[ADR 0012](docs/adr/0012-archive-never-unarchive.md)）。**绝不取消归档**是关键：那个调用属于“恢复”，也正是它
-过去把已删会话的那一行重新摆回屏幕上。唯一宿主事件碰不到的那份副本是窗口自己持久化的侧边栏视图，bundle 的浏览器
-半边通过官方客户端服务 `sessions` 执行同一个 `/clean` 命令（[ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)）。
+workspace 文件永远不写，项目里的会话列表也不是插件写的：它**请**宿主清掉所有还能画出那一行的记录，而且顺序是
+“先动文件，后写记录”（[ADR 0020](docs/adr/0020-what-the-neighbours-do.md)）——移动失败就什么都不改。三件事都由
+宿主自己的链路完成：把这些 id 从项目里**摘掉**（[ADR 0023](docs/adr/0023-detach-never-archive.md)）、**取消归档**
+（[ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md)）、再通过 store 自己的移除**释放内存里的 live 会话**
+（[ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md)）。只要还有记录点着名，侧边栏就会画那一行，所以
+**那一行当场就没了：不用刷新、不用重启、不用切排序**。唯一宿主事件碰不到的那份副本是窗口自己持久化的侧边栏视图，
+bundle 的浏览器半边通过官方客户端服务 `sessions` 执行同一个 `/clean` 命令
+（[ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)）。
 
 ## 它不做什么
 
-- **不取消归档、不重新归档、不 pin。** 它只删日志，然后请 registry 做两件让那一行消失的记录改动：把会话从
-  项目里摘掉、把它归档。第二条就是“删除不需要刷新”的原因——侧边栏不画已归档的行
-  （[ADR 0012](docs/adr/0012-archive-never-unarchive.md)）。插件自己一个 workspace 记录都不写
+- **不重新归档、不 pin。** 它只删日志，然后请宿主清掉能画出那一行的记录：摘掉项目成员、取消归档、释放
+  live 会话对象。三者都是“删除不需要刷新”的原因——只要还有记录点着名，侧边栏就会画那一行
+  （[ADR 0023](docs/adr/0023-detach-never-archive.md)、[ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md)、
+  [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md)）。插件自己一个 workspace 记录都不写
   （[ADR 0006](docs/adr/0006-detach-by-asking.md)）。
 - **绝不删正在干活的会话。** 执行这条命令的会话永远保留；任何 agent 还在忙的会话也保留，而且拒绝里会写明状态
   （`a live agent holds this session (status: running)`），这样这个理由是人能处理的信息。agent 只是**驻留**在内存里

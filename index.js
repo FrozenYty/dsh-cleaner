@@ -440,8 +440,9 @@ async function trashLogs(ctx, exec, action, requested) {
 /**
  * Ask the workspace registry to show the restored sessions again.
  *
- * The mirror of `hideSessions`, and the only place `unarchiveSession` is called: a restore that cannot
- * unarchive still restored the log, so this reports rather than fails.
+ * The mirror of the deletion's record writes, and the only place `unarchiveSession` is called on a restore: a
+ * restored log is a row a person expects to see again, so the flag that could keep it hidden is dropped rather
+ * than left standing. A restore that cannot unarchive still restored the log, so this reports rather than fails.
  * @param ctx - the plugin context.
  * @param ids - the session ids whose directories are back.
  * @returns `{ registry, unarchived, error? }`.
@@ -662,12 +663,14 @@ function renderDelete(value) {
     lines.push(`The workspace list kept ${ids.join(', ')}; the row stays until its next refresh.`)
   } else if ((value.workspace?.detached?.length ?? 0) > 0) {
     const orphans = value.workspace.orphans?.length ?? 0
-    const archived = value.workspace.archived?.length ?? 0
+    const unarchived = value.workspace.unarchived?.length ?? 0
+    const released = value.workspace.released?.length ?? 0
     lines.push(
       `The workspace records dropped them (${value.workspace.detached.length} detached`
-      + (archived > 0 ? `, ${archived} archived` : '')
-      + '): an archived session is hidden by the sidebar, so the rows are gone from every open window'
-      + ' without a reload.'
+      + (unarchived > 0 ? `, ${unarchived} unarchived` : '')
+      + (released > 0 ? `, ${released} live session${released === 1 ? '' : 's'} released` : '')
+      + '), and the sidebar draws a row only for a session its records still name, so the rows are gone from'
+      + ' every open window without a reload.'
       + (orphans > 0 ? ` ${orphans} of the ids had no log left to remove.` : ''),
     )
   }

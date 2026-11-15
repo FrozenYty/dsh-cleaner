@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.25.
+- Current version: v0.5.26.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -243,12 +243,14 @@ registers ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)
 
 ## What it does not do
 
-- **No re-archive, no pinning.** A deletion asks for the two record changes that make the row disappear:
-  detach the session from its project, archive it. The second one is why a deletion needs no reload — an
-  archived session is never drawn ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). The only
-  `unarchiveSession` call in this plugin belongs to a restore, and it runs only for the ids whose directory
-  actually went back. The plugin writes no workspace record itself
-  ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
+- **No re-archive, no pinning.** A deletion clears the records that can draw a row, and none of them is
+  written by this plugin: detach the session from its project, drop its archive flag, and release the live
+  session object through the store's own removal. Each is why a deletion needs no reload — a row is drawn
+  only while a record still names it ([ADR 0023](docs/adr/0023-detach-never-archive.md),
+  [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md),
+  [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md)). The only deliberate archive write in
+  this plugin belongs to a restore, and it *drops* the flag so a restored log's row comes back. The plugin
+  writes no workspace record itself ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 - **Never a session whose work is running.** The session executing the command is always kept, and so is
   any session whose agent is busy; the refusal names the status (`a live agent holds this session (status:
   running)`) so the reason is something to act on. An agent that is merely resident — archived work has

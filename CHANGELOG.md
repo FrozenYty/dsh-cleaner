@@ -1,3 +1,19 @@
+## [0.5.26] - 2026-11-15
+
+Tidying after the chain of fixes, with no behaviour change:
+
+- the delete receipt no longer claims an archived session is hidden by the sidebar — it now says what actually
+  happens (detached, unarchived, live sessions released) and why the row leaves;
+- `docs/design.md` §5 was rewritten around the real order (files first, then the three record writes) and links the
+  three ADRs that each explain one of them;
+- the Chinese README's two mechanism paragraphs and its sample receipt follow the same rule;
+- the client test fixture no longer offers a `uiWorkspace.archiveSession` face nothing calls, and its answer stub
+  carries the fields the answer really has;
+- the entry fixture's unused `archiveSession` hook is gone.
+
+`node scripts/check.mjs` passes; `node scripts/test.mjs` reports 124 tests, 121 pass, 3 skipped (POSIX-only).
+
+## [0.5.25] - 2026-11-15
 ## [0.5.25] - 2026-11-15
 
 - **A deletion now releases the live session object, so a blank session's row leaves without a restart.** With the
