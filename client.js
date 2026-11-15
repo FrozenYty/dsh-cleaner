@@ -211,6 +211,7 @@ window.__ModuleLoader__.load({
               'trash.trashed': 'deleted',
               'notice.deleted': 'Deleted. The directory is in the trash and can be restored.',
               'notice.kept': 'Nothing was deleted',
+              'notice.gone': 'Nothing to delete — it never wrote a log. The row has been removed.',
               'notice.requested': 'Delete requested — the Host\'s answer is in this conversation.',
               'notice.failed': 'Delete failed',
               'notice.working': 'Deleting…',
@@ -229,6 +230,7 @@ window.__ModuleLoader__.load({
               'trash.trashed': '删除于',
               'notice.deleted': '已删除。目录在回收站里，可以恢复。',
               'notice.kept': '没有删除',
+              'notice.gone': '这个会话从未写过日志，没有东西可删——已把这一行移出列表。',
               'notice.requested': '已发出删除请求——宿主的回执就在这个会话里。',
               'notice.failed': '删除失败',
               'notice.working': '正在删除……',
@@ -377,17 +379,27 @@ window.__ModuleLoader__.load({
             if (answer.error === undefined) {
               const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
               const refused = Array.isArray(answer.refused) ? answer.refused : []
+              // "Nothing moved" has two very different meanings, and the receipt must not confuse them: a session
+              // that never wrote a log is *done* (there is nothing to delete, and its row goes), while a refusal
+              // is not (the log stays, and so does the row).
+              const ghostOnly = refused.length > 0
+                && refused.every((entry) => /no session directory|no log/iu.test(String(entry?.reason ?? '')))
               state.lastClick = moved > 0
                 ? `deleted over the route (recoverable under ${answer.trash?.root ?? 'the trash'})`
                 : `nothing moved${refused.length > 0 ? `: ${refused[0]?.reason ?? 'refused'}` : ''}`
-              notify(moved > 0
-                ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
-                : `${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
+              if (moved > 0) {
+                notify(text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.'))
+              } else if (ghostOnly) {
+                // Nothing was moved because there was nothing to move: a session that never wrote a log still has
+                // a row, and the row is what the person asked to be rid of. Say that, instead of the engine's
+                // internal sentence about a missing directory.
+                notify(text('notice.gone', 'Nothing to delete — it never wrote a log. The row has been removed.'))
+              } else {
+                notify(`${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
+              }
               // Hide the row only when it should go. A real deletion or a session that never had a log both end
               // with a row that must leave; a *refusal* — a busy agent, a directory that could not be moved —
               // must leave the row alone, or the window would contradict the receipt printed beside it.
-              const ghostOnly = refused.length > 0
-                && refused.every((entry) => /no session directory|no log/iu.test(String(entry?.reason ?? '')))
               if (moved > 0 || ghostOnly) await hideRow(sessionId)
               report()
               return
