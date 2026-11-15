@@ -5,7 +5,7 @@
   *reason* a change was made lived only in commit messages. `AGENTS.md` §4 now states the split in one rule —
   `PLAN.md` is what is still owed, `PROGRESS.md` is the append-only development log of why and how it was
   checked, `CHANGELOG.md` is what a person who installs the bundle gets — and the new [PROGRESS.md](PROGRESS.md)
-  records the repository's arc in 19 dated entries, each naming the commits, pull request or ADR it rests on.
+  records the repository's arc in 18 entries across three day headings, each naming the commits, pull request or ADR it rests on.
 - `scripts/check.mjs` covers both `PLAN.md` and `PROGRESS.md` as single-language root documents; `PLAN.md` had
   been missing from that list, so the machine-path rule had never scanned it.
 
