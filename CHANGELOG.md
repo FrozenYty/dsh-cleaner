@@ -1,3 +1,21 @@
+## [0.5.6] - 2026-11-15
+
+- **A click now hides the row even when there is no log to remove.** A window draws its rows from the workspace
+  records and the sidebar never draws an archived session, so `archiveSession` is the **only** call that makes a
+  row leave an open window at once. The workspace registry refuses to archive a session that is "neither live nor
+  in session persistence" — a session that never wrote a log is exactly that — so the host deletion skips the
+  archive for such an id and the row stood there after the click. That is the whole answer to *"为什么 Greeting
+  不能点完就消失"*: not a slow host, not a missing refresh, but a permission the registry does not grant.
+- The browser half now hides the row itself, with the same action the sidebar's own ⋯ → 归档会话 uses, **after**
+  the deletion request: for a session with a log the host has already archived it and the registry resolves a
+  second archive as a no-op; for one without, this is the only thing that can write the flag. A session that was
+  never open becomes live in the same call, which is what makes the registry accept it.
+- The self-report gained `lastHide=archived <id> | refused: … | no uiWorkspace service`, so a row that does not
+  go says which of the three happened.
+- A workspace service that refuses the archive is recorded and never thrown: the deletion has already happened
+  by then, and a hide that fails must not fail it.
+
+## [0.5.5] - 2026-11-15
 ## [0.5.5] - 2026-11-15
 
 - **The command carrier no longer claims a deletion it cannot see.** It answers with "did a command match", not

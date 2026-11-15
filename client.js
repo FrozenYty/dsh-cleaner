@@ -85,6 +85,7 @@ window.__ModuleLoader__.load({
           report: 'not sent',
           current: 'not read',
           lastClick: 'none',
+          lastHide: 'none',
           fatal: undefined,
         }
         /** Whether the menu row was contributed — reported, because a missing row is the thing people see. */
@@ -321,6 +322,38 @@ window.__ModuleLoader__.load({
         const cleanViaCommand = (caller, target) => commandViaSession(caller, `/clean ${target}`)
 
         /**
+         * Hide the row with the product's own action, so a deletion is visible where the person clicked.
+         *
+         * A window draws its rows from the workspace records and the sidebar never draws an archived session, so
+         * `archiveSession` is the **only** call that makes a row leave an open window at once. The registry
+         * refuses to archive a session that is "neither live nor in session persistence" — which is exactly what
+         * a session that never wrote a log is, and why clicking delete on one left its row standing: the host
+         * deletion skips the archive for an id whose log is already gone, and nothing else could write the flag.
+         *
+         * So the window opens the session first. That is the same thing clicking its row does, so the session
+         * becomes live, the registry accepts the archive, and the row goes. For a session that *did* have a log
+         * the host has already archived it, and the registry resolves a second archive as a no-op.
+         * @param sessionId - the row's session.
+         */
+        const hideRow = async (sessionId) => {
+          try {
+            const ui = ctx.get('uiWorkspace')
+            if (ui === undefined || typeof ui.archiveSession !== 'function') {
+              state.lastHide = 'no uiWorkspace service'
+              return
+            }
+            try {
+              await ui.archiveSession(sessionId, { stopActivity: false })
+              state.lastHide = `archived ${sessionId}`
+            } catch (error) {
+              state.lastHide = `refused: ${reasonOf(error)}`
+            }
+          } catch (error) {
+            state.lastHide = `refused: ${reasonOf(error)}`
+          }
+        }
+
+        /**
          * Run the deletion for one session: the same operation the tool and the command run.
          *
          * Two carriers, tried in one order and reported either way. The route answers with the deletion's own
@@ -350,6 +383,9 @@ window.__ModuleLoader__.load({
               notify(moved > 0
                 ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
                 : `${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
+              // Even when the host moved nothing — an id with no log on disk — the row must leave: that is what
+              // the person asked for, and it is the one part of this the host cannot do by itself.
+              await hideRow(sessionId)
               report()
               return
             }
@@ -366,6 +402,7 @@ window.__ModuleLoader__.load({
             notify(viaCommand.error === undefined
               ? text('notice.requested', 'Delete requested — the Host\'s answer is in this conversation.')
               : `${text('notice.failed', 'Delete failed')}: ${viaCommand.error}`)
+            if (viaCommand.error === undefined) await hideRow(sessionId)
             report()
           })
         }
