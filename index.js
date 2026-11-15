@@ -464,10 +464,16 @@ async function deleteLogs(ctx, exec, requested) {
     throw error
   }
   const removedIds = report.moved.map((entry) => entry.id)
+  const drop = [...removedIds, ...orphans]
   // The record is written **after** the files, which is Codex's ordering: a move that fails must leave the row
   // where it was, and only a session the store really stopped holding may lose its membership.
-  const hidden = await detachSessions(ctx, [...removedIds, ...orphans])
-  const drop = [...removedIds, ...orphans]
+  const hidden = await detachSessions(ctx, drop)
+  // An archived id is drawn by the sidebar **even when it has no log at all** — that is exactly the state a
+  // deletion leaves behind (this machine had four such ids, drawn as dimmed rows nothing could remove), and the
+  // archive flag is the last thing that can keep a deleted session on screen. So a deletion also drops that flag,
+  // for the ids it removed and for the ids it found already gone. This is the one direction a deletion may touch
+  // the flag, and it is the direction that makes a row leave.
+  const unarchived = await unarchiveSessions(ctx, drop)
   // Ask the host what it still lists: that answer is reported either way, and it is the difference between
   // "the host let go" and "the host still holds it in memory".
   const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
@@ -488,7 +494,7 @@ async function deleteLogs(ctx, exec, requested) {
     refused: [...plan.requested, ...report.refused],
     workspace: hidden.registry === 'not-asked'
       ? hidden
-      : { ...hidden, orphans },
+      : { ...hidden, orphans, unarchived: unarchived.registry === 'not-asked' ? [] : (unarchived.unarchived ?? []) },
     query,
     verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
   }

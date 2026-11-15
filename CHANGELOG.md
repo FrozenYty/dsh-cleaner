@@ -1,3 +1,15 @@
+## [0.5.24] - 2026-11-15
+
+- **A deletion now also drops the archive flag — the last thing that can keep a deleted session on screen.** The
+  sidebar draws an *archived* session as a row in its own right, log or no log, so detaching was a no-op for the
+  four ids on this machine that sat in the archive list with no log and no projection at all (drawn as dimmed rows
+  in 「未分组」, which the plugin could not remove). A deletion now asks the registry to drop the flag for every id
+  it removed **and** every id it found already gone, and the answer carries `workspace.unarchived` beside
+  `detached`/`orphans`.
+- [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md) amends ADR 0023: a deletion may move the flag in
+  exactly one direction — the one that makes a row leave — and never adds an archive entry.
+
+## [0.5.23] - 2026-11-15
 ## [0.5.23] - 2026-11-15
 
 - **Correction to 0.5.22's wording, not to its behaviour.** The release note said a restore no longer unarchives;

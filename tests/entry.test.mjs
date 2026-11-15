@@ -903,3 +903,26 @@ test('a deletion detaches the session and never archives it', async () => {
   assert.deepEqual(value.workspace.detached.sort(), ['session-archived-1', 'session-ghost-1'])
   assert.equal('archived' in value.workspace, false, 'the answer no longer speaks of an archive at all')
 })
+
+test('a deletion also drops the archive flag, because an archived id is drawn even with no log', async () => {
+  // The four ids this plugin found on the author's machine were all archived with no log at all: the sidebar was
+  // drawing them from the archive flag alone, and detaching them changed nothing. Dropping the flag is the only
+  // thing that makes such a row leave, so a deletion does it — for an id it removed and for one already gone.
+  const archived = new Set(['session-ghost-1', 'session-archived-1'])
+  const unarchiveCalls = []
+  const tools = install({
+    workspaces: {
+      archivedSessionIds: [...archived],
+      list: () => [{ sessionIds: [], async detachSession() {} }],
+      async unarchiveSession(id) {
+        unarchiveCalls.push(id)
+        archived.delete(id)
+      },
+    },
+  })
+
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1', 'session-ghost-1'] })
+  assert.deepEqual(unarchiveCalls.sort(), ['session-archived-1', 'session-ghost-1'])
+  assert.deepEqual([...archived], [], 'the archive list no longer names either of them')
+  assert.deepEqual(value.workspace.unarchived.sort(), ['session-archived-1', 'session-ghost-1'])
+})
