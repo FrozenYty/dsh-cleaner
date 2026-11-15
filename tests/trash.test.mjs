@@ -16,6 +16,7 @@ import test, { afterEach, beforeEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import {
+  moveAcrossDevices,
   encodeSegment,
   listTrash,
   moveToTrash,
@@ -320,4 +321,26 @@ test('a move takes the derived record with the log, a restore puts it back, and 
   const purged = await purgeTrash(TRASH, ids)
   assert.equal(purged.purged.length, 1)
   assert.equal(existsSync(projection), false, 'a purge frees the derived record too')
+})
+
+test('a move across devices copies, verifies, and only then removes the source', async () => {
+  // The case that broke every real deletion once the trash moved into the workspace: `rename` answers EXDEV when
+  // the store and the trash are on different volumes. The fallback must never be able to lose a session, so it
+  // stages the copy, compares what arrived with what is there, and removes the source last.
+  const source = join(ROOT, '--D-ALPHA--', 'session-old-1')
+  const target = join(TRASH, 'crossed', 'session-old-1')
+  await mkdir(dirname(target), { recursive: true })
+
+  const before = await readdir(source)
+  const transfer = await moveAcrossDevices(source, target, { copy: true })
+  assert.equal(transfer.copied, true, 'the forced path is the copy path')
+  assert.ok(transfer.bytes > 0)
+  assert.deepEqual((await readdir(target)).sort(), before.sort(), 'every file arrived')
+  assert.equal(existsSync(source), false, 'and the source is gone only after the copy was verified')
+
+  // And back again: a restore crosses the boundary in the other direction.
+  const back = join(ROOT, '--D-ALPHA--', 'session-back-1')
+  const returned = await moveAcrossDevices(target, back, { copy: true })
+  assert.equal(returned.files, before.length, 'the count is a number on the copy path, where it was measured')
+  assert.deepEqual((await readdir(back)).sort(), before.sort())
 })
