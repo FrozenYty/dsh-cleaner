@@ -218,51 +218,37 @@ async function verifyRemoved(ctx, ids) {
 }
 
 /**
- * Hide the sessions a deletion is about to remove — **before** the files go.
+ * Drop the named sessions from their workspace record — the one write that stops a row being drawn.
  *
- * A window draws its rows from the workspace records, not from the disk, and the sidebar's default filter
- * is `!archived.has(id)`: **an archived session is never drawn**. So `archiveSession` is the one call that
- * makes a row disappear from an open window, and the workspace feed publishes it to every window at once —
- * no reload, no restart. Unarchiving is exactly backwards, and is never asked for here.
+ * The sidebar draws a session only while it is a member of a workspace and not archived (`sessionVisible`), and a
+ * **blank** session has its own placeholder condition: `summary.blank && summary.cwd === workspace.path &&
+ * workspace.sessionIds.includes(id) && !archived.includes(id)`. Detaching removes the membership both paths test,
+ * so the row goes **without any archive write at all**.
  *
- * Three facts force the order. `archiveSession` refuses a session that is "neither live nor in session
- * persistence" (`WorkspaceUnknownSessionError`), so it must run while the log still exists; a removal that
- * fails has to give the archive state back, or a session whose log is still on disk would be hidden; and
- * the project membership is dropped in the same pass, because the id names nothing there any more.
+ * Archiving was the earlier approach and it is the wrong one: an archived row is still drawn, dimmed, under the
+ * product's "show archived" filter — which a person described as "it shows as archived and stays there as an
+ * error". It was also unavailable for the case that needed it most, because the registry refuses to archive a
+ * session whose log is already gone.
  *
- * Best-effort: the deletion itself must not fail because a record could not be written, and a profile
- * without the registry still answers.
+ * Best-effort: the deletion itself must not fail because a record could not be written, and a profile without the
+ * registry still answers.
  * @param ctx - plugin context.
- * @param removing - the ids whose files are about to be removed.
- * @param orphaned - named ids whose log is already gone; only their project membership can be dropped,
- *   because the registry refuses to archive a session it cannot find.
- * @returns `{registry, detached, archived, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
+ * @param ids - the sessions a deletion removed, or found already gone.
+ * @returns `{registry, detached, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
  */
-async function hideSessions(ctx, removing, orphaned = []) {
+async function detachSessions(ctx, ids) {
   const registry = 'workspaceRegistry'
   const workspaces = ctx.get(registry)
   if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
   const detached = []
-  const archived = []
   const failed = []
   const fail = (id, error) => failed.push({ id, error: error instanceof Error ? error.message : String(error) })
   try {
-    const archiveSet = typeof workspaces.archivedSessionIds === 'object' ? workspaces.archivedSessionIds : []
-    for (const id of [...removing, ...orphaned]) {
+    for (const id of new Set(ids)) {
       try {
         const holder = workspaces.list().find((workspace) => workspace?.sessionIds?.includes(id))
         if (holder !== undefined) await holder.detachSession(id)
         detached.push(id)
-      } catch (error) {
-        fail(id, error)
-        continue
-      }
-      // Already archived is already hidden (and the registry resolves that as a no-op), and an id with no
-      // log cannot be archived at all: the registry answers "no such session".
-      if (orphaned.includes(id) || archiveSet.includes(id) || typeof workspaces.archiveSession !== 'function') continue
-      try {
-        await workspaces.archiveSession(id)
-        archived.push(id)
       } catch (error) {
         fail(id, error)
       }
@@ -270,35 +256,7 @@ async function hideSessions(ctx, removing, orphaned = []) {
   } catch (error) {
     return { registry, error: error instanceof Error ? error.message : String(error) }
   }
-  return failed.length === 0 ? { registry, detached, archived } : { registry, detached, archived, failed }
-}
-
-/**
- * Give back the archive state of a session whose removal did not happen.
- *
- * `unarchiveSession` runs no existence check (dropping an id cannot introduce an unknown one), which is
- * what makes the repair possible after a failed unlink. Only ids this call archived are restored, so a
- * session the person had already archived keeps the state they chose.
- * @param ctx - plugin context.
- * @param ids - the ids whose files are still there.
- * @param archivedByUs - the ids the preceding {@link hideSessions} archived.
- * @returns the ids whose archive entry was removed again.
- */
-async function restoreSessions(ctx, ids, archivedByUs) {
-  const workspaces = ctx.get('workspaceRegistry')
-  if (workspaces === undefined || typeof workspaces.unarchiveSession !== 'function') return []
-  const restored = []
-  for (const id of ids) {
-    if (!archivedByUs.includes(id)) continue
-    try {
-      await workspaces.unarchiveSession(id)
-      restored.push(id)
-    } catch {
-      // The deletion's own answer already says the file could not be removed; a record that stays hidden
-      // is the smaller surprise, and the next call finds the session and tries again.
-    }
-  }
-  return restored
+  return failed.length === 0 ? { registry, detached } : { registry, detached, failed }
 }
 
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
@@ -496,25 +454,20 @@ async function deleteLogs(ctx, exec, requested) {
   const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
   const target = plan.candidates.map((candidate) => candidate.id)
   const orphans = plan.unlogged
-  // Hide first, because the registry refuses to archive a session whose log is already gone — and hiding
-  // is what makes the row leave the window at once.
-  const hidden = target.length + orphans.length === 0
-    ? { registry: 'not-asked' }
-    : await hideSessions(ctx, target, orphans)
+  // The row leaves because the membership does: `detachSession` is the one write that stops the sidebar drawing
+  // it, for a session with a log and for one that never had any (the blank session's placeholder tests the same
+  // membership). No archive write is made, on purpose — see {@link detachSessions}.
+  const hidden = await detachSessions(ctx, [...target, ...orphans])
   let report
   try {
     // One atomic rename per session: either the store stops holding it or nothing happened, so a session a
     // live writer is holding cannot be left half-removed. The bytes are freed on purge, not here.
     report = await moveToTrash(paths.trashRoot, plan)
   } catch (error) {
-    // Nothing was moved, so nothing may stay hidden: give the archive state back and let the failure be
-    // the caller's to see.
-    if (Array.isArray(hidden.archived)) await restoreSessions(ctx, target, hidden.archived)
+    // Nothing was moved and nothing was archived, so the failure is the caller's to see, unchanged.
     throw error
   }
   const removedIds = report.moved.map((entry) => entry.id)
-  const kept = target.filter((id) => !removedIds.includes(id))
-  const restored = Array.isArray(hidden.archived) ? await restoreSessions(ctx, kept, hidden.archived) : []
   const drop = [...removedIds, ...orphans]
   // Ask the host what it still lists: that answer is reported either way, and it is the difference between
   // "the host let go" and "the host still holds it in memory".
@@ -536,13 +489,7 @@ async function deleteLogs(ctx, exec, requested) {
     refused: [...plan.requested, ...report.refused],
     workspace: hidden.registry === 'not-asked'
       ? hidden
-      : {
-        ...hidden,
-        orphans,
-        // Only the ids whose log is actually gone stayed hidden; the rest were put back above.
-        archived: (hidden.archived ?? []).filter((id) => !restored.includes(id)),
-        restored,
-      },
+      : { ...hidden, orphans },
     query,
     verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
   }
@@ -1154,7 +1101,7 @@ function stateReport(rawInput) {
  */
 function formatState(state) {
   const parts = []
-  for (const key of ['inject', 'service', 'register', 'catalog', 'menu', 'dictionary', 'row', 'panel', 'panel_icon', 'notice', 'route', 'report', 'current', 'lastClick', 'lastHide', 'fatal']) {
+  for (const key of ['inject', 'service', 'register', 'catalog', 'menu', 'dictionary', 'row', 'panel', 'panel_icon', 'notice', 'route', 'report', 'current', 'lastClick', 'fatal']) {
     if (state[key] !== undefined) parts.push(`${key}=${String(state[key])}`)
   }
   return parts.length === 0 ? 'the window half sent an empty state' : parts.join('  ')

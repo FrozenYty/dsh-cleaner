@@ -693,81 +693,33 @@ test('a registry that refuses the full profile set still binds the desktop ones'
   assert.equal(attempts[1].includes('web:'), false, 'the retry declares no web profile')
 })
 
-test('a click hides the row through the product\'s own archive action', async () => {
-  // A window draws its rows from the workspace records, and the sidebar never draws an archived session — so
-  // archiving is the only call that makes a row leave at once. The registry refuses to archive a session it
-  // cannot find (a session that never wrote a log is exactly that), which is why this is the window's job and
-  // why clicking delete on such a row used to leave it standing.
-  const archived = []
-  const fails = []
-  const { registrations, requests } = mount({
-    menus: true,
-    current: 'session-open-1',
-    slots: true,
-    transport: 'refuse',
-    archive: (sessionId) => { archived.push(sessionId) },
-  })
-  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
-  await settle()
-  await settle()
-  assert.deepEqual(archived, ['session-blank-1'], 'the row was hidden with the same action the sidebar uses')
-  assert.equal(lastState(requests).lastHide, 'archived session-blank-1')
-  assert.deepEqual(fails, [])
-})
-
-test('an archive that the workspace service refuses is recorded, never thrown', async () => {
-  const { registrations, requests } = mount({
-    menus: true,
-    current: 'session-open-1',
-    transport: 'refuse',
-    archive: () => { throw new Error('WorkspaceUnknownSessionError: no such session') },
-  })
-  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
-  await settle()
-  assert.match(lastState(requests).lastHide, /^refused: WorkspaceUnknownSessionError/)
-})
-
-test('a profile without the workspace service still deletes', async () => {
-  const { registrations, requests } = mount({ menus: true, current: 'session-open-1', transport: 'refuse' })
-  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
-  await settle()
-  assert.equal(lastState(requests).lastHide, 'no uiWorkspace service')
-  assert.match(lastState(requests).lastClick, /^handed to \/clean/)
-})
-
 test('an id the engine reports as unlogged still takes its row with it', async () => {
   // The answer's own fields decide what happened. An id with no directory is reported under `unlogged` — not under
   // `refused` — so a client that looks for a reason string in the wrong field reports "nothing moved" and leaves
   // the row standing, which is exactly what a person saw on screen.
-  const hidden = []
   const blank = mount({
     menus: true,
     slots: true,
     current: 'session-open-1',
     answer: { removed: [], refused: [], unlogged: [{ id: 'session-blank-1' }] },
-    archive: (sessionId) => { hidden.push(sessionId) },
   })
   blank.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
   await settle()
   await settle()
-  assert.deepEqual(hidden, ['session-blank-1'], 'the row leaves, because there was nothing to delete')
   assert.match(JSON.stringify(blank.panels.get('shell.overlay|dsh-cleaner.notice').component()), /no log — row removed/i)
   assert.match(lastState(blank.requests).lastClick, /^nothing to delete: no log/)
 })
 
 test('a held-back id keeps its row and shows the reason the engine gave', async () => {
-  const hidden = []
   const busy = mount({
     menus: true,
     slots: true,
     current: 'session-open-1',
     answer: { removed: [], refused: [], unlogged: [], protected: [{ id: 'session-1', reason: 'a live agent holds this session (status: running)' }] },
-    archive: (sessionId) => { hidden.push(sessionId) },
   })
   busy.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
   await settle()
   await settle()
-  assert.deepEqual(hidden, [], 'a held-back row stays exactly where it was')
   assert.match(lastState(busy.requests).lastClick, /status: running/)
   assert.match(JSON.stringify(busy.panels.get('shell.overlay|dsh-cleaner.notice').component()), /status: running/)
 })
@@ -776,7 +728,6 @@ test('the deletion answer marks a log-less id under workspace.orphans, and that 
   // Captured verbatim from the running Host: the answer has no `unlogged` field at all; what it carries is
   // `workspace.orphans`, `workspace.detached` and `query.still_listed: []`. Reading the listing's field on a
   // deletion answer is why a finished click kept printing 未删除.
-  const hidden = []
   const blank = mount({
     menus: true,
     slots: true,
@@ -790,14 +741,12 @@ test('the deletion answer marks a log-less id under workspace.orphans, and that 
       query: { backend: 'sessionQuery', still_listed: [] },
       verify: { backend: 'not-asked' },
     },
-    archive: (sessionId) => { hidden.push(sessionId) },
   })
   blank.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
   await settle()
   await settle()
   assert.match(lastState(blank.requests).lastClick, /^nothing to delete: no log/)
   assert.match(JSON.stringify(blank.panels.get('shell.overlay|dsh-cleaner.notice').component()), /no log — row removed/i)
-  assert.deepEqual(hidden, ['session-blank-1'], 'and the row is asked to leave')
 })
 
 test('closing the plugin takes every contribution with it', async () => {
@@ -814,4 +763,57 @@ test('closing the plugin takes every contribution with it', async () => {
   assert.equal(mounted.registrations.size, 0, 'no menu row survives the plugin')
   assert.equal(mounted.panels.size, 0, 'no settings page, icon or notice survives it')
   assert.equal(mounted.shortcuts.length, 0, 'no key survives it')
+})
+
+test('the notice matrix: every outcome a person can reach says something', async () => {
+  // The table in docs/design.md, asserted in one place. A case whose notice disappears fails here, and a new
+  // outcome added without a notice fails by having no case.
+  const cases = [
+    {
+      name: 'the log moved',
+      mount: { menus: true, slots: true, current: 'session-open-1', answer: { removed: [{ id: 'session-1' }], refused: [], trash: { root: 'x' } } },
+      session: 'session-1',
+      expect: /Deleted/,
+    },
+    {
+      name: 'there was nothing to delete',
+      mount: { menus: true, slots: true, current: 'session-open-1', answer: { removed: [], refused: [], unlogged: [{ id: 'session-1' }], workspace: { orphans: ['session-1'] } } },
+      session: 'session-1',
+      expect: /No log — row removed/,
+    },
+    {
+      name: 'the host held it back',
+      mount: { menus: true, slots: true, current: 'session-open-1', answer: { removed: [], refused: [], protected: [{ id: 'session-1', reason: 'a live agent holds this session (status: running)' }] } },
+      session: 'session-1',
+      expect: /Not deleted：a live agent holds this session/,
+    },
+    {
+      name: 'the route is not there, so the command carries it',
+      mount: { menus: true, slots: true, current: 'session-open-1', transport: 'refuse' },
+      session: 'session-1',
+      expect: /Delete requested — see this conversation/,
+    },
+    {
+      name: 'the command was refused',
+      mount: { menus: true, slots: true, current: 'session-open-1', transport: 'refuse', commandsAnswer: { ok: true, value: { matched: false } } },
+      session: 'session-1',
+      expect: /Delete failed/,
+    },
+  ]
+
+  for (const item of cases) {
+    const mounted = mount(item.mount)
+    mounted.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: item.session })[0].run()
+    await settle()
+    await settle()
+    const notice = mounted.panels.get('shell.overlay|dsh-cleaner.notice')
+    const said = JSON.stringify(notice.component())
+    assert.match(said, item.expect, `${item.name}: the notice says what happened`)
+  }
+
+  // And the case with nothing to name at all.
+  const nothing = mount({ menus: true, slots: true, current: undefined })
+  nothing.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  assert.match(JSON.stringify(nothing.panels.get('shell.overlay|dsh-cleaner.notice').component()), /No session is open/)
 })
