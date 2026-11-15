@@ -1,3 +1,16 @@
+## [0.5.29] - 2026-11-16
+
+- **Deleting the session you are looking at now leaves its view instead of staying in a conversation that no longer
+  exists.** A deleted session is released from the Host's store, so the window was left on a dead page. The click
+  now runs `uiWorkspace.startSession()` — the very call the sidebar's *新会话* button makes, which falls back to the
+  default page when no workspace can take a draft — and the plugin reuses that seam rather than inventing a
+  navigation of its own.
+- Two guards, both asserted by a test: it happens **only** after a deletion that really happened (a moved log, or an
+  id that had none), and **only** when the id is the session the window shows. A refused deletion leaves the session
+  alive, so the page stays exactly where the person is.
+- The test was confirmed to fail without the change and pass with it; `npm test` reports 125 tests, 3 skipped.
+
+## [0.5.28] - 2026-11-16
 ## [0.5.28] - 2026-11-16
 
 - **The plugin's data directory is now `~/.agents/cleaner`, and nothing else can decide it.** The old order ended

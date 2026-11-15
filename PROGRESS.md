@@ -159,3 +159,10 @@ Dates are the commit dates, in the order the work happened.
   and `npm test` reports 125 tests / 122 pass / 0 fail with `node scripts/check.mjs` green. ADR 0026 supersedes
   ADR 0015's location; its other rule (this plugin owns its own data directory) stands. The same trashes on this
   machine were empty, so there was nothing to migrate.
+
+- **Deleting the session you are viewing now leaves the dead view.** Releasing a deleted session from the Host's
+  store (ADR 0025) left the window on a conversation that no longer existed. The click now calls
+  `uiWorkspace.startSession()` — the sidebar's own *新会话* call, which lands on the default page when no workspace
+  can take a draft — and only after a deletion that really happened, and only for the session on screen: a refusal
+  means the session is alive, so the page must stay. Proven both ways: the new client test failed before the change
+  (`[]` against `['session-blank-1']`) and passes after it, with `npm test` at 125 tests / 122 pass.
