@@ -216,7 +216,10 @@ window.__ModuleLoader__.load({
         const registerDictionary = () => {
           const locale = ctx.get('locale')
           if (locale === undefined || typeof locale.register !== 'function') return undefined
-          return locale.register(LOCALE_NS, {
+          // Inside `ctx.effect`, like every other contribution: disabling the plugin evicts its client module, and
+          // the effect is what removes the strings with it. A bare `register` would leave this plugin's dictionary
+          // behind in a window that no longer has the plugin.
+          return ctx.effect(() => locale.register(LOCALE_NS, {
             en: {
               [LABEL_KEY]: 'Delete session',
               'trash.title': 'Trash',
@@ -253,7 +256,7 @@ window.__ModuleLoader__.load({
               'notice.working': '正在删除……',
               'notice.noSession': '没有打开的会话可作为调用者',
             },
-          })
+          }))
         }
 
         /**
@@ -481,7 +484,9 @@ window.__ModuleLoader__.load({
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
           if (menus === undefined || typeof menus.register !== 'function') return undefined
-          return menus.register({
+          // `ctx.effect` is the documented pattern, and the reason is this plugin's own promise: closing the plugin
+          // must take the row out of every session menu. A bare `register` returns a disposer nobody would call.
+          return ctx.effect(() => menus.register({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
             order: 700,
@@ -498,7 +503,7 @@ window.__ModuleLoader__.load({
                 run: () => runClean(sessionId),
               }]
             },
-          })
+          }))
         }
 
         /**

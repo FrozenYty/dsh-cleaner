@@ -84,6 +84,8 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
   }
   const registered = []
   const registeredShortcuts = []
+  /** Registrations made while a slot injection is running, so the injection can dispose them. */
+  let capture = null
   const registrations = new Map()
   const requests = []
   const dictionaries = new Map()
@@ -141,7 +143,12 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
         return {
           register: (definition) => {
             registeredShortcuts.push(definition)
-            return () => {}
+            // A real registry drops the command with its disposer; the fixture has to model that, or no test can
+            // tell a scoped contribution from one that outlives the plugin.
+            return () => {
+              const at = registeredShortcuts.indexOf(definition)
+              if (at >= 0) registeredShortcuts.splice(at, 1)
+            }
           },
           // The overlay reads the catalogue to print keys beside a label; the bundle reads the same store to
           // decide whether it may name it at all.
@@ -164,18 +171,31 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
           }
         }
         return {
-          // The documented shape: wait for the slot, then register into it.
+          // The documented shape: wait for the slot, then register into it. A real injection owns what its scope
+          // registers, so disposing the injection disposes the seat — modelled here, because "closing the plugin
+          // removes its page" is a promise this fixture is the only witness to.
           inject: (key, callback) => {
             slotRequests.push(key)
-            callback()
-            return () => {}
+            const owned = []
+            const previous = capture
+            capture = owned
+            try {
+              callback()
+            } finally {
+              capture = previous
+            }
+            return () => {
+              for (const dispose of owned) dispose?.()
+            }
           },
           register: (options, component) => {
             // Keyed by seat *and* id: the page and its icon share the id on purpose, so a map keyed by the id
             // alone would let the icon overwrite the page.
             const seat = `${options.name}|${options.id}`
             panels.set(seat, { options, component })
-            return () => panels.delete(seat)
+            const dispose = () => panels.delete(seat)
+            capture?.push(dispose)
+            return dispose
           },
         }
       }
@@ -778,4 +798,20 @@ test('the deletion answer marks a log-less id under workspace.orphans, and that 
   assert.match(lastState(blank.requests).lastClick, /^nothing to delete: no log/)
   assert.match(JSON.stringify(blank.panels.get('shell.overlay|dsh-cleaner.notice').component()), /no log — row removed/i)
   assert.deepEqual(hidden, ['session-blank-1'], 'and the row is asked to leave')
+})
+
+test('closing the plugin takes every contribution with it', async () => {
+  // The promise this plugin makes about the product's interface: while it is closed, none of its rows, seats or
+  // keys are there and nothing about the window is left changed. The client kernel evicts the module and disposes
+  // its effects; every contribution has to be inside one, or it outlives the plugin it belongs to.
+  const mounted = mount({ menus: true, locale: true, slots: true, shortcuts: true, current: 'session-open-1' })
+  assert.equal(mounted.registrations.size, 1, 'the session menu row is there while the plugin is open')
+  assert.ok(mounted.panels.size >= 3, 'and the settings page, its icon and the notice')
+  assert.equal(mounted.shortcuts.length, 1, 'and the key')
+
+  for (const dispose of [...mounted.cleanup]) dispose?.()
+
+  assert.equal(mounted.registrations.size, 0, 'no menu row survives the plugin')
+  assert.equal(mounted.panels.size, 0, 'no settings page, icon or notice survives it')
+  assert.equal(mounted.shortcuts.length, 0, 'no key survives it')
 })
