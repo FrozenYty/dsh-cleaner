@@ -1,3 +1,18 @@
+## [0.5.9] - 2026-11-15
+
+- **`order` was not the whole placement, and 0.5.8's conclusion was wrong.** The menu overlay splits resolved
+  actions into its item list and its footer by `afterContent`, and the product returns the archive action with
+  `afterContent: true` — so *归档会话* is not in the item list at all and **no `order` value can seat another row
+  below it**. This row now carries `afterContent: true` as well and keeps `order: 700`, which orders it after
+  archive (600) **inside the footer**: it is the last row of the menu, which is where it was asked to be.
+- `separatorBefore` is dropped: the archive row already carries one, so the destructive block is divided once and
+  two adjacent dividers no longer stack.
+- **The lesson is recorded where it will be read**: `afterContent` is a field of the resolved *action*, not of the
+  registration call — which is exactly why the previous version could look right in the code and be wrong on
+  screen. [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md) supersedes ADR 0016's mechanism, and the test now
+  asserts the resolved action rather than the registration.
+
+## [0.5.8] - 2026-11-15
 ## [0.5.8] - 2026-11-15
 
 - **The row can sit below 归档会话, and now does.** `contextMenus` documents its ordering as "Contributions sort
