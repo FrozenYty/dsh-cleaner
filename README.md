@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.27.
+- Current version: v0.5.28.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -122,15 +122,17 @@ The trash is the only thing this plugin owns, and it is **not Harness data**: `D
 the workspace records and the profiles, and nothing in it belongs to this bundle.
 
 ```
-<workspace>/.agents/cleaner/          everything this plugin writes
+~/.agents/cleaner/                    everything this plugin writes
     trash/
         index.json                    what is held, when, and where it came from
         <stamp>-<escaped-id>/         a deleted session's directory, byte for byte
 ```
 
-It sits beside the memory notebook and the team roster, so an agent's own data is in one directory a person can
-open. Resolution order: the `dataDir` config field, then `DSH_CLEANER_DATA_DIR`, then
-`<workspace>/.agents/cleaner`, then `~/.dsh/cleaner` as the last resort. The Host's own installation is never
+It sits under the user's home so an agent's own data is in one place a person can open, back up and reason
+about — and in the same place on every machine, in every workspace, under every profile. Resolution order: the
+`dataDir` config field, then `DSH_CLEANER_DATA_DIR`, then `~/.agents/cleaner`. **No workspace, no profile default
+and no checkout ever decides it**, because a data directory that moves is the one failure this plugin cannot
+undo. The Host's own installation is never
 used as a workspace — a `.agents` directory inside the sealed asar, or beside the executable, is not one.
 
 A profile changes any of it in its own patch row; the row id is `cleaner`:
@@ -441,6 +443,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What makes a deleted row leave the sidebar — detach or archive? | [ADR 0023](docs/adr/0023-detach-never-archive.md) (supersedes [ADR 0012](docs/adr/0012-archive-never-unarchive.md)) |
 | Why does a deletion also drop the archive flag? | [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md) |
 | How does a deletion remove the live session object, so no restart is needed? | [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md) |
+| Why does the plugin's data live under the home directory and never move? | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |

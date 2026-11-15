@@ -1,3 +1,21 @@
+## [0.5.28] - 2026-11-16
+
+- **The plugin's data directory is now `~/.agents/cleaner`, and nothing else can decide it.** The old order ended
+  with "the workspace the registry names", and it was resolved once at load — when that registry is often not
+  mounted yet, so the profile's *default directory* (not a workspace at all) filled in, and it followed whatever
+  was opened last. After the repositories moved into a folder of their own, that default became the new folder and
+  the trash silently started living there, empty, while the earlier deletions stayed in the real one. Nothing was
+  lost; the failure mode is the one this plugin cannot undo, so the class is gone rather than patched: the location
+  is the `dataDir` config field, then `DSH_CLEANER_DATA_DIR`, then `~/.agents/cleaner` — no workspace, no profile
+  default, no checkout, resolved per use so no early binding can be wrong later. [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md)
+  supersedes ADR 0015's *location* (its other rule, that this plugin owns its own data directory, stands).
+- **Upgrading with an existing trash:** a trash held under `<workspace>/.agents/cleaner` is not picked up
+  automatically. Move that folder to `~/.agents/cleaner`, or set `dataDir` back to it. This repository's own trash
+  was empty at the switch, so nothing was migrated.
+- One benefit worth noting: the trash and the session store now share a volume, so a deletion is a plain rename
+  again; the cross-device machinery stays for a configured `dataDir` that is elsewhere.
+
+## [0.5.27] - 2026-11-15
 ## [0.5.27] - 2026-11-15
 
 - **The repository now says which file records what.** Three documents had started to overlap: `PLAN.md` held

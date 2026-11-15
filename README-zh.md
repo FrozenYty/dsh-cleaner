@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.5.27。
+- 当前版本：v0.5.28。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -96,15 +96,17 @@ session files”。这个 bundle 就是那次外部清理，它只守一条规�
 和 profile，那里没有一样东西属于这个 bundle。
 
 ```
-<工作区>/.agents/cleaner/             这个插件写的全部东西
+~/.agents/cleaner/                    这个插件写的全部东西
     trash/
         index.json                    收了什么、什么时候、原来在哪
         <时间戳>-<转义id>/            被删会话的目录，逐字节原样
 ```
 
-它和记忆笔记本、团队成员名册并排放在一起，所以一个 agent 自己的数据都在一个能随手打开的目录里。解析顺序：
-`dataDir` 配置字段 → `DSH_CLEANER_DATA_DIR` → `<工作区>/.agents/cleaner` → 兜底的 `~/.dsh/cleaner`。**Host 自己的
-安装目录永远不会被当作工作区**——封在 asar 里的 `.agents`、或者可执行文件旁边，都不是工作区。
+它放在用户主目录下：一个 agent 自己的数据都在一个能随手打开、方便备份、也方便讲清楚的位置，而且在每台机器、
+每个工作区、每个 profile 下都是同一个答案。解析顺序：`dataDir` 配置字段 → `DSH_CLEANER_DATA_DIR` →
+`~/.agents/cleaner`。**工作区、profile 默认目录、仓库位置都不参与决定**——会移动的数据目录，是这个插件唯一
+补救不了的失败。**Host 自己的安装目录永远不会被当作工作区**——封在 asar 里的 `.agents`、或者可执行文件
+旁边，都不是工作区。
 
 要改就在自己的 patch 行里改，行 id 是 `cleaner`：
 
@@ -374,6 +376,8 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 让被删的行从侧边栏消失的，是 detach 还是归档？ | [ADR 0023](docs/adr/0023-detach-never-archive.md)（取代 [ADR 0012](docs/adr/0012-archive-never-unarchive.md)） |
 | 为什么删除还要取消归档？ | [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md) |
 | 删除如何释放内存里的 live 会话，做到不用重启？ | [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md) |
+| 为什么插件数据放在用户主目录下、永不移动？ | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
+| 为什么数据目录放在用户主目录下、永不移动？ | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
 | 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |

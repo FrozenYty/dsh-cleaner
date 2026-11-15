@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
 import { chmod, mkdir, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, beforeEach, test } from 'node:test'
@@ -52,7 +53,7 @@ async function writeProjection(id, title) {
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
-function harness({ agents = [], persistence, workspaces, query, sessions, commands = true, webServer = true } = {}) {
+function harness({ agents = [], persistence, workspaces, query, sessions, workingDirectory, commands = true, webServer = true } = {}) {
   const tools = new Map()
   const registered = new Map()
   const routes = new Map()
@@ -71,6 +72,7 @@ function harness({ agents = [], persistence, workspaces, query, sessions, comman
     },
     get: (name) => {
       if (name === 'sessions') return sessions
+      if (name === 'workingDirectory') return workingDirectory
       if (name === 'agents') return { list: () => agents }
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
@@ -945,4 +947,34 @@ test('a deletion releases the live session object, so the row goes without a res
   assert.deepEqual(disposed, ['session-ghost-1'], 'the live object was removed through the store')
   assert.deepEqual(value.workspace.released, ['session-ghost-1'])
   assert.equal(entries.has('session-archived-1'), true, 'a session nobody deleted keeps its live object')
+})
+
+test('the data directory comes from the workspace record, never from the profile default', async () => {
+  // The failure this guards: the plugin used to accept `workingDirectory.defaultDirectory` — the profile's default
+  // directory, which is NOT a workspace — as the base for `.agents/cleaner`. When the repositories moved into a
+  // folder of their own, that default became the new folder's parent, and the trash silently began living there.
+  // Two cases, and the second is the one that fails without the fix: a decoy default directory must lose to the
+  // frozen fallback when no workspace is named, and a named workspace must win outright.
+  const saved = process.env.DSH_CLEANER_DATA_DIR
+  delete process.env.DSH_CLEANER_DATA_DIR
+  const decoy = join(TMP, 'the-profile-default')
+  const workspace = join(TMP, 'a-workspace')
+  try {
+    const withoutRegistry = install({ workingDirectory: { defaultDirectory: decoy } })
+    const fallback = await run(withoutRegistry.get('list_session_logs'), {})
+    assert.equal(
+      fallback.trash.root,
+      join(homedir(), '.agents', 'cleaner', 'trash'),
+      'no workspace means the frozen home directory, not the profile default',
+    )
+
+    const withRegistry = install({
+      workspaces: { list: () => [{ path: workspace, sessionIds: [] }] },
+      workingDirectory: { defaultDirectory: decoy },
+    })
+    const named = await run(withRegistry.get('list_session_logs'), {})
+    assert.equal(named.trash.root, join(homedir(), '.agents', 'cleaner', 'trash'), 'a named workspace does not decide where the bytes go')
+  } finally {
+    process.env.DSH_CLEANER_DATA_DIR = saved
+  }
 })

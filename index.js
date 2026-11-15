@@ -84,50 +84,23 @@ function defineTool(options) {
 let settings = resolveCleanerConfig(undefined)
 
 /**
- * The data directory this process bound itself to, resolved once.
+ * The data directory is resolved on every use, from three destinations and nothing else: the config field, the
+ * environment override, and `~/.agents/cleaner`.
  *
- * Once, and not per call: a session's working directory can change while it runs (`working_directory` is a
- * tool), and re-resolving would move the trash out from under a deletion that is in flight. What is durable is
- * the directory and its `index.json`, and every listing prints the path that is in effect, so a person can see
- * where their bytes went without asking.
+ * It used to be bound once at load, from "the workspace the registry names, else the profile's default directory".
+ * Both legs were wrong in a way this plugin cannot survive: a workspace moves when the repository does, and the
+ * profile default is not a workspace at all — after the repositories moved into a folder of their own that default
+ * became the new folder, and the trash silently started living there while the real one kept earlier deletions.
+ * A destination that cannot move is worth more than a context-sensitive one.
  */
-let boundDataDir
-
-/** The context this plugin was applied in, kept so a data directory can be resolved after the load. */
-let runtimeCtx
-/**
- * The directory the person actually works in — the workspace this profile holds, asked of the registry that owns
- * it.
- *
- * `workingDirectory.defaultDirectory` is a **fallback for Sessions without an original directory**, and in a
- * desktop profile it is the profile's own directory: resolving the data directory from it put the trash under
- * `~/.dsh/profiles/desktop/.agents/cleaner` instead of the workspace's `.agents/cleaner`. The workspace records
- * carry `path` (the same field the sidebar compares a Session's `cwd` against), so they are the honest source.
- * @param ctx - the plugin context.
- * @returns the workspace path, or undefined when no registry is mounted or no record names a directory.
- */
-function defaultWorkspace(ctx) {
-  try {
-    const registry = ctx?.get?.('workspaceRegistry')
-    const list = typeof registry?.list === 'function' ? registry.list() : []
-    const named = list.find((workspace) => typeof workspace?.path === 'string' && workspace.path.length > 0)
-    if (named !== undefined) return named.path
-  } catch {
-    // A registry that cannot be read leaves the fallback below.
-  }
-  try {
-    const directory = ctx.get('workingDirectory')?.defaultDirectory
-    return typeof directory === 'string' && directory.length > 0 ? directory : undefined
-  } catch {
-    return undefined
-  }
-}
-
 function storagePaths() {
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  // Resolved here rather than once at load: the workspace registry may not be mounted yet when `apply` runs, and a
-  // data directory frozen from the wrong answer is a trash nobody can find.
-  const dataDir = boundDataDir ?? resolveDataDir(process.env, homedir(), defaultWorkspace(runtimeCtx))
+  // Resolved per call, and from three destinations only: the config field, the environment override, and the home
+  // directory's `.agents/cleaner`. No workspace, no profile default, no checkout — a data directory that moves is
+  // the one failure this plugin cannot undo.
+  const dataDir = settings.dataDir !== undefined
+    ? resolve(homedir(), settings.dataDir)
+    : resolveDataDir(process.env, homedir())
   return {
     sessionsRoot: join(home, 'sessions'),
     workspaceFile: join(home, 'storages', 'workspace.json'),
@@ -811,17 +784,6 @@ export function apply(ctx, config) {
   // Validated before anything is registered: a patch value that cannot be honoured fails this load, with the
   // field and the value named, rather than the first deletion — hours later, in front of a person.
   settings = resolveCleanerConfig(config)
-  {
-    // The data directory is resolved in the documented order: the configured path, then the environment override,
-    // then **the workspace the registry owns**, then the frozen fallback outside any workspace. Only an answer we
-    // actually have is bound here: a workspace the Host cannot name yet leaves it unresolved, so `storagePaths()`
-    // asks again on first use instead of freezing the profile's own directory for the whole process.
-    const workspace = defaultWorkspace(ctx)
-    boundDataDir = settings.dataDir !== undefined
-      ? resolve(workspace ?? process.cwd(), settings.dataDir)
-      : workspace === undefined ? undefined : resolveDataDir(process.env, homedir(), workspace)
-    runtimeCtx = ctx
-  }
   ctx.tools.register(defineTool({
     name: 'list_session_logs',
     description:

@@ -51,30 +51,32 @@ async function fixture(ids) {
   }
 }
 
-test('the data directory is the configured path, then the environment, then the workspace', () => {
-  // The order matters: a profile's own patch row is the documented knob, the environment is how a launcher or a
-  // test moves it, and the workspace is what most people get without configuring anything.
-  assert.equal(resolveDataDir({}, HOME, WORKSPACE), resolve(WORKSPACE, CLEANER_DIR))
+test('the data directory is the environment, then the home directory — and a workspace is ignored', () => {
+  // Two destinations and one rule: a location that cannot drift. The environment is how a launcher or a test moves
+  // it, and everything else gets `~/.agents/cleaner`, which is the same answer in every workspace, under every
+  // profile, wherever the checkout happens to live.
+  assert.equal(resolveDataDir({}, HOME), join(HOME, '.agents', 'cleaner'))
+  assert.equal(resolveDataDir({ DSH_CLEANER_DATA_DIR: join(TMP, 'env') }, HOME), resolve(TMP, 'env'))
+  // A workspace passed by an older caller is accepted and **ignored**: that leg is what moved the trash once.
+  assert.equal(resolveDataDir({}, HOME, WORKSPACE), join(HOME, '.agents', 'cleaner'))
   assert.equal(resolveDataDir({ DSH_CLEANER_DATA_DIR: join(TMP, 'env') }, HOME, WORKSPACE), resolve(TMP, 'env'))
-  // No workspace: the frozen fallback, a real directory a person can open, outside every workspace.
-  assert.equal(resolveDataDir({}, HOME), join(HOME, '.dsh', 'cleaner'))
   assert.equal(CLEANER_DIR, '.agents/cleaner')
 })
 
-test('a Host installation is never treated as a workspace', () => {
-  // A `.agents` directory inside the sealed asar, or beside the executable, is not a workspace: one write fails
-  // and the other litters an installation. Both fall through to the frozen directory.
+test('a Host installation is never used as a base, because nothing but the home directory is', () => {
+  // The installation-shaped bases are still the ones worth naming: a `.agents` inside the sealed asar or beside the
+  // executable must never be where the bytes go. With the home-directory default they simply cannot be.
   const asar = join(TMP, 'app.asar', 'dsh')
-  assert.equal(resolveDataDir({}, HOME, asar), join(HOME, '.dsh', 'cleaner'))
+  assert.equal(resolveDataDir({}, HOME, asar), join(HOME, '.agents', 'cleaner'))
   const besideExecutable = dirname(process.execPath)
-  assert.equal(resolveDataDir({}, HOME, besideExecutable), join(HOME, '.dsh', 'cleaner'))
+  assert.equal(resolveDataDir({}, HOME, besideExecutable), join(HOME, '.agents', 'cleaner'))
   assert.equal(resolveDataDir({}, HOME, besideExecutable).startsWith(besideExecutable + sep), false)
 })
 
 test('the trash is one directory inside the data directory', () => {
   assert.equal(trashRootOf(join(TMP, 'data')), join(TMP, 'data', 'trash'))
   assert.throws(() => trashRootOf(''), /data directory is required/)
-  assert.equal(trashRootOf(resolveDataDir({}, HOME, WORKSPACE)).startsWith(resolve(WORKSPACE, CLEANER_DIR)), true)
+  assert.equal(trashRootOf(resolveDataDir({}, HOME)).startsWith(join(HOME, '.agents', 'cleaner')), true)
 })
 
 test('the config is validated before the plugin registers anything', () => {
