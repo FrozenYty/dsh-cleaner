@@ -452,7 +452,7 @@ test('an id that is already deleted is refused in the answer, not thrown', async
   assert.doesNotMatch(text(tools.get('delete_session_logs'), again), /persistence backend/)
 })
 
-test('a removal that fails gives the archive state back', {
+test('a removal that fails leaves the record where it was, because the files go first', {
   // POSIX refuses to take an entry out of a directory it may not write to; Windows has no portable way to hold
   // a move open, so this runs where it can (CI covers Linux and macOS). Since the deletion is one atomic
   // rename (ADR 0014), the permission that has to be denied is the *parent's*, not the directory's.
@@ -460,27 +460,24 @@ test('a removal that fails gives the archive state back', {
 }, async () => {
   const project = join(ROOT, '--D-ALPHA--')
   await chmod(project, 0o500)
+  const detachment = []
   const registry = {
     archivedSessionIds: [],
-    list: () => [{ sessionIds: ['session-archived-1'], async detachSession() {} }],
-    async archiveSession(id) {
-      this.archivedSessionIds = [...this.archivedSessionIds, id]
-    },
-    async unarchiveSession(id) {
-      this.archivedSessionIds = this.archivedSessionIds.filter((entry) => entry !== id)
-    },
+    list: () => [{
+      sessionIds: ['session-archived-1'],
+      async detachSession(id) { detachment.push(id) },
+    }],
   }
   try {
     const tools = install({ workspaces: registry })
     const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
 
-    // The log is still there, so the session must not stay hidden: the row has to be where it was.
+    // The log is still there, so the row has to be too: the record is written after the files, never before.
     assert.equal(value.removed_count, 0)
     assert.equal(value.failed.length, 1)
-    assert.deepEqual(value.workspace.archived, [])
-    assert.deepEqual(value.workspace.restored, ['session-archived-1'])
-    assert.deepEqual(registry.archivedSessionIds, [])
-    assert.match(text(tools.get('delete_session_logs'), value), /their archive state was put back/)
+    assert.deepEqual(detachment, [], 'nothing was dropped from the workspace record')
+    assert.deepEqual(value.workspace.detached, [])
+    assert.match(text(tools.get('delete_session_logs'), value), /cannot be moved into the trash/)
   } finally {
     await chmod(project, 0o755)
   }

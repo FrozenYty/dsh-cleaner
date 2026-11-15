@@ -454,20 +454,19 @@ async function deleteLogs(ctx, exec, requested) {
   const plan = await planCleanup({ ...paths, protect: protections(ctx, exec), only: ids })
   const target = plan.candidates.map((candidate) => candidate.id)
   const orphans = plan.unlogged
-  // The row leaves because the membership does: `detachSession` is the one write that stops the sidebar drawing
-  // it, for a session with a log and for one that never had any (the blank session's placeholder tests the same
-  // membership). No archive write is made, on purpose — see {@link detachSessions}.
-  const hidden = await detachSessions(ctx, [...target, ...orphans])
   let report
   try {
     // One atomic rename per session: either the store stops holding it or nothing happened, so a session a
     // live writer is holding cannot be left half-removed. The bytes are freed on purge, not here.
     report = await moveToTrash(paths.trashRoot, plan)
   } catch (error) {
-    // Nothing was moved and nothing was archived, so the failure is the caller's to see, unchanged.
+    // Nothing was moved and nothing was written, so the failure is the caller's to see, unchanged.
     throw error
   }
   const removedIds = report.moved.map((entry) => entry.id)
+  // The record is written **after** the files, which is Codex's ordering: a move that fails must leave the row
+  // where it was, and only a session the store really stopped holding may lose its membership.
+  const hidden = await detachSessions(ctx, [...removedIds, ...orphans])
   const drop = [...removedIds, ...orphans]
   // Ask the host what it still lists: that answer is reported either way, and it is the difference between
   // "the host let go" and "the host still holds it in memory".
