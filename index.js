@@ -903,21 +903,27 @@ export function apply(ctx, config) {
   // session is closed, its log is still on disk — and every carrier that runs a command needs one, which is
   // why the row used to do nothing. A route needs nothing but the request.
   //
-  // Contract read from the running Host rather than assumed: `webServer.register({ kind, path, resource })`,
-  // `kind: 'exact' | 'prefix'`, and `resource: (request: Request, peer?) => Promise<Response>`. The prefix is
-  // this plugin's own, so no product route can be shadowed.
+  // Contract read from the running Host rather than assumed: `webServer.register({ kind, path, handler })`,
+  // `kind: 'exact' | 'prefix'`, and `handler: (request: IncomingMessage, response: ServerResponse) => …`. The
+  // paths are this plugin's own, so no product route can be shadowed.
   const registerRoutes = (scope, server) => {
     try {
-      scope.effect(() => server.register({
-        kind: 'prefix',
-        path: ROUTE_PREFIX,
-        resource: (request) => serveRoute(ctx, request),
-      }))
-      windowTransport = `route ${ROUTE_PREFIX} registered`
+      for (const action of ROUTE_ACTIONS) {
+        // **Exact** paths, one per action, and a **handler** rather than a `resource`: the read-only shape is
+        // refused for every method but GET and HEAD before matching, which answers the window's POST with an
+        // empty 405 while the listing says the route is registered. A prefix route at `/dsh-cleaner/` failed
+        // the same way, so both halves of the shape are exact-and-handler on purpose.
+        scope.effect(() => server.register({
+          kind: 'exact',
+          path: `${ROUTE_PREFIX}${action}`,
+          handler: (request, response) => handleRoute(ctx, action, request, response),
+        }))
+      }
+      windowTransport = `routes ${ROUTE_ACTIONS.map((action) => `${ROUTE_PREFIX}${action}`).join(' ')} registered`
     } catch (error) {
-      // Isolated like every other contribution: a carrier that refuses this route costs the sidebar row only,
+      // Isolated like every other contribution: a carrier that refuses these routes costs the sidebar row only,
       // and the listing says so in words.
-      windowTransport = `route not registered (${reasonOf(error)})`
+      windowTransport = `routes not registered (${reasonOf(error)})`
     }
   }
   if (typeof ctx.inject === 'function') ctx.inject(['webServer'], (scope) => registerRoutes(scope, scope.webServer))
@@ -928,46 +934,30 @@ export function apply(ctx, config) {
   }
 }
 
-/** This plugin's own route prefix on the browser's HTTP carrier. */
+/** This plugin's own route prefix on the browser's HTTP carrier, and the actions it serves under it. */
 const ROUTE_PREFIX = '/dsh-cleaner/'
-
-/** A JSON response, the one shape this route answers with. */
-function jsonResponse(value, status = 200) {
-  return new Response(JSON.stringify(value, null, 2), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-  })
-}
+const ROUTE_ACTIONS = ['delete', 'list', 'trash', 'state']
 
 /**
- * The window half's whole protocol, in one function.
+ * Answer one route call.
  *
- * `POST /dsh-cleaner/<action>` with a JSON body:
+ * A **handler** route, not a resource route: `resource` is the read-only shape, and this carrier refuses any
+ * method but GET and HEAD on it *before matching*, with an empty 405 that looks exactly like "the route is not
+ * registered" while every listing says it is. The window has to POST, so the handler shape — which takes the
+ * raw request and answers it itself — is the one that fits.
  *
- * - `delete`  `{ caller, ids }` — the same deletion the tool runs; `caller` is the session the window is
- *   showing, and it is what keeps the running session protected;
- * - `list`    `{}`             — the listing, so the window can show counts without asking a model;
- * - `trash`   `{ caller, op?, ids? }` — `op` is `list`, `restore` or `purge`;
- * - `state`   `{ state }`      — the window's own account of itself, printed by the next listing.
- *
- * Every guard is the one the tools use: this function only chooses a caller and decodes a body.
  * @param ctx - the plugin context.
- * @param request - the Fetch request the carrier hands over.
- * @returns a JSON response; never throws.
+ * @param action - the operation this path serves, taken from the registered path rather than parsed again.
+ * @param request - the Node request.
+ * @param response - the Node response.
  */
-async function serveRoute(ctx, request) {
-  let action = ''
-  try {
-    action = new URL(request.url, 'http://localhost').pathname.slice(ROUTE_PREFIX.length).replace(/\/+$/u, '')
-  } catch {
-    return jsonResponse({ error: 'the request URL cannot be read' }, 400)
-  }
-  if (request.method !== 'POST') return jsonResponse({ error: 'this route answers POST only' }, 405)
+async function handleRoute(ctx, action, request, response) {
+  if (request.method !== 'POST') return respond(response, { error: 'this route answers POST only' }, 405)
   let body
   try {
-    body = await request.json()
-  } catch {
-    return jsonResponse({ error: 'the body must be JSON' }, 400)
+    body = await readJsonBody(request)
+  } catch (error) {
+    return respond(response, { error: `the body must be JSON (${reasonOf(error)})` }, 400)
   }
   const ids = Array.isArray(body?.ids) ? body.ids.filter((id) => typeof id === 'string' && id.length > 0) : []
   // The caller is named by the window, because a route has no Agent of its own. Without one a deletion is
@@ -975,26 +965,57 @@ async function serveRoute(ctx, request) {
   const caller = typeof body?.caller === 'string' && body.caller.length > 0 ? body.caller : undefined
   const exec = { agent: caller === undefined ? undefined : { session: { id: caller } } }
   try {
-    if (action === 'delete') return jsonResponse(await deleteLogs(ctx, exec, ids))
-    if (action === 'list') return jsonResponse(await listLogs(ctx, exec))
+    if (action === 'delete') return respond(response, await deleteLogs(ctx, exec, ids))
+    if (action === 'list') return respond(response, await listLogs(ctx, exec))
     if (action === 'trash') {
       const op = body?.op === 'restore' || body?.op === 'purge' ? body.op : 'list'
-      return jsonResponse(await trashLogs(ctx, exec, op, ids))
+      return respond(response, await trashLogs(ctx, exec, op, ids))
     }
     if (action === 'state') {
       const state = body?.state
       if (state === null || typeof state !== 'object' || Array.isArray(state)) {
-        return jsonResponse({ error: 'state must be a JSON object' }, 400)
+        return respond(response, { error: 'state must be a JSON object' }, 400)
       }
       clientHalf = formatState(state)
-      return jsonResponse({ ok: true, recorded: clientHalf })
+      return respond(response, { ok: true, recorded: clientHalf })
     }
-    return jsonResponse({ error: `unknown action ${action || '(none)'}; use delete, list, trash or state` }, 404)
+    // Every registered path has a branch above, so an unknown action never reaches this function: the carrier
+    // only calls a handler whose exact path matched.
+    /* c8 ignore next */
+    return respond(response, { error: `the route for ${action || '(none)'} has no branch` }, 500)
   } catch (error) {
     // A route that throws takes the whole page down with it, so a failure is an answer here, never a rejection.
-    return jsonResponse({ error: reasonOf(error) }, 500)
+    return respond(response, { error: reasonOf(error) }, 500)
   }
 }
+
+/** The largest body this route will read: the window sends a report, and nothing here is large. */
+const ROUTE_BODY_LIMIT = 1024 * 1024
+
+/** Collect and parse one JSON request body, bounded so a stray upload cannot be read into memory. */
+async function readJsonBody(request) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > ROUTE_BODY_LIMIT) throw new Error('the body is larger than 1 MiB')
+    chunks.push(chunk)
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  return text === '' ? {} : JSON.parse(text)
+}
+
+/** Write one JSON answer. The one shape this route answers with, in one place. */
+function respond(response, value, status = 200) {
+  const body = JSON.stringify(value, null, 2)
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  })
+  response.end(body)
+}
+
 
 /**
  * Whether the human command is registered in the running profile — the one fact a person cannot see on disk.

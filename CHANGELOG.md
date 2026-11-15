@@ -1,3 +1,20 @@
+## [0.5.7] - 2026-11-15
+
+- **Every 405 in this plugin's history had one cause: a `resource` route is read-only.** The carrier serves
+  `resource` routes for GET and HEAD only and refuses any other method **before matching**, with an empty 405
+  that is indistinguishable from "this route does not exist" — while every listing printed `route registered`.
+  The window has to POST, so the carrier now registers **`handler`** routes (`(request, response) => …`) and
+  writes the JSON answer itself.
+- **No process restart is needed for this, or for any later Host-half change.** The base bundle enables HMR in
+  this profile (`include:hmr`, active), and a profile-recomposition replaces plugins whose loaded files changed
+  on disk — including the targets of `link:`ed packages, which is what this bundle is. Writing one comment into
+  the profile's patch triggers it. Verified live, twice: first the listing grew the `Window transport:` line that
+  only this version prints, then `POST /dsh-cleaner/list` answered with the full JSON listing while the process
+  that started hours earlier kept running.
+- The exact-path, handler-shaped registration is asserted in the entry tests, including that a GET still answers
+  this plugin's own 405 rather than the carrier's.
+
+## [0.5.6] - 2026-11-15
 ## [0.5.6] - 2026-11-15
 
 - **A click now hides the row even when there is no log to remove.** A window draws its rows from the workspace
