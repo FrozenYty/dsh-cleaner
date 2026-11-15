@@ -51,9 +51,10 @@ async function writeProjection(id, title) {
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
-function harness({ agents = [], persistence, workspaces, query, commands = true } = {}) {
+function harness({ agents = [], persistence, workspaces, query, commands = true, webServer = true } = {}) {
   const tools = new Map()
   const registered = new Map()
+  const routes = new Map()
   const disposed = []
   const ctx = {
     tools: {
@@ -72,6 +73,15 @@ function harness({ agents = [], persistence, workspaces, query, commands = true 
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
       if (name === 'workspaceRegistry') return workspaces
+      if (name === 'webServer') {
+        if (!webServer) return undefined
+        return {
+          register: (route) => {
+            routes.set(route.path, route)
+            return () => routes.delete(route.path)
+          },
+        }
+      }
       if (name === 'commands') {
         if (!commands) return undefined
         return {
@@ -84,13 +94,13 @@ function harness({ agents = [], persistence, workspaces, query, commands = true 
       return undefined
     },
   }
-  return { ctx, tools, commands: registered, disposed }
+  return { ctx, tools, commands: registered, routes, disposed }
 }
 
 const install = (options) => {
-  const { ctx, tools, commands, disposed } = harness(options)
+  const { ctx, tools, commands, routes, disposed } = harness(options)
   apply(ctx)
-  return Object.assign(tools, { commands, disposed })
+  return Object.assign(tools, { commands, routes, disposed })
 }
 
 const caller = { session: { id: CALLER } }
@@ -130,7 +140,7 @@ after(async () => {
 
 test('the entry registers exactly the listing and the deleting tool', () => {
   const tools = install()
-  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'])
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'])
   for (const tool of tools.values()) {
     assert.equal(typeof tool.execute, 'function')
     assert.equal(tool.parameters.type, 'object')
@@ -627,7 +637,7 @@ test('a candidate that vanishes before the sweep gets its archive state back too
 
   const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-archived-1'] })
   assert.equal(value.removed_count, 0)
-  assert.deepEqual(value.refused, [{ id: 'session-archived-1', reason: 'already deleted; nothing to remove' }])
+  assert.deepEqual(value.refused, [{ id: 'session-archived-1', reason: 'already gone; nothing to move' }])
   assert.deepEqual(value.workspace.archived, [], 'nothing stays hidden for a session that was not removed here')
   assert.deepEqual(value.workspace.restored, ['session-archived-1'])
   assert.deepEqual(registry.archivedSessionIds, [])
@@ -684,37 +694,52 @@ test('the human command is registered with the shape the command registry requir
   assert.match(definition.description, /logs/)
   assert.equal(definition.input.hint.length > 0, true)
   assert.equal(typeof definition.handler, 'function')
-  // The registry owns the definition's lifetime; the plugin registers it as an effect.
-  assert.equal(tools.disposed.length, 1)
-  tools.disposed[0]()
+  // The registry owns the definition's lifetime; the plugin registers it as an effect. Two effects are
+  // registered in a profile with both carriers: the command and the window's route.
+  assert.equal(tools.disposed.length, 2)
+  for (const dispose of tools.disposed) dispose()
   assert.deepEqual([...tools.commands.keys()], [])
+  assert.deepEqual([...tools.routes.keys()], [], 'and the route goes with the plugin')
 })
 
 test('a command registry that mounts after the plugin still gets the command', () => {
   // The registry may appear after this bundle loads. Reading `ctx.get('commands')` once at load missed it
   // silently, which is how the sidebar row came to run a command the host had never heard of — the row was
   // there, the command was not, and nothing said so. `inject` holds the callback until the service exists.
-  let pending
+  let pending = []
   const registered = new Map()
+  const routes = new Map()
   const tools = new Map()
   const ctx = {
     tools: { register: (definition) => { tools.set(definition.name, definition); return () => tools.delete(definition.name) } },
     effect: (callback) => { const disposer = callback(); return () => disposer?.() },
     get: () => undefined,
-    inject: (deps, callback) => { pending = { deps, callback } },
+    inject: (deps, callback) => { pending.push({ deps, callback }) },
   }
 
   apply(ctx)
-  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'], 'the tools are there')
-  assert.deepEqual(pending.deps, ['commands'], 'the registration is waiting for the registry')
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'], 'the tools are there')
+  // Two registrations wait for their service, and both are named: the command a person types, and the route
+  // the window's row uses. A row without that route draws and does nothing, which is the failure this
+  // plugin spent the longest on.
+  assert.deepEqual(pending.map((entry) => entry.deps), [['commands'], ['webServer']], 'both registrations wait for their service')
   assert.equal(registered.size, 0)
+  assert.equal(routes.size, 0)
 
-  // The registry mounts, and the Context runs the callback in a scope that carries the service.
-  pending.callback({
+  // The registries mount, and the Context runs each callback in a scope that carries the service.
+  pending[0].callback({
     commands: { register: (definition) => { registered.set(definition.name, definition); return () => registered.delete(definition.name) } },
     effect: ctx.effect,
   })
   assert.deepEqual([...registered.keys()], ['clean'], 'and then the command is registered')
+
+  pending[1].callback({
+    webServer: { register: (route) => { routes.set(route.path, route); return () => routes.delete(route.path) } },
+    effect: ctx.effect,
+  })
+  assert.deepEqual([...routes.keys()], ['/dsh-cleaner/'], 'and the window has a transport')
+  assert.equal(routes.get('/dsh-cleaner/').kind, 'prefix')
+  assert.equal(typeof routes.get('/dsh-cleaner/').resource, 'function')
 })
 
 test('the command lists without deleting, and deletes only what it is given', async () => {
@@ -798,7 +823,136 @@ test('the command refuses in the answer instead of throwing, and keeps the calle
 
 test('a profile without the commands service still registers its tools', () => {
   const tools = install({ commands: false })
-  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs'])
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'])
   assert.equal(tools.commands.size, 0)
-  assert.deepEqual(tools.disposed, [], 'nothing was registered, so nothing needs disposing')
+  assert.equal(tools.routes.size, 1, 'the window keeps its transport without a command registry')
 })
+
+
+
+/** Call the host route the way the page does: one POST, one JSON answer. */
+async function route(tools, action, body, method = 'POST') {
+  const registered = tools.routes.get('/dsh-cleaner/')
+  assert.ok(registered, 'the window has a transport')
+  const response = await registered.resource(new Request(`http://127.0.0.1:1/dsh-cleaner/${action}`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+  }))
+  return { status: response.status, value: await response.json() }
+}
+
+test('the row deletes through one route call, and the answer says what moved', async () => {
+  // This is the path the sidebar row takes, and the reason it exists: no agent is involved anywhere in it.
+  const tools = install()
+  const { status, value } = await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+
+  assert.equal(status, 200)
+  assert.deepEqual(value.removed.map((entry) => entry.id), ['session-archived-1'])
+  assert.equal(value.removed_bytes, 100)
+  assert.deepEqual(value.trash.recoverable, ['session-archived-1'])
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false, 'out of the store at once')
+})
+
+test('the route refuses a deletion with no caller, and answers instead of rejecting', async () => {
+  // A route has no Agent of its own, so the window names the session it is showing. Without one the guard that
+  // protects the running session would have nothing to compare against.
+  const tools = install()
+  const { status, value } = await route(tools, 'delete', { ids: ['session-archived-1'] })
+  assert.equal(status, 500)
+  assert.match(value.error, /needs a calling Agent/)
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), 'and nothing was touched')
+})
+
+test('the caller the window names is the one the route protects', async () => {
+  const tools = install()
+  const { value } = await route(tools, 'delete', { caller: CALLER, ids: [CALLER] })
+  assert.deepEqual(value.refused.map((entry) => entry.id), [CALLER])
+  assert.equal(value.removed_count, 0)
+})
+
+test('the route lists without deleting, and names the trash in the same answer', async () => {
+  const tools = install()
+  // The caller travels with a listing too: without one there is no running session to protect, and the
+  // window's own session would be offered back as a candidate.
+  const { status, value } = await route(tools, 'list', { caller: CALLER })
+  assert.equal(status, 200)
+  assert.equal(value.candidates.length, 3)
+  assert.deepEqual(value.protected.map((entry) => entry.id), [CALLER])
+  assert.equal(value.window_transport.startsWith('route /dsh-cleaner/ registered'), true)
+  assert.equal(value.trash.count, 0)
+
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
+  const after = (await route(tools, 'list', { caller: CALLER })).value
+  assert.equal(after.candidates.length, 2)
+  assert.equal(after.trash.count, 1)
+  assert.equal(after.trash.bytes, 200)
+})
+
+test('a deleted session can be put back, and only a purge frees its bytes', async () => {
+  // The recovery path a person needs after a mistake, in three calls: delete, restore, purge — each of which
+  // says what it did.
+  const tools = install()
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1', 'session-archived-2'] })
+
+  const held = (await route(tools, 'trash', { op: 'list' })).value
+  assert.equal(held.trash.count, 2)
+
+  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
+  assert.deepEqual(back.restored.map((entry) => entry.id), ['session-archived-1'])
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), 'the backend finds it again')
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), false)
+
+  const purged = (await route(tools, 'trash', { op: 'purge', ids: ['session-archived-2'] })).value
+  assert.deepEqual(purged.purged.map((entry) => entry.id), ['session-archived-2'])
+  assert.equal(purged.purged[0].bytes, 200, 'the bytes are freed here and nowhere earlier')
+  assert.equal((await route(tools, 'trash', { op: 'list' })).value.trash.count, 0)
+})
+
+test('the tool and the command reach the same trash as the route', async () => {
+  const tools = install()
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
+
+  const held = await run(tools.get('trash_session_logs'), { action: 'list' })
+  assert.equal(held.trash.count, 1)
+  assert.match(text(tools.get('trash_session_logs'), held), /Trash: 1 session directory, 200 bytes/)
+
+  const listed = await command(tools, 'trash')
+  assert.match(listed.text, /Trash: 1 session directory/)
+  const restored = await command(tools, 'restore session-archived-2')
+  assert.match(restored.text, /Restored 1 session directory/)
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')))
+})
+
+test('the window reports over the route, and the next listing prints it', async () => {
+  // The self-report is the only way to see the browser half from the host side, and it is a fact a person
+  // needs, so it belongs in the answer they already read.
+  const tools = install()
+  const { status, value } = await route(tools, 'state', { state: { row: 'contributed', register: 'registered', route: 'ok (state)' } })
+  assert.equal(status, 200)
+  assert.equal(value.ok, true)
+
+  const listing = await run(tools.get('list_session_logs'), {})
+  assert.match(text(tools.get('list_session_logs'), listing), /Window half: register=registered {2}row=contributed {2}route=ok \(state\)/)
+})
+
+test('the route answers a wrong method, a wrong body and a wrong action in words', async () => {
+  const tools = install()
+  assert.equal((await route(tools, 'delete', {}, 'GET')).status, 405)
+  assert.equal((await route(tools, 'nonsense', {})).status, 404)
+  const registered = tools.routes.get('/dsh-cleaner/')
+  const broken = await registered.resource(new Request('http://127.0.0.1:1/dsh-cleaner/delete', {
+    method: 'POST',
+    body: 'not json',
+  }))
+  assert.equal(broken.status, 400)
+  assert.match((await broken.json()).error, /must be JSON/)
+})
+
+test('a profile without a web server still registers its tools, and says so in the listing', async () => {
+  const tools = install({ webServer: false })
+  assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'])
+  const listing = await run(tools.get('list_session_logs'), {})
+  assert.match(text(tools.get('list_session_logs'), listing), /Window transport: not registered \(no web server\)/)
+})
+

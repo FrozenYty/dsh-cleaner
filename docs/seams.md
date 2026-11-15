@@ -15,20 +15,23 @@ keep, a decision to change, or a risk we accept with the reason.
 |---|---|---|
 | Listing and deleting for a model | `ctx.tools.register` | two tools, explicit ids ([ADR 0003](adr/0003-two-tools-with-explicit-ids.md)) |
 | Listing and deleting for a person | `ctx.commands.register` `/clean` | same two implementations behind it ([ADR 0011](adr/0011-one-operation-two-callers.md)) |
-| Clicking "delete this session" in the sidebar | `contextMenus.register`, then `sessions.retain(id)` → `binding.session.command(line)` | the row is data; the act is the Client's own session service ([ADR 0013](adr/0013-reuse-the-client-sessions-service.md)) |
+| Clicking "delete this session" in the sidebar | `contextMenus.register`, then `POST /dsh-cleaner/delete` on the route the host half registers with `webServer.register` | the row is data, and the act is one HTTP request — a session-menu row usually names a **closed** session, and no command-based carrier can run without a live agent ([ADR 0013](adr/0013-reuse-the-client-sessions-service.md), [ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md)) |
 | Ctrl+Shift+D | `ctx.shortcuts.register` | the product's platform table, so it is listed and remappable in Settings |
 | The row's label in every language | `ctx.locale.register` / `ctx.locale.bind` | the product's dictionary service; an untranslated language lands on `en` |
 | Hiding the row of a deleted session | `workspaceRegistry.archiveSession` (and `unarchiveSession` to give it back) | never by editing the store, and never by rewriting the sidebar's stored view ([ADR 0006](adr/0006-detach-by-asking.md), [ADR 0012](adr/0012-archive-never-unarchive.md), [ADR 0013](adr/0013-reuse-the-client-sessions-service.md)) |
 | Asking whether a session is busy | `ctx.agents.list()` → `agent.status` | anything that is not exactly `idle` blocks, so an unknown status refuses rather than deletes |
 | The session's own log layout | `dsh-session-persistence-jsonl`, documented in its README | "logs accumulate under `root` until removed externally; the seam has no deletion API" — this plugin is that external step ([ADR 0001](adr/0001-out-of-band-deletion.md)) |
-| A window telling the host what it did | `/clean --state <json>` on the official command, carried by `sessions.retain` | no new transport; the host prints it in a listing a person already reads |
+| A window telling the host what it did | `POST /dsh-cleaner/state` on that same route | no new transport; the host prints it in a listing a person already reads |
+| Showing a restored session again | `workspaceRegistry.unarchiveSession` | called only for ids whose directory really went back — a failed restore must not leave a row visible ([ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md)) |
 
 ## Ours, because no seam exists
 
 | Thing | Why it is ours | How it fails safe |
 |---|---|---|
 | Decoding a session directory name back to a session id | the backend escapes ids "injectively … to one safe path segment" but publishes no id→path API, and a deletion needs a path | a name that does not decode to the id it was looked up as is **skipped**, never guessed ([ADR 0005](adr/0005-re-verify-at-execution.md)) |
-| Removing the directory | the seam has no deletion API; that is the plugin's whole reason to exist | files are unlinked one at a time, the directory is removed last, and every guard is re-checked against the live filesystem first |
+| Removing the directory | the seam has no deletion API; that is the plugin's whole reason to exist | a deletion is one atomic **rename** into `<DSH_HOME>/dsh-cleaner-trash/`, and a purge unlinks file by file, re-checking every guard first ([ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md)) |
+| The trash index (`dsh-cleaner-trash/index.json`) | nothing in the product knows about a recoverable deletion | written atomically, re-read on every operation, and an unreadable index is an error rather than an empty trash |
+| The 30-day retention window | a policy somebody has to choose | applied only by an operation that already changes something; a **listing only reports** what it would do |
 
 ## Accepted risks, with the reason
 

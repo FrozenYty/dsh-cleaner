@@ -36,8 +36,8 @@
  * profile-linked bundle cannot import an @deepseek-ai package (dsh-team ADR 0002).
  */
 
-import { lstat, readdir, readFile, realpath, rmdir, unlink } from 'node:fs/promises'
-import { basename, isAbsolute, join, relative } from 'node:path'
+import { lstat, mkdir, readdir, readFile, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 
 /**
  * Escape one string to a single safe path segment, as `dsh-session-persistence-jsonl` does: safe
@@ -278,7 +278,7 @@ export async function scanStoredSessions(sessionsRoot) {
  * person approved, and every requested id that does not become a candidate is reported in
  * `requested` with the reason.
  * @param options - `{ sessionsRoot, workspaceFile, protect, only }`.
- * @returns a JSON-serialisable plan, consumed by {@link applyCleanup}.
+ * @returns a JSON-serialisable plan, consumed by {@link moveToTrash}.
  */
 export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], only, projections } = {}) {
   if (typeof sessionsRoot !== 'string' || sessionsRoot.length === 0) {
@@ -385,20 +385,90 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
 }
 
 /**
- * Delete the candidates of one plan and report what actually left the disk.
+ * The trash: a sibling of the session store, so that a deletion is **one atomic rename** and the session
+ * stops being a session at once.
  *
- * The archive list is re-read here rather than trusted from the plan: this call is the deliberate
- * act, and an id restored between the listing and now must survive it. Every check the walk made is
- * repeated against the live filesystem, because a plan is a description of the past.
- * @param plan - a plan returned by {@link planCleanup}.
- * @returns `{ removed, removed_bytes, failed, refused }`.
+ * Layout, all of it ours:
+ *
+ * ```
+ * <DSH_HOME>/dsh-cleaner-trash/
+ *   index.json                    { version: 1, entries: [{ id, path, trashed_at, files, bytes, title? }] }
+ *   <stamp>-<encoded-id>/         the session's directory, byte for byte as it was
+ * ```
+ *
+ * Why a rename rather than an unlink: a rename either happens or does not, so a session a live writer is
+ * holding cannot be left half-removed (the per-session kernel lock is not observable from here — see
+ * `docs/seams.md`). The store stops listing the session the moment the rename lands, and the bytes are freed
+ * when the entry is purged, by hand or by the retention sweep.
+ *
+ * `index.json` is written atomically (temp file + rename) and re-read on every operation: it is the only
+ * record of what is in the trash, so it is never trusted from memory.
  */
-export async function applyCleanup(plan) {
-  if (plan === null || typeof plan !== 'object' || !Array.isArray(plan.candidates)) {
-    throw new Error('applyCleanup: pass the plan returned by planCleanup')
+const TRASH_VERSION = 1
+
+/** The trash root for a DSH home, kept beside `sessions/` and never inside it. */
+export function trashRootOf(home) {
+  if (typeof home !== 'string' || home.length === 0) throw new Error('trashRootOf: a DSH home is required')
+  return join(home, 'dsh-cleaner-trash')
+}
+
+/**
+ * Read the trash index.
+ * @param trashRoot - the resolved trash root.
+ * @returns `{ version, entries }`; a missing index is an empty trash, not an error.
+ */
+export async function readTrashIndex(trashRoot) {
+  const file = join(trashRoot, 'index.json')
+  let raw
+  try {
+    raw = await readFile(file, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { version: TRASH_VERSION, entries: [] }
+    throw new Error(`the trash index ${file} cannot be read: ${error?.message ?? error}`)
   }
-  if (typeof plan.sessions_root !== 'string' || typeof plan.workspace_file !== 'string') {
-    throw new Error('applyCleanup: the plan must name its session storage root and workspace storage file')
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    // Refused, never guessed: an index this build cannot read is somebody else's data, and inventing entries
+    // would be worse than saying so.
+    throw new Error(`the trash index ${file} is not JSON: ${error?.message ?? error}`)
+  }
+  const entries = Array.isArray(parsed?.entries) ? parsed.entries : undefined
+  if (entries === undefined) throw new Error(`the trash index ${file} has no entries array`)
+  return {
+    version: typeof parsed.version === 'number' ? parsed.version : TRASH_VERSION,
+    entries: entries.filter((entry) => typeof entry?.id === 'string' && typeof entry?.path === 'string'),
+  }
+}
+
+/** Write the trash index atomically: a reader never sees a half-written file. */
+async function writeTrashIndex(trashRoot, entries) {
+  await mkdir(trashRoot, { recursive: true })
+  const file = join(trashRoot, 'index.json')
+  const temporary = `${file}.${process.pid}.tmp`
+  await writeFile(temporary, `${JSON.stringify({ version: TRASH_VERSION, entries }, null, 2)}\n`, 'utf8')
+  await rename(temporary, file)
+}
+
+/**
+ * Move the planned session directories into the trash, one atomic rename each.
+ *
+ * Every guard the deletion already performed is repeated here against the live filesystem, because a plan is
+ * a description of the past: the directory must still be a real directory inside the store, it must still
+ * hold only regular files, and its name must still be the escaped form of the id it is filed under.
+ * @param trashRoot - where the trash lives.
+ * @param plan - a plan from {@link planCleanup}.
+ * @param now - the timestamp to file the entries under (defaults to the current time).
+ * @returns `{ moved, refused, failed }` — each moved entry names its trash path.
+ */
+export async function moveToTrash(trashRoot, plan, now = new Date()) {
+  if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('moveToTrash: a trash root is required')
+  if (plan === null || typeof plan !== 'object' || !Array.isArray(plan.candidates)) {
+    throw new Error('moveToTrash: pass the plan returned by planCleanup')
+  }
+  if (typeof plan.sessions_root !== 'string' || plan.sessions_root.length === 0) {
+    throw new Error('moveToTrash: the plan must name its session storage root')
   }
   let root
   try {
@@ -406,100 +476,323 @@ export async function applyCleanup(plan) {
   } catch (error) {
     throw new Error(`cannot resolve the session storage root ${plan.sessions_root}: ${error?.message ?? error}`)
   }
-
-  const removed = []
-  const failed = []
+  const stamp = typeof now?.toISOString === 'function' ? now.toISOString().replace(/[:.]/gu, '-') : String(Date.now())
+  const existing = await readTrashIndex(trashRoot)
+  const entries = [...existing.entries]
+  const moved = []
   const refused = []
-  let removedBytes = 0
+  const failed = []
   for (const candidate of plan.candidates) {
-    const outcome = await removeCandidate(candidate, root)
-    if (outcome.kind === 'removed') {
-      const entry = { id: outcome.id, path: outcome.path, files: outcome.files, bytes: outcome.bytes }
-      // The receipt names what was deleted the way the listing did, so a person can confirm the ids were
-      // the sessions they meant.
-      if (outcome.title !== undefined) entry.title = outcome.title
-      removed.push(entry)
-      removedBytes += outcome.bytes
-    } else if (outcome.kind === 'refused') {
-      refused.push({ id: outcome.id, reason: outcome.reason })
-    } else {
-      failed.push({ id: outcome.id, path: outcome.path, error: outcome.error, bytes_freed: outcome.bytesFreed })
-      removedBytes += outcome.bytesFreed
+    const check = await checkCandidate(candidate, root)
+    if (check.kind !== 'ok') {
+      const bucket = check.kind === 'refused' ? refused : failed
+      bucket.push(check.kind === 'refused'
+        ? { id: check.id, reason: check.reason }
+        : { id: check.id, path: check.path, error: check.error })
+      continue
     }
+    const folder = `${stamp}-${encodeSegment(check.id)}`
+    const trashPath = join(trashRoot, folder)
+    try {
+      await mkdir(trashRoot, { recursive: true })
+      await rename(check.path, trashPath)
+    } catch (error) {
+      failed.push({ id: check.id, path: check.path, error: `cannot be moved into the trash: ${error?.message ?? error}` })
+      continue
+    }
+    const entry = {
+      id: check.id,
+      // The original path is recorded so a restore puts the directory back where the backend looks for it.
+      path: check.path,
+      trashed_at: new Date().toISOString(),
+      files: check.files,
+      bytes: check.bytes,
+      folder,
+    }
+    if (candidate.title !== undefined) entry.title = candidate.title
+    entries.push(entry)
+    moved.push({
+      id: check.id,
+      path: check.path,
+      trash_path: trashPath,
+      files: check.files,
+      bytes: check.bytes,
+      // Only when there is one: a key holding `undefined` still answers `'title' in entry`, and the answer
+      // would claim a title the cache never had.
+      ...(candidate.title === undefined ? {} : { title: candidate.title }),
+    })
   }
-  return { removed, removed_bytes: removedBytes, failed, refused }
+  await writeTrashIndex(trashRoot, entries)
+  return { moved, refused, failed }
 }
 
 /**
- * Remove one session directory, or explain why not. Never throws: a failure belongs in the report
- * beside the candidates that did work, and an interrupted deletion is still described truthfully.
+ * Check one planned candidate against the live filesystem, without touching it.
  * @param candidate - one entry of `plan.candidates`.
  * @param root - the resolved session storage root.
- * @returns `{ kind: 'removed'|'refused'|'failed', ... }`.
+ * @returns `{ kind: 'ok', id, path, files, bytes }` or a refusal/failure with the reason.
  */
-async function removeCandidate(candidate, root) {
+async function checkCandidate(candidate, root) {
   const id = candidate?.id
   const path = candidate?.path
   if (typeof id !== 'string' || typeof path !== 'string') {
     return { kind: 'refused', id: String(id), reason: 'the plan entry has no usable id or path' }
   }
-  // The id and the path have to describe the same session, or the report names the wrong one. Inside a
-  // plan this file produced they always agree, because the scan looks the directory up by the encoded
-  // id; the check is here so that a plan is held to it too.
   if (basename(path) !== encodeSegment(id)) {
+    // The id and the path must describe the same session, or every record this makes names the wrong one.
     return { kind: 'refused', id, reason: `the path names a different session (${basename(path)})` }
   }
-
   let info
   try {
     info = await lstat(path)
   } catch (error) {
-    if (error?.code === 'ENOENT') return { kind: 'refused', id, reason: 'already deleted; nothing to remove' }
-    return { kind: 'failed', id, path, error: `cannot be inspected: ${error?.message ?? error}`, bytesFreed: 0 }
+    if (error?.code === 'ENOENT') return { kind: 'refused', id, reason: 'already gone; nothing to move' }
+    return { kind: 'failed', id, path, error: `cannot be inspected: ${error?.message ?? error}` }
   }
-  if (!info.isDirectory()) return { kind: 'refused', id, reason: 'not a real directory; a link is not followed' }
-
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    // A junction reports as a directory through `lstat` on Windows, so the link is named explicitly: this
+    // plugin moves directories it owns, never the tree a link points at.
+    return { kind: 'refused', id, reason: `${info.isSymbolicLink() ? 'a link' : 'not a real directory'}; a link is not followed` }
+  }
   let resolved
   try {
     resolved = await realpath(path)
   } catch (error) {
-    return { kind: 'failed', id, path, error: `cannot be resolved: ${error?.message ?? error}`, bytesFreed: 0 }
+    return { kind: 'failed', id, path, error: `cannot be resolved: ${error?.message ?? error}` }
   }
   const inside = relative(root, resolved)
   if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
     return { kind: 'refused', id, reason: `resolves outside the session storage root (${resolved})` }
   }
-
   const reading = await readDirectoryFiles(path)
   if (!reading.ok) return { kind: 'refused', id, reason: reading.reason }
-
-  // Unlink one regular file at a time. `rm -r` would be shorter, and would also decide what to do
-  // with a link that appeared between the listing above and now; this way the decision stays here.
-  let bytesFreed = 0
-  let count = 0
+  let bytes = 0
   for (const name of reading.files) {
-    const file = join(path, name)
+    const stat = await lstat(join(path, name))
+    if (!stat.isFile()) return { kind: 'refused', id, reason: `${name} is not a regular file` }
+    bytes += stat.size
+  }
+  return { kind: 'ok', id, path, files: reading.files.length, bytes }
+}
+
+/**
+ * What the trash holds, with the retention sweep applied on the way through.
+ *
+ * There is no timer anywhere in this plugin (ADR 0001): retention is enforced when somebody looks or acts,
+ * which is the only moment it can matter.
+ * @param trashRoot - the resolved trash root.
+ * @param options - `{ sessionsRoot?, purgeAfterDays?, now? }`.
+ * @returns `{ entries, purged, missing }`: entries still held, entries just purged, entries whose directory
+ * vanished behind our back.
+ */
+export async function listTrash(trashRoot, { sessionsRoot, purgeAfterDays = 0, now = new Date() } = {}) {
+  if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('listTrash: a trash root is required')
+  const { entries } = await readTrashIndex(trashRoot)
+  const running = []
+  const missing = []
+  for (const entry of entries) {
+    const folder = typeof entry.folder === 'string' ? entry.folder : undefined
+    const held = folder === undefined ? undefined : join(trashRoot, folder)
+    let present = false
+    if (held !== undefined) {
+      try {
+        present = (await lstat(held)).isDirectory()
+      } catch {
+        present = false
+      }
+    }
+    running.push({ entry, held, present })
+    if (!present) missing.push(entry.id)
+  }
+  const purged = []
+  let kept = running
+  if (purgeAfterDays > 0) {
+    const cutoff = now.getTime() - purgeAfterDays * 86_400_000
+    const expired = running.filter(({ entry }) => {
+      const at = Date.parse(String(entry.trashed_at ?? ''))
+      return Number.isFinite(at) && at <= cutoff
+    })
+    for (const { entry, held } of expired) {
+      if (held === undefined) continue
+      const outcome = await purgeDirectoryIn(trashRoot, held)
+      purged.push({ id: entry.id, bytes: outcome.bytes, error: outcome.error })
+    }
+    const dropped = new Set(expired.map(({ entry }) => entry.id))
+    kept = running.filter(({ entry }) => !dropped.has(entry.id))
+    if (dropped.size > 0) {
+      await writeTrashIndex(trashRoot, kept.filter(({ present }) => present).map(({ entry }) => entry))
+    }
+  }
+  return {
+    entries: kept.filter(({ present }) => present).map(({ entry }) => entry),
+    purged,
+    missing,
+    sessions_root: sessionsRoot,
+  }
+}
+
+/**
+ * Put trashed sessions back where the backend looks for them.
+ *
+ * A restore is the one place this plugin unarchives, and it is the reason the archive flag is not a lie: a
+ * deletion hides a row, a restore brings it back ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)).
+ * @param trashRoot - the resolved trash root.
+ * @param sessionsRoot - the store the directory has to go back into.
+ * @param ids - the session ids to restore.
+ * @returns `{ restored, refused, failed }`.
+ */
+export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
+  if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('restoreFromTrash: a trash root is required')
+  if (typeof sessionsRoot !== 'string' || sessionsRoot.length === 0) throw new Error('restoreFromTrash: a session storage root is required')
+  if (!Array.isArray(ids) || ids.length === 0) throw new Error('restoreFromTrash: name at least one session id')
+  let storeRoot
+  try {
+    storeRoot = await realpath(sessionsRoot)
+  } catch (error) {
+    throw new Error(`cannot resolve the session storage root ${sessionsRoot}: ${error?.message ?? error}`)
+  }
+  const { entries } = await readTrashIndex(trashRoot)
+  const wanted = new Set(ids.map(String))
+  const restored = []
+  const refused = []
+  const failed = []
+  const remaining = []
+  for (const entry of entries) {
+    if (!wanted.has(entry.id)) {
+      remaining.push(entry)
+      continue
+    }
+    const target = entry.path
+    // The index is ours, but it is still data on disk: a target outside the store is refused rather than
+    // created, so a tampered index cannot write anywhere.
+    const inside = relative(storeRoot, target)
+    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+      refused.push({ id: entry.id, reason: `the recorded path is outside the session storage root (${target})` })
+      remaining.push(entry)
+      continue
+    }
+    const held = join(trashRoot, String(entry.folder ?? ''))
+    let info
+    try {
+      info = await lstat(held)
+    } catch (error) {
+      failed.push({ id: entry.id, error: `the trashed directory is gone: ${error?.message ?? error}` })
+      continue
+    }
+    if (!info.isDirectory()) {
+      refused.push({ id: entry.id, reason: 'the trashed entry is not a directory' })
+      remaining.push(entry)
+      continue
+    }
+    // Decided before the rename, not from its error: on Windows moving onto an occupied directory reports
+    // EPERM, which is also what "in use" reports, and this plugin never overwrites what it did not put there.
+    let occupied
+    try {
+      occupied = await lstat(target)
+    } catch {
+      occupied = undefined
+    }
+    if (occupied !== undefined) {
+      refused.push({ id: entry.id, reason: `a directory already occupies ${target}, so this restore would overwrite it` })
+      remaining.push(entry)
+      continue
+    }
+    try {
+      await mkdir(dirname(target), { recursive: true })
+      await rename(held, target)
+    } catch (error) {
+      failed.push({ id: entry.id, error: `cannot be put back at ${target}: ${error?.message ?? error}` })
+      remaining.push(entry)
+      continue
+    }
+    restored.push({ id: entry.id, path: target, files: entry.files, bytes: entry.bytes, title: entry.title })
+  }
+  await writeTrashIndex(trashRoot, remaining)
+  return { restored, refused, failed }
+}
+
+/**
+ * Free the bytes of trashed sessions for good.
+ * @param trashRoot - the resolved trash root.
+ * @param ids - the session ids to purge; `[]` is refused, because "purge everything" is not an id anybody
+ * could have approved.
+ * @returns `{ purged, refused, failed }` with the bytes each purge freed.
+ */
+export async function purgeTrash(trashRoot, ids) {
+  if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('purgeTrash: a trash root is required')
+  if (!Array.isArray(ids) || ids.length === 0) throw new Error('purgeTrash: name at least one session id')
+  const { entries } = await readTrashIndex(trashRoot)
+  const wanted = new Set(ids.map(String))
+  const purged = []
+  const refused = []
+  const failed = []
+  const remaining = []
+  for (const entry of entries) {
+    if (!wanted.has(entry.id)) {
+      remaining.push(entry)
+      continue
+    }
+    const held = join(trashRoot, String(entry.folder ?? ''))
+    const outcome = await purgeDirectoryIn(trashRoot, held)
+    if (outcome.error !== undefined) {
+      failed.push({ id: entry.id, error: outcome.error, bytes_freed: outcome.bytes })
+      remaining.push(entry)
+      continue
+    }
+    purged.push({ id: entry.id, bytes: outcome.bytes, files: entry.files, title: entry.title })
+  }
+  await writeTrashIndex(trashRoot, remaining)
+  return { purged, refused, failed }
+}
+
+/**
+ * Remove one directory tree that lives inside the given root, one regular file at a time.
+ *
+ * `rm -r` would be shorter, and would also decide what to do with a link that appeared since the listing; this
+ * way the decision stays here, and the bytes reported are the bytes measured on files that really went
+ * ([ADR 0004](docs/adr/0004-refuse-links.md)).
+ * @param root - the directory the tree must stay inside.
+ * @param path - the directory to remove.
+ * @returns `{ bytes, files, error? }`; a partial removal still reports what it freed.
+ */
+async function purgeDirectoryIn(root, path) {
+  let resolvedRoot
+  let resolvedPath
+  try {
+    resolvedRoot = await realpath(root)
+    resolvedPath = await realpath(path)
+  } catch (error) {
+    return { bytes: 0, files: 0, error: `cannot be resolved: ${error?.message ?? error}` }
+  }
+  const inside = relative(resolvedRoot, resolvedPath)
+  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+    return { bytes: 0, files: 0, error: `resolves outside ${resolvedRoot}` }
+  }
+  const reading = await readDirectoryFiles(resolvedPath)
+  if (!reading.ok) return { bytes: 0, files: 0, error: reading.reason }
+  let bytes = 0
+  let files = 0
+  for (const name of reading.files) {
+    const file = join(resolvedPath, name)
     let before
     try {
       before = await lstat(file)
     } catch (error) {
-      return { kind: 'failed', id, path, error: `cannot be inspected (${name}): ${error?.message ?? error}`, bytesFreed }
+      return { bytes, files, error: `cannot be inspected (${name}): ${error?.message ?? error}` }
     }
-    if (!before.isFile()) {
-      return { kind: 'failed', id, path, error: `${name} is no longer a regular file`, bytesFreed }
-    }
+    if (!before.isFile()) return { bytes, files, error: `${name} is no longer a regular file` }
     try {
       await unlink(file)
     } catch (error) {
-      return { kind: 'failed', id, path, error: `cannot be removed (${name}): ${error?.message ?? error}`, bytesFreed }
+      return { bytes, files, error: `cannot be removed (${name}): ${error?.message ?? error}` }
     }
-    bytesFreed += before.size
-    count += 1
+    bytes += before.size
+    files += 1
   }
   try {
-    await rmdir(path)
+    await rmdir(resolvedPath)
   } catch (error) {
-    return { kind: 'failed', id, path, error: `the directory could not be removed: ${error?.message ?? error}`, bytesFreed }
+    return { bytes, files, error: `the directory could not be removed: ${error?.message ?? error}` }
   }
-  return { kind: 'removed', id, path, files: count, bytes: bytesFreed, title: candidate.title }
+  return { bytes, files }
 }

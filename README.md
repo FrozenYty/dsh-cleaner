@@ -12,14 +12,16 @@ English | [中文](README-zh.md)
 
 A DeepSeek Harness profile bundle for the one thing the product does not do: remove a session's log. It
 lists what is still on disk, waits while a person decides, deletes exactly the ids they approve, and
-reports the bytes reclaimed. No schedule, no age threshold, no background sweep, and **no need to archive
-first** — archiving is how the sidebar hides a session, not a permission to delete one.
+reports what left the store. A deletion takes the session out of the store at once and keeps its directory
+in a trash for 30 days, so a mistake is recoverable by name. No schedule, no age threshold, no background
+sweep, and **no need to archive first** — archiving is how the sidebar hides a session, not a permission to
+delete one.
 
 [github.com/FrozenYty/dsh-cleaner](https://github.com/FrozenYty/dsh-cleaner)
 
 ## Status
 
-- Current version: v0.2.19.
+- Current version: v0.3.0.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -53,13 +55,18 @@ rule:
 threshold and no background sweep in this plugin, and a profile cannot configure one into it. Removal
 happens only inside a tool call, after a person has seen the list.
 
-The two tools are the three steps:
+The tools are the three steps:
 
 | Step | Tool | What it does |
 |---|---|---|
 | list | `list_session_logs` | Lists the sessions whose logs are on disk, with each one's bytes, file count, last write and whether it is archived. No argument, no side effect — calling it can never be a mistake. |
 | confirm | — | The person reads the list and approves ids. Nothing happens during this step. |
-| delete | `delete_session_logs` | Takes the approved ids by name, removes those session directories, and reports the bytes reclaimed. |
+| delete | `delete_session_logs` | Takes the approved ids by name and moves those session directories out of the store in one atomic rename each. The session is gone from the store at once; its bytes are held in the trash until they are purged. |
+| recover | `trash_session_logs` | `action: "list"` shows what the trash holds; `"restore"` puts the named directories back where the backend looks for them and unarchives them; `"purge"` frees their bytes for good. The only step that frees bytes is `purge`. |
+
+A deletion is therefore **reversible for 30 days**, and the retention sweep is not a timer: entries past that
+window are freed by the next deletion, restore or purge, and a listing only *reports* what it would do — a
+listing must never be able to destroy anything ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)).
 
 `delete_session_logs` requires the ids, so nothing is ever deleted by default and a subset can be
 approved. Archived and unarchived sessions are both deletable; what it refuses, and reports instead of
@@ -74,7 +81,10 @@ and it is typed with a leading slash:
 
 ```
 /clean                     → the listing, as text in the transcript
-/clean <id> <id> …         → deletes exactly those, and reports the bytes
+/clean <id> <id> …         → deletes exactly those
+/clean trash               → what the trash holds, and how long it is kept
+/clean restore <id> …      → puts those back, and unarchives them
+/clean purge <id> …        → frees their bytes for good
 ```
 
 It runs through the host's command registry (`ctx.remote.commands.execute`), which resolves the command
@@ -86,8 +96,19 @@ A session's own **⋯ menu** carries the same thing as one row — *删除会话
 language, drawn in the same red as 删除工作区, with the trash glyph the product registers for it, seated
 directly after 分叉会话 and before 复制 Session ID (`order: 350`). It is a data contribution to the menu, not a
 renderer: the bundle supplies the label, the icon key and the click, and the sidebar draws it like its own
-actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the click, with Ctrl+Shift+D printed beside the label once the shortcut catalogue holds it. **Ctrl+Shift+D** (⌘⇧D on macOS) does the same for the session the window is showing — a real binding in
-the product's shortcut table, so it appears in the shortcut settings and can be remapped there.
+actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the
+click, with Ctrl+Shift+D printed beside the label once the shortcut catalogue holds it. **Ctrl+Shift+D** (⌘⇧D
+on macOS) does the same for the session the window is showing — a real binding in the product's shortcut
+table, so it appears in the shortcut settings and can be remapped there.
+
+The window reaches the host over **one HTTP route the host half registers** —
+`POST /dsh-cleaner/{delete,list,trash,state}` on the product's own web carrier. That is not a preference: a
+sidebar row usually acts on a session that is **closed**, and every carrier that runs a command needs a live
+agent to run it in. A route needs nothing but the request, and the caller travels in the body as the session
+the window is showing, which is what keeps the running session protected on this path too
+([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). Every listing prints what that
+transport is (`Window transport: route /dsh-cleaner/ registered`), because a row that is drawn and cannot act
+looks exactly like one that works.
 
 ## Install
 
@@ -178,17 +199,19 @@ registry to detach the deleted ids from their project and to archive them, which
 away ([ADR 0006](docs/adr/0006-detach-by-asking.md)). Archiving is the lever, not a tidiness step: the
 sidebar draws no archived session, and the registry publishes the change to every open window, so **the row
 disappears at once — no reload, no restart, no sort switch**
-([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). Never unarchiving is the point: that call belongs
-to a restore, and it is what used to put a deleted session's row back on screen. The bundle's browser half
-carries the same `/clean` command from the sidebar and from Ctrl+Shift+D, through the Client's own
-`sessions` service ([ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)).
+([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). A *deletion* never unarchives: that call belongs to
+a **restore**, and it is what used to put a deleted session's row back on screen — now it is exactly what a
+restore is for ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). The bundle's browser
+half carries the same operation from the sidebar and from Ctrl+Shift+D, over the route the host half
+registers ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)).
 
 ## What it does not do
 
-- **No unarchive, no re-archive, no pinning.** It removes logs and nothing else, then asks for the two
-  record changes that make the row disappear: detach it from its project, archive it. The second one is
-  why a deletion needs no reload — an archived session is never drawn
-  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). The plugin writes no workspace record itself
+- **No re-archive, no pinning.** A deletion asks for the two record changes that make the row disappear:
+  detach the session from its project, archive it. The second one is why a deletion needs no reload — an
+  archived session is never drawn ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). The only
+  `unarchiveSession` call in this plugin belongs to a restore, and it runs only for the ids whose directory
+  actually went back. The plugin writes no workspace record itself
   ([ADR 0006](docs/adr/0006-detach-by-asking.md)).
 - **Never a session whose work is running.** The session executing the command is always kept, and so is
   any session whose agent is busy; the refusal names the status (`a live agent holds this session (status:
@@ -370,6 +393,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
+| How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | Why is there a command as well as a tool? | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |

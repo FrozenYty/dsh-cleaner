@@ -21,12 +21,13 @@ import test, { before, beforeEach, after } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import {
-  applyCleanup,
   decodeSegment,
   encodeSegment,
+  moveToTrash,
   planCleanup,
   readArchivedIds,
   scanStoredSessions,
+  trashRootOf,
 } from '../engine.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -46,6 +47,27 @@ const LIVE = { id: 'session-live-1', project: '--D-ALPHA--', files: { 'session.v
 /** Every session directory the fixture stores, in the order a person would not care about. */
 const STORED_IDS = [...ARCHIVED_IDS, LIVE.id, 'session-empty-1']
 const STORED_BYTES = ARCHIVED_BYTES + 777
+
+/** The fixture's own trash, beside the fixture's store and never inside it. */
+const TRASH = trashRootOf(TMP)
+
+/**
+ * The deletion path, as the host runs it: a plan whose candidates are moved into a fixture trash.
+ *
+ * A deletion is one atomic rename out of the store ([ADR 0014](../docs/adr/0014-route-transport-and-recoverable-deletion.md)),
+ * so a test that says "removed" means exactly that — taken out of the session store — and the report is mapped
+ * into the names these assertions read. Freeing the bytes is `purgeTrash`'s job, covered by trash.test.mjs.
+ */
+async function applyCleanup(plan) {
+  const report = await moveToTrash(TRASH, plan)
+  return {
+    removed: report.moved,
+    removed_bytes: report.moved.reduce((sum, entry) => sum + entry.bytes, 0),
+    failed: report.failed.map((entry) => ({ ...entry, bytes_freed: 0 })),
+    refused: report.refused,
+  }
+}
+
 
 /** Write one session directory exactly as the JSONL backend lays it out. */
 async function writeSession({ id, project, files }, root = ROOT) {
@@ -388,7 +410,7 @@ test('a candidate that vanished between the listing and the deletion is refused,
   const report = await applyCleanup(listing)
 
   assert.deepEqual(ids(report.removed), ['session-archived-1', 'session-archived-2'])
-  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'already deleted; nothing to remove' }])
+  assert.deepEqual(report.refused, [{ id: 'session-archived-3', reason: 'already gone; nothing to move' }])
   assert.deepEqual(report.failed, [])
 })
 
@@ -569,3 +591,5 @@ test('the scanner reports what it found without deciding anything', async () => 
   assert.equal(absent.stored.size, 0)
   assert.equal(absent.skipped.length, 1)
 })
+
+

@@ -7,6 +7,29 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.3.0] - 2026-11-15
+
+- **The sidebar row works, because the window now has a transport that does not need an agent.** The host half
+  registers one route on the product's own web carrier — `prefix /dsh-cleaner/` — and answers
+  `POST /dsh-cleaner/{delete,list,trash,state}`. Every earlier attempt failed for the same reason: a command
+  needs a **live** agent, and the session behind a sidebar row is usually closed. The window sends the session
+  it is showing as `caller`, which is what keeps the running session protected on this path too. The
+  community plugin that does this same job reaches its host the same way
+  ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)).
+- **A deletion is recoverable for 30 days.** Each session directory is moved out of the store in **one atomic
+  rename** into `<DSH_HOME>/dsh-cleaner-trash/`, with an `index.json` beside it. The store stops holding the
+  session at once — which is what the row needs — and the bytes are freed only by a purge. This also removes
+  the "half-removed session" failure mode: a rename either happens or does not.
+- **New surface: `trash_session_logs`** (`action: list | restore | purge`) and `/clean trash | restore | purge`.
+  A restore puts the directory back where the backend looks for it and unarchives it — the one place this
+  plugin calls `unarchiveSession`, and the reason a deletion still never unarchives.
+- **Retention is not a timer.** Entries past 30 days are freed by the next deletion, restore or purge; a
+  listing only *reports* what that sweep would do, because a listing must never be able to destroy anything.
+- The listing now carries two more facts a person needs: what the trash holds (`Trash: …`), and which transport
+  the window has (`Window transport: …`) — a row that is drawn and cannot act looks exactly like one that works.
+- `applyCleanup` and the per-candidate unlink path are gone; `moveToTrash` is the deletion and `purgeTrash` is
+  the only thing that removes files.
+
 ## [0.2.19] - 2026-11-15
 
 - **The real cause, at last: this build's client root has no `remote` service.** Every `ctx.remote.*` call the

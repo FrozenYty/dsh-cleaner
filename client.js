@@ -1,21 +1,24 @@
 /**
  * The browser half: one row in a session's menu, one keystroke, and a report about itself.
  *
- * What it does **not** do any more: repair the sidebar's stored view. That repair was built on
- * `ctx.remote.session.list`, and this build's client root has no `remote` service at all — the client
- * service directory lists `sessions`, `uiWorkspace`, `workspaces`, `layout`, `locale`, `slots`, `theme` and
- * `timer`, and nothing else — so every call through it threw and was swallowed. A deleted session's row is
- * hidden by the **archive write** the host half performs (the sidebar never draws an archived session), and
- * that is the official seam. Superseded decision: docs/adr/0013-reuse-the-client-sessions-service.md.
+ * How it reaches the host: **an HTTP route** — `POST /dsh-cleaner/<action>` on the product's own web carrier,
+ * registered by the host half. This is the third and finally correct answer to the same question, and the
+ * reason the first two failed is worth writing down:
  *
- * Everything here therefore goes through a service that exists on the client root:
+ * - `ctx.remote.*` does not exist on this build's client root (the directory lists `layout`, `locale`,
+ *   `sessions`, `slots`, `theme`, `timer`, `uiWorkspace`, `workspaces`), so every call through it threw and
+ *   was swallowed;
+ * - a *command* — carried by `ctx.sessions.retain(id)` or by any other agent-scoped handle — needs a live
+ *   agent, and the session behind a sidebar row is usually **closed**: its log is on disk and nothing holds it,
+ *   which is exactly the session a person wants to delete.
  *
- * - `contextMenus.register` for the row;
- * - `locale.register` / `locale.bind` for its label;
- * - `shortcuts.register` for Ctrl+Shift+D;
- * - `sessions.retain(id, { source })` → `binding.session.command(line)` for the click and the report — the
- *   same admission the composer runs, and the only client-side way to act on a session this window is not
- *   showing.
+ * A route needs neither. The shipped community plugin that does this same job
+ * (`TOBYCAI/dsh-sessions-manager`) posts to its own `/archived-sessions/*` routes for the same reason.
+ *
+ * What it does **not** do: repair the sidebar's stored view. That was 0.2.x's job and it never ran, because the
+ * call it needed does not exist here; a deleted session's row is hidden by the **archive write** the host half
+ * performs ([ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md),
+ * [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)).
  */
 
 window.__ModuleLoader__.load({
@@ -24,27 +27,36 @@ window.__ModuleLoader__.load({
     const SHORTCUT_ID = 'session.delete-log'
     const LOCALE_NS = 'dsh-cleaner'
     const LABEL_KEY = 'session.delete'
+    /** The host half's route prefix, and the only channel this half has. */
+    const ROUTE = '/dsh-cleaner/'
 
     /**
      * A one-line reason from anything that was thrown.
      *
-     * `error instanceof Error` is false for an error built in another realm — the page's own — so the message
-     * field is read directly when it is a string. Without this a report says "Error: …" and the reader has to
-     * guess which half of the line is the reason.
+     * `error instanceof Error` is false for an error built in another realm, so the message field is read
+     * directly when it is a string.
      */
     const reasonOf = (error) => (typeof error?.message === 'string' ? error.message : String(error))
+
+    /**
+     * A refusal survives a later report.
+     *
+     * `report()` recomputes what each service looked like, and would otherwise overwrite "refused: …" with
+     * "not contributed" — turning the one sentence that explains a failure into the symptom it explains.
+     */
+    const keepRefusal = (value, fallback) => (typeof value === 'string' && value.startsWith('refused:') ? value : fallback)
 
     return {
       /**
        * @param ctx - the browser plugin context. No declared dependencies: every service is optional and read
-       * lazily, so a profile without one of them still gets the rest — that rule has already earned its keep.
+       * lazily, so a profile without one of them still gets the rest.
        */
       apply(ctx) {
         /**
-         * Everything this half knows about itself, sent to the host so that a listing can print it.
+         * Everything this half knows about itself, sent to the host so a listing can print it.
          *
-         * It exists because a browser half that loads but contributes nothing looks exactly like one that
-         * never loaded, and that confusion cost several releases: the row was missing and nothing said why.
+         * It exists because a browser half that loads but contributes nothing looks exactly like one that never
+         * loaded, and that confusion cost several releases.
          */
         const state = {
           inject: typeof ctx.inject === 'function',
@@ -54,7 +66,7 @@ window.__ModuleLoader__.load({
           menu: 'not asked',
           dictionary: 'not asked',
           row: 'not contributed',
-          transport: 'not attempted',
+          route: 'not called',
           current: 'not read',
           lastClick: 'none',
           fatal: undefined,
@@ -66,8 +78,8 @@ window.__ModuleLoader__.load({
          * The row's label in the window's language, through the product's own dictionary service.
          *
          * `ctx.locale.register(ns, { en, zh })` contributes the strings and `ctx.locale.bind(ns)` reads them
-         * back with the product's fallback chain (any language we do not translate lands on `en`). A locale
-         * service that cannot answer costs the language, never the item.
+         * back with the product's fallback chain. A locale service that cannot answer costs the language,
+         * never the item.
          */
         const label = () => {
           try {
@@ -95,9 +107,8 @@ window.__ModuleLoader__.load({
         /**
          * The session the window is looking at, read from the sidebar's own persisted selection.
          *
-         * The workspace plugin keeps it in `dsh.sessions.current` as `{ sessionId, subagentAddress? }` (read
-         * out of that package's client half, not guessed). This is also the session that carries the command:
-         * a command needs an agent, and the session in front of the person always has one.
+         * It travels with every request as `caller`, because the host protects the session it is running for:
+         * without a caller a deletion is refused, exactly as a tool call without an agent is.
          */
         const currentSessionId = () => {
           try {
@@ -110,57 +121,62 @@ window.__ModuleLoader__.load({
         }
 
         /**
-         * Act on a session the official way: retain it, use the binding it hands back, release it.
-         *
-         * `ctx.sessions.retain(id, { source })` returns a reference whose `ready` resolves to a
-         * `SessionBinding`, and `binding.session.command(line)` is the admission the composer runs —
-         * `ISession.command(line): { ok, value: { matched } }`. Retaining also starts an initial history open,
-         * which is why a session nobody had open still gets a live binding: that is what makes the row work
-         * for a closed session.
+         * Ask the host half to do something. One function, because there is one channel.
+         * @param action - `delete`, `list`, `trash` or `state`, appended to the prefix.
+         * @param body - the JSON request body.
+         * @returns the parsed answer, or `{ error }` — this never rejects, so a caller can always report.
          */
-        const withSession = async (sessionId, operation) => {
-          const sessions = ctx.get('sessions')
-          if (sessions === undefined || typeof sessions.retain !== 'function') {
-            state.transport = 'no sessions service'
-            return undefined
-          }
-          let reference
+        const post = async (action, body) => {
           try {
-            reference = sessions.retain(sessionId, { source: 'gateway' })
-            const binding = await reference.ready
-            return await operation(binding)
-          } catch (error) {
-            state.transport = `failed: ${reasonOf(error)}`
-            return undefined
-          } finally {
+            const response = await window.fetch(ROUTE + action, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body ?? {}),
+              // The product's carrier authenticates with its own cookie; same-origin keeps it on the request.
+              credentials: 'same-origin',
+            })
+            const text = await response.text()
+            let parsed
             try {
-              reference?.release()
+              parsed = text === '' ? {} : JSON.parse(text)
             } catch {
-              // A reference that cannot be released must not cost the result.
+              return { error: `the host answered ${response.status} with something that is not JSON` }
             }
+            if (!response.ok) return { error: String(parsed?.error ?? `the host answered ${response.status}`), status: response.status }
+            state.route = `ok (${action})`
+            return parsed
+          } catch (error) {
+            state.route = `failed: ${reasonOf(error)}`
+            return { error: reasonOf(error) }
           }
         }
 
         /**
-         * Run the deletion for one session: the same command the tool and the composer run.
+         * Run the deletion for one session: the same operation the tool and the command run, over the route.
          *
-         * The carrier is the session the window is showing, and the target is passed **as an argument**, so
-         * the receipt appears where the person is looking and the running session stays the protected caller.
+         * The target is named exactly once — in the body — and the caller is the session in front of the person,
+         * so the running session stays protected and the answer lands where they are looking.
          */
         const runClean = (sessionId) => {
-          const carrier = currentSessionId()
-          if (carrier === undefined) {
-            state.lastClick = 'no session is open to carry the command'
+          const caller = currentSessionId()
+          if (caller === undefined) {
+            state.lastClick = 'no session is open to name as the caller'
+            // Reported even though the click did nothing: the report needs no caller, and this is the only way
+            // the next listing can say why the click was a no-op.
+            report()
             return
           }
-          state.lastClick = `asked ${carrier} to delete ${sessionId}`
-          void withSession(carrier, async (binding) => {
-            const result = await binding.session.command(`/clean ${sessionId}`)
-            state.lastClick = result?.ok === false
-              ? `refused: ${result.error?.message ?? 'unknown'}`
-              : `sent, matched=${String(result?.value?.matched)}`
-            // Say what the click did, on the channel the host already reads: a click whose outcome never
-            // leaves the window is the failure mode this whole report exists for.
+          state.lastClick = `asked for ${sessionId}`
+          void post('delete', { caller, ids: [sessionId] }).then((answer) => {
+            if (answer.error !== undefined) {
+              state.lastClick = `refused: ${answer.error}`
+            } else {
+              const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
+              const refused = Array.isArray(answer.refused) ? answer.refused : []
+              state.lastClick = moved > 0
+                ? `deleted (recoverable under ${answer.trash?.root ?? 'the trash'})`
+                : `nothing moved${refused.length > 0 ? `: ${refused[0]?.reason ?? 'refused'}` : ''}`
+            }
             report()
           })
         }
@@ -168,9 +184,9 @@ window.__ModuleLoader__.load({
         /**
          * `{ commandId }` when the shortcut catalogue holds this plugin's key, otherwise nothing.
          *
-         * The overlay prints keys with `catalog.find((entry) => entry.id === action.commandId)`, so a
-         * *dangling* association is the one shape this bundle will not ship: 0.2.4 named a static one and
-         * took every session menu down with it. Read synchronously, guarded twice.
+         * The overlay prints keys with `catalog.find((entry) => entry.id === action.commandId)`, so a dangling
+         * association is the one shape this bundle will not ship: 0.2.4 named a static one and took every
+         * session menu down with it.
          */
         const shortcutHint = () => {
           try {
@@ -186,12 +202,12 @@ window.__ModuleLoader__.load({
          * The same operation as the tool and the command, from the sidebar: one row in a session's own menu.
          *
          * A data contribution, not a component — `resolve` returns the item and `run` is the click, and
-         * `resolve` is **synchronous and asks nothing**: every version that asked the host something while
-         * the menu was opening found a way to take the menu down with it.
+         * `resolve` is **synchronous and asks nothing**: every version that asked the host something while the
+         * menu was opening found a way to take the menu down with it.
          *
          * Presentation, in the product's own vocabulary: `order: 350` seats it directly after 分叉会话 (fork
-         * 300) and before 复制 Session ID (450); `danger` and the icon key are the pair the workspace plugin
-         * uses for its own delete row, so this row reads exactly like *删除工作区*.
+         * 300) and before the id copy (450); `danger` and the icon key are the pair the workspace plugin uses
+         * for its own delete row, so this row reads exactly like *删除工作区*.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -218,10 +234,10 @@ window.__ModuleLoader__.load({
         /**
          * Ctrl+Shift+D (⌘⇧D on macOS): the keyboard path to the same act, on the session the window shows.
          *
-         * Registered with the product's own platform table, so the binding appears in the shortcut settings
-         * and is remappable there. The registration **waits for the service** (`ctx.inject`) instead of
-         * reading `ctx.get('shortcuts')` once while this half loads: a client service that mounts after this
-         * plugin is simply not there yet, and that silence is how a keycap went missing while the row worked.
+         * Registered with the product's own platform table, so the binding appears in the shortcut settings and
+         * is remappable there. The registration **waits for the service** (`ctx.inject`) instead of reading
+         * `ctx.get('shortcuts')` once while this half loads: a client service that mounts after this plugin is
+         * simply not there yet, and that silence is how a keycap went missing while the row worked.
          */
         const registerShortcut = (scope) => {
           const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
@@ -247,19 +263,18 @@ window.__ModuleLoader__.load({
             }))
             state.register = 'registered'
           } catch (error) {
-            // Isolated like every contribution: a registry that refuses this definition costs the key only,
-            // and the reason is kept — "refused" without a reason is the same silence one layer down.
+            // Isolated like every contribution: a registry that refuses this definition costs the key only.
             state.register = `refused: ${reasonOf(error)}`
             console.error('dsh-cleaner: the shortcut was refused', error)
           }
         }
 
         /**
-         * Tell the host what this half managed to do, through the same official channel: a command carried by
-         * the session the window shows, answered silently by the host, printed by the next listing.
+         * Tell the host what this half managed to do, over the same route.
          *
-         * It is sent first, before anything that can throw, and again from the guard that catches a setup
-         * failure — a diagnostic that dies with the thing it reports is not a diagnostic.
+         * Sent first, before anything that can throw, and again from the guard that catches a setup failure: a
+         * diagnostic that dies with the thing it reports is not a diagnostic. It is also sent after a click, so
+         * the next listing says what the click did.
          */
         const report = () => {
           try {
@@ -271,12 +286,10 @@ window.__ModuleLoader__.load({
             state.catalog = 'not readable'
           }
           state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
-          state.dictionary = ctx.get('locale')?.register === undefined ? 'no locale service' : 'locale service present'
-          state.row = rowRegistered ? 'contributed' : 'not contributed'
+          state.dictionary = keepRefusal(state.dictionary, ctx.get('locale')?.register === undefined ? 'no locale service' : 'locale service present')
+          state.row = keepRefusal(state.row, rowRegistered ? 'contributed' : 'not contributed')
           state.current = currentSessionId() ?? 'none'
-          const sessionId = currentSessionId()
-          if (sessionId === undefined) return
-          void withSession(sessionId, (binding) => binding.session.command(`/clean --state ${JSON.stringify(state)}`))
+          void post('state', { state })
         }
 
         return ctx.effect(() => {
@@ -302,7 +315,10 @@ window.__ModuleLoader__.load({
             if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
             else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
             else console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
-            // A second report, so a service that mounted late has had its turn before the answer is recorded.
+            // Report again now that every synchronous contribution has had its turn: the first report is sent
+            // before anything can throw, and it cannot know yet what the row and the key did.
+            report()
+            // And once more later, for a service that mounted in the meantime.
             setTimeout(report, 2000)
           } catch (error) {
             state.fatal = reasonOf(error)

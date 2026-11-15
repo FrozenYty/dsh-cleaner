@@ -49,7 +49,7 @@ The load-bearing constraints, each with an ADR:
   one ([ADR 0002](docs/adr/0002-zero-import-bundle-half.md));
 - the seam cannot delete, and a deletion is never a schedule
   ([ADR 0001](docs/adr/0001-out-of-band-deletion.md));
-- the surface is two tools with explicit ids, so consent is a mechanism and not a description
+- the surface is tools with explicit ids, so consent is a mechanism and not a description
   ([ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md));
 - links and irregular directories are refused, not followed
   ([ADR 0004](docs/adr/0004-refuse-links.md));
@@ -57,13 +57,20 @@ The load-bearing constraints, each with an ADR:
   path it names ([ADR 0005](docs/adr/0005-re-verify-at-execution.md));
 - a deleted session is detached by asking the workspace registry, never by editing its store
   ([ADR 0006](docs/adr/0006-detach-by-asking.md));
-- the bundle ships a browser half whose only job is to prune the window's own sidebar view, because that
-  view is the one record no host-side step can reach ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md));
+- the browser half contributes a menu row, a shortcut and a dictionary, and reaches the host over the
+  route the host half registers — never through a client `remote` service (this build's client root has
+  none) and never by re-implementing a product record
+  ([ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md),
+  [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
 - a loaded agent does not block a deletion — a **busy** one does, and the refusal names the status
   ([ADR 0008](docs/adr/0008-busy-not-resident.md));
 - a deleted session is detached **and archived**, never unarchived: the sidebar draws no archived row, so
   that is what makes the row disappear from an open window at once
-  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md));
+  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)); a **restore** is the one caller of
+  `unarchiveSession` ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
+- a deletion is one atomic rename into `<DSH_HOME>/dsh-cleaner-trash/`, recoverable for 30 days, and only a
+  purge frees bytes — never a timer, and never a listing
+  ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
 - archiving is not a precondition: the store is the index, and a session is a candidate when its directory
   is under the storage root, well formed and unprotected
   ([ADR 0010](docs/adr/0010-no-archive-precondition.md));
