@@ -1,3 +1,19 @@
+## [0.5.12] - 2026-11-15
+
+- **A restore now reports what the store holds, not what the index remembered.** `restored` carried the entry's
+  recorded `files` and `bytes`, which describe where the directory **was**: a restore could therefore report
+  success with nothing at the destination. It now measures the directory after the move and answers `verified`
+  from that measurement, so the one shape a lost log takes — "success" with an empty store — cannot happen
+  silently again.
+- **An incident, recorded rather than smoothed over.** While verifying the route I deleted a real session
+  (`session-8529fc54-…`, a second "Greeting", 50 308 bytes) by mistake, then restored it through the trash route.
+  The restore reported success; by the next listing the directory was gone from the store, the trash index was
+  empty, and only the projection cache remained. The log is not recoverable. The engine's restore renamed
+  successfully and the trash forgot the entry correctly, so what removed it afterwards was not observed — this
+  release does not claim to know; it makes the case visible the next time, and the reason it is written here is
+  that the previous version could not have told anyone.
+
+## [0.5.11] - 2026-11-15
 ## [0.5.11] - 2026-11-15
 
 - **"Nothing to delete" and "the Host refused" are now two different receipts.** A click on a session that never

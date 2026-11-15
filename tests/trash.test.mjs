@@ -257,3 +257,23 @@ test('the engine refuses arguments it cannot honour', async () => {
 })
 
 
+
+test('a restore measures the store, not the index, so success cannot be reported while the store is empty', async () => {
+  // The index records where a directory **was**. Quoting it back is how a restore reports success with nothing on
+  // disk — the shape a lost log takes when seen from outside. The answer carries the destination's own measurement.
+  const plan = await planned(['session-old-2'])
+  const original = plan.candidates[0].path
+  await moveToTrash(TRASH, plan)
+
+  const put = await restoreFromTrash(TRASH, ROOT, ['session-old-2'])
+  assert.equal(put.restored.length, 1)
+  assert.equal(put.restored[0].path, original)
+  assert.equal(put.restored[0].verified, true, 'the store holds it after the move')
+  assert.deepEqual(await readdir(original).then((names) => names.sort()), ['session.v3.jsonl.zstd', 'session.v4.jsonl.zstd'])
+  assert.ok(put.restored[0].bytes > 0, 'and the bytes are measured at the destination')
+
+  // Nothing left to move: the second call names a restored id and reports nothing, rather than a success.
+  const again = await restoreFromTrash(TRASH, ROOT, ['session-old-2'])
+  assert.equal(again.restored.length, 0)
+  assert.equal(again.failed.length + again.refused.length, 0)
+})
