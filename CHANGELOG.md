@@ -1,3 +1,14 @@
+## [0.5.23] - 2026-11-15
+
+- **Correction to 0.5.22's wording, not to its behaviour.** The release note said a restore no longer unarchives;
+  the code still does, and it should — a person who restores a log expects its row back, and the archive flag is
+  what the sidebar reads. [ADR 0023](docs/adr/0023-detach-never-archive.md) now records the amendment: the plugin
+  touches the flag in exactly one direction and in exactly one place, a restore, and never on a deletion.
+- Verified live on the same session as the previous release: a deletion reports
+  `workspace {"detached":[id],"orphans":[]}` and `still_listed: []` with **`archived_ids` unchanged at 4**, and the
+  restore answers `verified: true, projection: true` with both files back.
+
+## [0.5.22] - 2026-11-15
 ## [0.5.22] - 2026-11-15
 
 - **A deletion detaches the session and never archives it — the row now leaves instead of turning into a dimmed

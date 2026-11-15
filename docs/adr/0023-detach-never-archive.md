@@ -36,8 +36,10 @@ A deletion **detaches** the named ids from their workspace record and **never** 
 - the window's own `archiveSession` call (`hideRow`) is gone, because there is no archive state to write;
 - the deletion answer no longer carries `workspace.archived` or `workspace.restored`; it carries `detached` and
   `orphans`;
-- a restore no longer unarchives: nothing was archived by the plugin, and a session the person archived themselves
-  keeps the state they chose.
+- **a restore still unarchives** (amended after a live check contradicted the first draft of this ADR): the row is
+  what a person expects to see again once the log is back, so the restore asks the workspace registry for it. The
+  plugin therefore still touches the archive flag in exactly one direction and in exactly one place — a restore —
+  and never on a deletion.
 
 ## Consequences
 
