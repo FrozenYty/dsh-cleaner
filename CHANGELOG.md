@@ -1,3 +1,25 @@
+## [0.5.19] - 2026-11-15
+
+- **A survey of how four neighbours delete a session, recorded as
+  [ADR 0020](docs/adr/0020-what-the-neighbours-do.md)** — no behaviour change, because the survey mainly confirms
+  what this plugin already does and names which write actually removes the row:
+  - `dsh-team`, installed beside this plugin and solving the same problem, says it in one line: *"the move also
+    drops the artifact out of the session-query index, which is what makes the member disappear from the host's own
+    lists"* — and it archives nothing. **The move is the mechanism**; this plugin's `archiveSession` /
+    `detachSession` writes are belt-and-braces, and are the reason an archived row is still drawn dimmed under the
+    product's "show archived" filter.
+  - Claude Code separates "disappears from the list" from "the transcript is gone", and enforces retention with a
+    lazy sweep on session start (default 30 days) rather than a timer — the same split and the same laziness as
+    here.
+  - Codex CLI deletes artifacts first and the state rows afterwards under one lifecycle lock, and refuses while a
+    child thread exists. This plugin asks the registry **before** the move instead, because *this* product's
+    registry refuses to archive a session whose log is already gone.
+  - OpenCode publishes `SessionEvent.Deleted` so clients react instead of polling; the equivalent here is asking
+    the session-query backend what it still lists (`still_listed`), which the deletion answer already reports.
+- Numeric settings stay in the profile patch (`retentionDays`, `trashLimit`, `dataDir`), matching the family's
+  `trashLimit`/`trashByteLimit` — no settings editor for them is expected of this plugin.
+
+## [0.5.18] - 2026-11-15
 ## [0.5.18] - 2026-11-15
 
 - **Every contribution is now inside `ctx.effect`, so closing the plugin takes all of it with it.** The dictionary

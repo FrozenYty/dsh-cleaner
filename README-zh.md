@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.5.18。
+- 当前版本：v0.5.19。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -364,6 +364,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么这一行在会话菜单最后、位于`归档会话`之下？ | [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md)（修正 [ADR 0016](docs/adr/0016-row-below-archive.md)） |
 | 删除会拒绝动哪个会话？屏幕上那个算不算？ | [ADR 0018](docs/adr/0018-protection-follows-the-carrier.md) |
 | 关闭插件后，Harness 的界面会怎样？ | [ADR 0019](docs/adr/0019-contributions-follow-the-plugin-lifetime.md) |
+| 别的工具怎么删会话？我们采用其中哪些做法？ | [ADR 0020](docs/adr/0020-what-the-neighbours-do.md) |
 | 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |
