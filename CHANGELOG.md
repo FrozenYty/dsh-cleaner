@@ -7,6 +7,17 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.5.1] - 2026-11-15
+
+- **The page is called 回收站 / Trash.** "Deleted sessions" described the contents and read like a log title;
+  "Trash" is the word every desktop already uses for the place a deleted thing can be recovered from.
+- **The page carries its own icon** — a drawn trash can in the product's line style, contributed to
+  `settings.section.icon` under the same id as the page, which is what pairs them. The seat's default gear said
+  nothing about what the page was.
+- The page no longer prints the transport's status code at a person. The technical detail stays in the report
+  the host half prints (`Window half: … route=…`), and what a person reads is *"The plugin's Host half is not
+  loaded yet. Restart the Harness and it comes to life."*
+
 ## [0.5.0] - 2026-11-15
 
 - **The trash has a page.** The browser half contributes one settings page — *已删除的会话 / Deleted

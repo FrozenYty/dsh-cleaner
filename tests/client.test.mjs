@@ -167,8 +167,11 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
             return () => {}
           },
           register: (options, component) => {
-            panels.set(options.id, { options, component })
-            return () => panels.delete(options.id)
+            // Keyed by seat *and* id: the page and its icon share the id on purpose, so a map keyed by the id
+            // alone would let the icon overwrite the page.
+            const seat = `${options.name}|${options.id}`
+            panels.set(seat, { options, component })
+            return () => panels.delete(seat)
           },
         }
       }
@@ -458,24 +461,44 @@ test('the trash page is contributed to the settings seat, in the window\'s langu
   // a model to print. The seat is the documented settings page, registered the documented way.
   const { panels, slotRequests } = mount({ menus: true, slots: true, locale: 'zh-CN' })
 
-  assert.deepEqual(slotRequests, ['settings.section'], 'the page waits for its slot')
-  const panel = panels.get('dsh-cleaner.trash')
+  assert.equal(
+    JSON.stringify(slotRequests),
+    JSON.stringify(['settings.section', 'settings.section.icon']),
+    'the page and its icon wait for their seats',
+  )
+  const panel = panels.get('settings.section|dsh-cleaner.trash')
   assert.ok(panel, 'the page is registered')
   assert.equal(panel.options.name, 'settings.section')
   assert.equal(panel.options.order, 500)
-  assert.equal(panel.options.label(), '已删除的会话')
+  // "Trash" is the word every desktop already uses; "deleted sessions" read like a log title.
+  assert.equal(panel.options.label(), '回收站')
 
   const english = mount({ menus: true, slots: true })
-  assert.equal(english.panels.get('dsh-cleaner.trash').options.label(), 'Deleted sessions')
+  assert.equal(english.panels.get('settings.section|dsh-cleaner.trash').options.label(), 'Trash')
+})
+
+test('the page carries its own icon, paired to it by the same id', () => {
+  // The seat's default gear says nothing about what the page is.
+  const { panels, slotRequests } = mount({ menus: true, slots: true })
+  assert.equal(slotRequests.includes('settings.section.icon'), true)
+  const icon = panels.get('settings.section.icon|dsh-cleaner.trash')
+  assert.ok(icon, 'the icon is registered')
+  assert.equal(icon.options.id, 'dsh-cleaner.trash', 'the id is what pairs it with the page')
+  assert.equal(typeof icon.component, 'function')
+
+  const tree = icon.component()
+  assert.equal(tree.type, 'svg')
+  // A drawn trash can: a lid, a neck, a body and two slots — not a borrowed generic glyph.
+  assert.equal(tree.children.filter((child) => child.type === 'path').length, 5)
 })
 
 test('the page\'s first render says what it is and that it is reading', () => {
   // The component is called once with a React stub: enough to hold the structure and the words, which is what
   // a person sees first. The list itself arrives from the same route the row uses, covered host-side.
   const { panels } = mount({ menus: true, slots: true })
-  const tree = panels.get('dsh-cleaner.trash').component()
+  const tree = panels.get('settings.section|dsh-cleaner.trash').component()
   const words = rendered(tree).join(' ')
-  assert.match(words, /Deleted sessions/)
+  assert.match(words, /Trash/)
   assert.match(words, /A deletion is a move/)
   assert.match(words, /Reading the trash/)
 })
