@@ -7,6 +7,16 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.18] - 2026-11-15
+
+- **The command is carried by the session the window is showing.** commands.execute resolves against a live
+  agent, and a sidebar row may belong to a session nobody holds any more — which is why the click did nothing
+  and why the window half's own report never arrived: both ran the command *in the target session*. The row now
+  names the target as an argument and runs the command in the open session, exactly as the composer does:
+  the carrier always has an agent, /clean already accepts ids, and the receipt appears in front of the person
+  instead of in a session they cannot see.
+- With no session open there is nothing to carry the command, and the row says so rather than failing silently.
+
 ## [0.2.17] - 2026-11-15
 
 - **The window half now speaks before it can fail.** Its report is sent first, before anything that can throw,
@@ -336,4 +346,5 @@ A release adds its section in the same pull request that writes the change, so t
   tools appeared, and the six archived logs on this machine were listed and then deleted through the
   tools — 4,169,349 bytes reclaimed, the mounted persistence backend confirming the removal, and an
   independent directory count agreeing (36 session directories before, 30 after).
+
 
