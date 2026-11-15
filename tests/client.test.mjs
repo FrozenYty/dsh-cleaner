@@ -74,7 +74,7 @@ function rendered(node) {
  * Mount the half against a fake page and return what it did.
  * @param options - the optional client services, the route's answer, and the page's own state.
  */
-function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport, commandsAnswer } = {}) {
+function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport, commandsAnswer, archive } = {}) {
   const page = {
     localStorage: {
       getItem: (name) => (name === 'dsh.sessions.current' && current !== undefined
@@ -197,6 +197,15 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
               }),
               release: () => released.push(sessionId),
             }
+          },
+        }
+      }
+      if (name === 'uiWorkspace') {
+        if (archive === undefined) return undefined
+        // The window's own workspace face: the call the sidebar's 归档会话 row makes.
+        return {
+          archiveSession: async (sessionId) => {
+            archive(sessionId)
           },
         }
       }
@@ -655,4 +664,46 @@ test('a registry that refuses the full profile set still binds the desktop ones'
   assert.equal(attempts.length, 2, 'it tried the declared set, then the desktop-only set')
   assert.match(attempts[0], /web:windows/)
   assert.equal(attempts[1].includes('web:'), false, 'the retry declares no web profile')
+})
+
+test('a click hides the row through the product\'s own archive action', async () => {
+  // A window draws its rows from the workspace records, and the sidebar never draws an archived session — so
+  // archiving is the only call that makes a row leave at once. The registry refuses to archive a session it
+  // cannot find (a session that never wrote a log is exactly that), which is why this is the window's job and
+  // why clicking delete on such a row used to leave it standing.
+  const archived = []
+  const fails = []
+  const { registrations, requests } = mount({
+    menus: true,
+    current: 'session-open-1',
+    slots: true,
+    transport: 'refuse',
+    archive: (sessionId) => { archived.push(sessionId) },
+  })
+  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  await settle()
+  assert.deepEqual(archived, ['session-blank-1'], 'the row was hidden with the same action the sidebar uses')
+  assert.equal(lastState(requests).lastHide, 'archived session-blank-1')
+  assert.deepEqual(fails, [])
+})
+
+test('an archive that the workspace service refuses is recorded, never thrown', async () => {
+  const { registrations, requests } = mount({
+    menus: true,
+    current: 'session-open-1',
+    transport: 'refuse',
+    archive: () => { throw new Error('WorkspaceUnknownSessionError: no such session') },
+  })
+  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  assert.match(lastState(requests).lastHide, /^refused: WorkspaceUnknownSessionError/)
+})
+
+test('a profile without the workspace service still deletes', async () => {
+  const { registrations, requests } = mount({ menus: true, current: 'session-open-1', transport: 'refuse' })
+  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  assert.equal(lastState(requests).lastHide, 'no uiWorkspace service')
+  assert.match(lastState(requests).lastClick, /^handed to \/clean/)
 })
