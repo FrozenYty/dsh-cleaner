@@ -218,6 +218,47 @@ async function verifyRemoved(ctx, ids) {
 }
 
 /**
+ * Release the live session objects a deletion left behind, through the store's own removal path.
+ *
+ * The query service reports every session with `live` and `persisted` availability flags, and a **live** one is
+ * bound to the fiber that created it — `ctx.sessions.create()` — so a blank session made by "New session" keeps
+ * being listed in every window until that fiber ends. The query API has no delete at all (`listSessions`,
+ * `readSession`, `filterSessions`, … and nothing else), so a deleted log-less session's row survives a page reload
+ * and only a restart used to clear it.
+ *
+ * The store does have the removal, and it is the product's own: `detachEntered(entry)` deletes the entry from the
+ * store and emits `session/disposed`. That event is what makes a row leave without touching the process, so this
+ * runs for every id the deletion dropped — only when the service exposes it, and never fatally.
+ * @param ctx - plugin context.
+ * @param ids - the sessions the deletion removed or found already gone.
+ * @returns `{released, failed}`; a service without the removal answers empty, which is not an error.
+ */
+async function releaseLiveSessions(ctx, ids) {
+  const released = []
+  const failed = []
+  let sessions
+  try {
+    sessions = ctx.get('sessions')
+  } catch (error) {
+    return { released, failed: [{ id: '*', error: error instanceof Error ? error.message : String(error) }] }
+  }
+  if (sessions === undefined || typeof sessions.detachEntered !== 'function') return { released, failed }
+  const store = sessions.store
+  if (store === undefined || typeof store.get !== 'function') return { released, failed }
+  for (const id of new Set(ids)) {
+    try {
+      const entry = store.get(id)
+      if (entry === undefined) continue
+      sessions.detachEntered(entry)
+      released.push(id)
+    } catch (error) {
+      failed.push({ id, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  return { released, failed }
+}
+
+/**
  * Drop the named sessions from their workspace record — the one write that stops a row being drawn.
  *
  * The sidebar draws a session only while it is a member of a workspace and not archived (`sessionVisible`), and a
@@ -474,6 +515,9 @@ async function deleteLogs(ctx, exec, requested) {
   // for the ids it removed and for the ids it found already gone. This is the one direction a deletion may touch
   // the flag, and it is the direction that makes a row leave.
   const unarchived = await unarchiveSessions(ctx, drop)
+  // And the live session object itself: a live session is listed by every window until the store lets it go, and
+  // `detachEntered` is the product's own removal — it emits `session/disposed`, which is what removes the row now.
+  const live = await releaseLiveSessions(ctx, drop)
   // Ask the host what it still lists: that answer is reported either way, and it is the difference between
   // "the host let go" and "the host still holds it in memory".
   const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
@@ -494,7 +538,12 @@ async function deleteLogs(ctx, exec, requested) {
     refused: [...plan.requested, ...report.refused],
     workspace: hidden.registry === 'not-asked'
       ? hidden
-      : { ...hidden, orphans, unarchived: unarchived.registry === 'not-asked' ? [] : (unarchived.unarchived ?? []) },
+      : {
+        ...hidden,
+        orphans,
+        unarchived: unarchived.registry === 'not-asked' ? [] : (unarchived.unarchived ?? []),
+        released: live.released,
+      },
     query,
     verify: removedIds.length === 0 ? { backend: 'not-asked' } : await verifyRemoved(ctx, removedIds),
   }

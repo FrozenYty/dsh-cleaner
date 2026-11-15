@@ -1,3 +1,18 @@
+## [0.5.25] - 2026-11-15
+
+- **A deletion now releases the live session object, so a blank session's row leaves without a restart.** With the
+  log, the projection, the membership and the archive flag cleared, rows still stood for sessions that had **no log
+  at all**: `sessionQuery` names them anyway, because its documented surface has no delete and `listSessions()`
+  reports every logical session with `live` and `persisted` flags, preferring the live set. A live session is created
+  by `ctx.sessions.create()` and is bound to the creating fiber, so a "New session" blank never released stays
+  listed in every window until a restart.
+- The store's own removal is `detachEntered(entry)` — "remove one exact entered session and emit its paired
+  disposal" — and a deletion now calls it for every id it dropped, best-effort and reported as
+  `workspace.released`. [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md) records it, including that
+  this is the only place the plugin reaches into a service's internals, because the documented query surface offers
+  no removal at all.
+
+## [0.5.24] - 2026-11-15
 ## [0.5.24] - 2026-11-15
 
 - **A deletion now also drops the archive flag — the last thing that can keep a deleted session on screen.** The

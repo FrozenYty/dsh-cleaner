@@ -52,7 +52,7 @@ async function writeProjection(id, title) {
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
-function harness({ agents = [], persistence, workspaces, query, commands = true, webServer = true } = {}) {
+function harness({ agents = [], persistence, workspaces, query, sessions, commands = true, webServer = true } = {}) {
   const tools = new Map()
   const registered = new Map()
   const routes = new Map()
@@ -70,6 +70,7 @@ function harness({ agents = [], persistence, workspaces, query, commands = true,
       return () => disposer?.()
     },
     get: (name) => {
+      if (name === 'sessions') return sessions
       if (name === 'agents') return { list: () => agents }
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
@@ -925,4 +926,26 @@ test('a deletion also drops the archive flag, because an archived id is drawn ev
   assert.deepEqual(unarchiveCalls.sort(), ['session-archived-1', 'session-ghost-1'])
   assert.deepEqual([...archived], [], 'the archive list no longer names either of them')
   assert.deepEqual(value.workspace.unarchived.sort(), ['session-archived-1', 'session-ghost-1'])
+})
+
+test('a deletion releases the live session object, so the row goes without a restart', async () => {
+  // A live session — one "New session" created, or one the window opened — is listed by the query service as `live`
+  // until the store lets it go, and the query API has no delete. The store's own removal is `detachEntered`, which
+  // emits `session/disposed`; that is what removes the row now, without touching the process.
+  const entries = new Map([['session-ghost-1', { id: 'session-ghost-1' }], ['session-archived-1', { id: 'session-archived-1' }]])
+  const disposed = []
+  const tools = install({
+    sessions: {
+      store: entries,
+      detachEntered(entry) {
+        disposed.push(entry.id)
+        entries.delete(entry.id)
+      },
+    },
+  })
+
+  const value = await run(tools.get('delete_session_logs'), { session_ids: ['session-ghost-1'] })
+  assert.deepEqual(disposed, ['session-ghost-1'], 'the live object was removed through the store')
+  assert.deepEqual(value.workspace.released, ['session-ghost-1'])
+  assert.equal(entries.has('session-archived-1'), true, 'a session nobody deleted keeps its live object')
 })
