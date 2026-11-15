@@ -1,3 +1,18 @@
+## [0.5.18] - 2026-11-15
+
+- **Every contribution is now inside `ctx.effect`, so closing the plugin takes all of it with it.** The dictionary
+  and the session menu row were registered with a bare `register()` whose disposer nobody held: disabling the
+  plugin evicts its client module
+  ([the kernel's own words](docs/adr/0019-contributions-follow-the-plugin-lifetime.md): *"disabling it removes the
+  entry and waits for its asynchronous effects before evicting unused modules and styles"*), and a contribution
+  outside an effect is exactly the one that would survive that eviction. Both are wrapped now, like the page, its
+  icon, the notice and the shortcut already were.
+- **The fixture models the same lifetime**: a shortcut's disposer removes it, and a slot injection owns what its
+  scope registers, so "closing the plugin leaves nothing behind" is a test and not a claim.
+- **A test that says it in one line**: the row, the three seats and the key are there while the plugin is open, and
+  all four are gone after every effect is disposed — which is what the kernel does on disable.
+
+## [0.5.17] - 2026-11-15
 ## [0.5.17] - 2026-11-15
 
 - **The trash page has no subtitle.** 删除只是搬走，可恢复。 explained what the heading, the empty state and the

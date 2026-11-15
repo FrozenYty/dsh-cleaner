@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.17.
+- Current version: v0.5.18.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -431,6 +431,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
 | Why is the row the last one in a session menu, below 归档会话? | [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md) (corrects [ADR 0016](docs/adr/0016-row-below-archive.md)) |
 | Which session does a deletion refuse to touch — and does the one on screen count? | [ADR 0018](docs/adr/0018-protection-follows-the-carrier.md) |
+| What happens to the Harness interface when the plugin is closed? | [ADR 0019](docs/adr/0019-contributions-follow-the-plugin-lifetime.md) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
