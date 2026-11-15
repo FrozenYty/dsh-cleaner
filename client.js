@@ -34,9 +34,10 @@ window.__ModuleLoader__.load({
     const LABEL_KEY = 'session.delete'
     /** The host half's route prefix, and the only channel this half has. */
     const ROUTE = '/dsh-cleaner/'
-    /** The settings page this half contributes, and the seat it takes. */
+    /** The settings page this half contributes, and the seats it takes. */
     const PANEL_ID = 'dsh-cleaner.trash'
     const PANEL_SLOT = 'settings.section'
+    const ICON_SLOT = 'settings.section.icon'
 
     /**
      * A one-line reason from anything that was thrown.
@@ -75,6 +76,7 @@ window.__ModuleLoader__.load({
           dictionary: 'not asked',
           row: 'not contributed',
           panel: 'not contributed',
+          panel_icon: 'not contributed',
           route: 'not called',
           current: 'not read',
           lastClick: 'none',
@@ -108,13 +110,15 @@ window.__ModuleLoader__.load({
 
         /** Every string the trash panel needs, resolved when it renders rather than when it loads. */
         const labels = () => ({
-          title: text('trash.title', 'Deleted sessions'),
-          subtitle: text('trash.subtitle', 'A deletion is a move: these directories are kept, and a restore puts one back where the session backend looks for it.'),
+          // "Trash" is what a person already calls this place on every desktop they use; "deleted sessions"
+          // described the contents and read like a log title.
+          title: text('trash.title', 'Trash'),
+          subtitle: text('trash.subtitle', 'A deletion is a move: these session directories are kept, and Restore puts one back where the session backend looks for it.'),
           restore: text('trash.restore', 'Restore'),
           purge: text('trash.purge', 'Delete for good'),
-          empty: text('trash.empty', 'Nothing is in the trash.'),
+          empty: text('trash.empty', 'The trash is empty.'),
           loading: text('trash.loading', 'Reading the trash…'),
-          unavailable: text('trash.unavailable', 'The host half did not answer. Restart the Harness to load it.'),
+          unavailable: text('trash.unavailable', 'The plugin\'s Host half is not loaded yet. Restart the Harness and it comes to life.'),
           bytes: text('trash.bytes', 'bytes'),
           trashed: text('trash.trashed', 'deleted'),
         })
@@ -126,25 +130,25 @@ window.__ModuleLoader__.load({
           return locale.register(LOCALE_NS, {
             en: {
               [LABEL_KEY]: 'Delete session',
-              'trash.title': 'Deleted sessions',
-              'trash.subtitle': 'A deletion is a move: these directories are kept, and a restore puts one back where the session backend looks for it.',
+              'trash.title': 'Trash',
+              'trash.subtitle': 'A deletion is a move: these session directories are kept, and Restore puts one back where the session backend looks for it.',
               'trash.restore': 'Restore',
               'trash.purge': 'Delete for good',
-              'trash.empty': 'Nothing is in the trash.',
+              'trash.empty': 'The trash is empty.',
               'trash.loading': 'Reading the trash…',
-              'trash.unavailable': 'The host half did not answer. Restart the Harness to load it.',
+              'trash.unavailable': 'The plugin\'s Host half is not loaded yet. Restart the Harness and it comes to life.',
               'trash.bytes': 'bytes',
               'trash.trashed': 'deleted',
             },
             zh: {
               [LABEL_KEY]: '删除会话',
-              'trash.title': '已删除的会话',
-              'trash.subtitle': '删除只是搬走：这些目录被保留着，"恢复"会把目录放回会话后端查找的位置。',
+              'trash.title': '回收站',
+              'trash.subtitle': '删除只是搬走：这些会话目录被保留着，「恢复」会把目录放回会话后端查找的位置。',
               'trash.restore': '恢复',
               'trash.purge': '彻底删除',
               'trash.empty': '回收站是空的。',
               'trash.loading': '正在读取回收站……',
-              'trash.unavailable': '宿主半边没有应答，重启 Harness 后会加载它。',
+              'trash.unavailable': '插件的宿主半边还没加载，重启 Harness 后就能用。',
               'trash.bytes': '字节',
               'trash.trashed': '删除于',
             },
@@ -469,8 +473,36 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The page's icon: its own trash can, in the product's line style.
+         *
+         * The default gear belonged to the settings seat's generic fallback and said nothing about this page.
+         * Drawn here rather than borrowed for one reason: `settings.section.icon` asks for a component, not for
+         * an icon *key* — the keyed table belongs to the context menu.
+         */
+        function PanelIcon() {
+          return h('svg', {
+            viewBox: '0 0 24 24',
+            width: 16,
+            height: 16,
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: 1.6,
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            'aria-hidden': true,
+            style: { display: 'block' },
+          }, [
+            h('path', { key: 'lid', d: 'M4 7h16' }),
+            h('path', { key: 'neck', d: 'M9.5 7V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4a1.3 1.3 0 0 1 1.3 1.3V7' }),
+            h('path', { key: 'body', d: 'M6.5 7l.9 12.3A1.6 1.6 0 0 0 9 20.8h6a1.6 1.6 0 0 0 1.6-1.5L17.5 7' }),
+            h('path', { key: 'slot-a', d: 'M10.2 11v6' }),
+            h('path', { key: 'slot-b', d: 'M13.8 11v6' }),
+          ])
+        }
+
+        /**
          * The panel's seat: one settings page, by the shape the product documents (`slots.inject` then
-         * `slots.register`), contributed only when the slot service exists.
+         * `slots.register`), plus the icon addressed by the same id.
          *
          * `ctx.inject(['slots'], …)` rather than a declared `inject`: the menu row, the key and the dictionary
          * must keep working in a profile without a slot service, and a hard dependency would take all three
@@ -489,6 +521,18 @@ window.__ModuleLoader__.load({
             // Isolated like every contribution: a refused page costs the page, and the reason is reported.
             state.panel = `refused: ${reasonOf(error)}`
             console.error('dsh-cleaner: the trash panel was refused', error)
+          }
+          try {
+            scope.effect(() => scope.slots.inject(ICON_SLOT, () => scope.slots.register({
+              name: ICON_SLOT,
+              // The id is what pairs an icon with its page: same page, same id.
+              id: PANEL_ID,
+              order: 500,
+            }, PanelIcon)))
+            state.panel_icon = 'contributed'
+          } catch (error) {
+            state.panel_icon = `refused: ${reasonOf(error)}`
+            console.error('dsh-cleaner: the trash page icon was refused', error)
           }
         }
 
