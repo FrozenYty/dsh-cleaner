@@ -357,9 +357,6 @@ test('naming an id whose log is already gone drops its ghost row too', async () 
   const registry = {
     archivedSessionIds: ['session-archived-1'],
     list: () => [workspace],
-    async archiveSession(id) {
-      this.archivedSessionIds = [...this.archivedSessionIds, id]
-    },
   }
   const tools = install({ workspaces: registry })
 

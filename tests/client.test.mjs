@@ -74,7 +74,7 @@ function rendered(node) {
  * Mount the half against a fake page and return what it did.
  * @param options - the optional client services, the route's answer, and the page's own state.
  */
-function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport, commandsAnswer, archive } = {}) {
+function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport, commandsAnswer } = {}) {
   const page = {
     localStorage: {
       getItem: (name) => (name === 'dsh.sessions.current' && current !== undefined
@@ -217,15 +217,6 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
               }),
               release: () => released.push(sessionId),
             }
-          },
-        }
-      }
-      if (name === 'uiWorkspace') {
-        if (archive === undefined) return undefined
-        // The window's own workspace face: the call the sidebar's 归档会话 row makes.
-        return {
-          archiveSession: async (sessionId) => {
-            archive(sessionId)
           },
         }
       }
@@ -737,7 +728,7 @@ test('the deletion answer marks a log-less id under workspace.orphans, and that 
       trash: { root: 'D:\\MYPROJS\\.agents\\cleaner\\trash', retention_days: 30, recoverable: [] },
       failed: [],
       refused: [{ id: 'session-blank-1', reason: 'no session directory is stored under that id' }],
-      workspace: { registry: 'workspaceRegistry', detached: ['session-blank-1'], archived: [], orphans: ['session-blank-1'], restored: [] },
+      workspace: { registry: 'workspaceRegistry', detached: ['session-blank-1'], orphans: ['session-blank-1'], unarchived: [], released: [] },
       query: { backend: 'sessionQuery', still_listed: [] },
       verify: { backend: 'not-asked' },
     },

@@ -135,31 +135,38 @@ two cannot report different things about the same deletion
    `modified`, the newest file's write time in each candidate directory, and `stored_bytes`, what the whole
    store holds — a reclaimable number without the total behind it cannot be judged.
 4. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
-5. **Before** the files go, ask the workspace registry to detach the ids from their project and to
-   **archive** them. Archiving is the step that makes a row disappear: the sidebar's default filter is
-   `!archived.has(id)`, so an archived session is never drawn, and the workspace feed publishes the change
-   to every open window at once. The order is forced — `archiveSession` throws
-   `WorkspaceUnknownSessionError` for a session that is neither live nor in persistence, so it has to run
-   while the log still exists — and a removal that then fails has its archive entry dropped again, so a
-   session whose log is still on disk never stays hidden
-   ([ADR 0012](adr/0012-archive-never-unarchive.md)). An id whose log is already gone gets the detach and
-   nothing else, because the registry cannot archive a session it cannot find. The plugin never edits the
-   workspace store: `detachSession` and `archiveSession` run on the registry's own mutation chain. Why this
-   is the one place the plugin touches another subsystem's records:
-   [ADR 0006](adr/0006-detach-by-asking.md). What is left on screen: nothing — a window that is already
-   open applies the archive change the moment it arrives.
+5. **After** the files have moved, clear every record that could still draw the row, in this order. The
+   order is Codex's — artifacts first, records afterwards
+   ([ADR 0020](adr/0020-what-the-neighbours-do.md)) — so a move that fails leaves the row exactly where it
+   was:
+   1. ask the workspace registry to **detach** the ids from their project. The sidebar draws a session only
+      while it is a member of a workspace and not archived, and a **blank** session has its own placeholder
+      condition that tests the same membership, so the membership is what makes a row leave
+      ([ADR 0023](adr/0023-detach-never-archive.md); the plugin never edits the workspace store —
+      `detachSession` runs on the registry's own mutation chain, [ADR 0006](adr/0006-detach-by-asking.md));
+   2. ask it to **drop the archive flag** for the same ids. An archived id is drawn as a row in its own
+      right, log or no log, which is why four log-less ids were still on screen after everything else had
+      been cleared ([ADR 0024](adr/0024-a-deletion-drops-the-archive-flag.md));
+   3. **release the live session object** through the store's own removal, `detachEntered(entry)`, which
+      emits `session/disposed`. A live session is bound to the fiber that created it, so a blank "New
+      session" stayed listed in every window until a restart, and the query service's documented surface has
+      no delete at all ([ADR 0025](adr/0025-a-deletion-releases-the-live-session.md)).
+
+   Each of the three is best-effort and reported: `workspace.detached`, `workspace.unarchived` and
+   `workspace.released`, with `workspace.failed` naming anything a registry refused. What is left on screen
+   after a deletion that succeeded: nothing the plugin can see — a window that is already open applies each
+   change the moment it arrives.
 
 6. Ask the mounted session query whether it still *lists* those ids, and say so when it does. That list is
    a different service from the persistence seam: a session can be gone from the store and still be named
-   there, which happens whenever the host still holds the agent in memory. The answer reports it instead of
-   promising a screen it cannot see; it no longer changes step 5, because archiving hides the row whether
-   or not the host still names it.
+   there, which is what step 5.3 exists to fix — and when the owner is a fiber this store never entered,
+   the answer reports the id instead of promising a screen it cannot see.
 
 The last three steps are reports about a deletion that already happened, and none of them can veto one.
 The seam cannot delete, so it must not fail a call whose files are gone; a profile without the service, a
 read that throws, a registry that is absent and a detach that fails are each described in the answer — and
-`verify.backend: 'not-asked'` is what a call that removed nothing answers with, while the detach is still
-asked for the ids it was given.
+`verify.backend: 'not-asked'` is what a call that removed nothing answers with, while the records are still
+cleared for the ids it was given.
 
 Where the promise stops: the sidebar also renders from a view the window persists for itself
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
