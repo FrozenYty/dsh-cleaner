@@ -404,12 +404,14 @@ window.__ModuleLoader__.load({
               // like a bare "nothing moved" with the row still standing.
               const idOf = (entry) => (typeof entry === 'string' ? entry : entry?.id)
               const unlogged = (Array.isArray(answer.unlogged) ? answer.unlogged : []).map(idOf)
+              // The deletion answer does **not** carry `unlogged` — that field belongs to the listing. What it
+              // carries is `workspace.orphans`: the ids the registry was asked to drop because their log is gone.
+              // That is the structural signal for "there was nothing to delete, and the row is dealt with", and
+              // reading it is what stops a finished click from printing 未删除.
+              const orphans = Array.isArray(answer.workspace?.orphans) ? answer.workspace.orphans : []
               const held = Array.isArray(answer.protected) ? answer.protected : []
               const refused = Array.isArray(answer.refused) ? answer.refused : []
-              // A session that never wrote a log is *done*: there is nothing to delete, and the row — the thing
-              // the person asked to be rid of — still has to leave. A refusal is not done: the log stays, and so
-              // does the row.
-              const noLog = moved === 0 && unlogged.includes(sessionId)
+              const noLog = moved === 0 && (orphans.includes(sessionId) || unlogged.includes(sessionId))
               const why = refused.find((entry) => idOf(entry) === sessionId)?.reason
                 ?? held.find((entry) => idOf(entry) === sessionId)?.reason
                 ?? refused[0]?.reason
