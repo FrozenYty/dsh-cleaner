@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict'
 import { readdir, lstat, mkdir, rm, rmdir, symlink, unlink, writeFile, readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import test, { afterEach, beforeEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -58,6 +59,24 @@ async function planned(ids = STORED.map((entry) => entry.id)) {
   await writeWorkspace()
   const plan = await planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, only: ids })
   return plan
+}
+
+/** The projection cache a real profile keeps: one `<id>.json` per session, and nothing else. */
+const PROJECTIONS = join(HOME, 'storages', 'session_projcache', 'sessions')
+
+/**
+ * Build the fixture **with projections**, which is the shape a real profile has.
+ *
+ * The cache package documents pruning checkpoints as "out-of-band maintenance, same stance as session persistence
+ * itself", which is why a deletion takes each session's derived record with its log.
+ */
+async function plannedWithProjections(ids) {
+  await mkdir(PROJECTIONS, { recursive: true })
+  for (const id of ids) {
+    await writeFile(join(PROJECTIONS, `${id}.json`), JSON.stringify({ version: 7, record: { identity: { cwd: 'D:\\PROJ' }, rows: { title: { val: `title of ${id}` } } } }))
+  }
+  await writeWorkspace()
+  return await planCleanup({ sessionsRoot: ROOT, workspaceFile: WORKSPACE, only: ids, projections: PROJECTIONS })
 }
 
 /**
@@ -276,4 +295,29 @@ test('a restore measures the store, not the index, so success cannot be reported
   const again = await restoreFromTrash(TRASH, ROOT, ['session-old-2'])
   assert.equal(again.restored.length, 0)
   assert.equal(again.failed.length + again.refused.length, 0)
+})
+
+test('a move takes the derived record with the log, a restore puts it back, and a purge frees it', async () => {
+  // A blank session's row is drawn from its projection — title, cwd and the blank flag — so a deletion that moved
+  // only the log would leave the record that draws the row. The cache package calls pruning "out-of-band
+  // maintenance, same stance as session persistence itself", which is exactly what this plugin is.
+  const ids = ['session-old-2']
+  const plan = await plannedWithProjections(ids)
+  const projection = join(PROJECTIONS, 'session-old-2.json')
+  assert.ok(existsSync(projection), 'the fixture starts with a projection')
+
+  const moved = await moveToTrash(TRASH, plan)
+  assert.equal(moved.moved.length, 1)
+  assert.equal(existsSync(projection), false, 'the derived record left with the log')
+  assert.ok(existsSync(join(TRASH, moved.moved[0].trash_path.split(/[\\/]/u).pop(), 'projection.json')), 'and it is inside the trashed folder')
+
+  const back = await restoreFromTrash(TRASH, ROOT, ids)
+  assert.equal(back.restored[0].projection, true, 'the restore says the record went back')
+  assert.ok(existsSync(projection), 'the projection is where the sidebar reads it')
+
+  // Purge: the folder walk already owns every file inside, so the record is freed with the log and counted.
+  await moveToTrash(TRASH, await plannedWithProjections(ids))
+  const purged = await purgeTrash(TRASH, ids)
+  assert.equal(purged.purged.length, 1)
+  assert.equal(existsSync(projection), false, 'a purge frees the derived record too')
 })

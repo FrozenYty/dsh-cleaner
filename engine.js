@@ -367,6 +367,9 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
   return {
     sessions_root: sessionsRoot,
     workspace_file: workspaceFile,
+    // The projection cache, when the caller named one, travels with the plan so a move can take each session's
+    // derived record with its log (the cache package documents pruning checkpoints as out-of-band maintenance).
+    ...(projections === undefined ? {} : { projections }),
     archived_ids: archived.length,
     stored_sessions: stored.size,
     // Everything the store holds, not only what is reclaimable: a listing that says "4 MiB" without
@@ -642,6 +645,22 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
       folder,
     }
     if (candidate.title !== undefined) entry.title = candidate.title
+    // The projection is the product's derived record for this id — its title, its `cwd` and whether it is blank —
+    // and a **blank** session's row is drawn from exactly that. Its own package documents pruning checkpoints as
+    // "out-of-band maintenance, same stance as session persistence itself", so it travels with the log: into the
+    // same trash folder, back on restore, freed by a purge. Best-effort: a projection that is missing or held costs
+    // its own record, never the deletion — the log is the authority.
+    if (typeof plan.projections === 'string' && plan.projections.length > 0) {
+      const projection = join(plan.projections, `${check.id}.json`)
+      try {
+        await rename(projection, join(trashPath, 'projection.json'))
+        entry.projection_path = projection
+      } catch (error) {
+        if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') {
+          entry.projection_error = String(error?.message ?? error)
+        }
+      }
+    }
     entries.push(entry)
     moved.push({
       id: check.id,
@@ -842,6 +861,22 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       remaining.push(entry)
       continue
     }
+    // The derived record goes back before the directory does: once `held` has moved, the folder that carries the
+    // projection is gone. Written back first, and only when the deletion had taken one.
+    let projectionRestored = false
+    if (typeof entry.projection_path === 'string' && entry.projection_path.length > 0) {
+      try {
+        await mkdir(dirname(entry.projection_path), { recursive: true })
+        await rename(join(held, 'projection.json'), entry.projection_path)
+        projectionRestored = true
+      } catch (error) {
+        // A projection the restore could not put back is reported, never fatal: the log is the authority and the
+        // cache rebuilds itself from it.
+        if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') {
+          failed.push({ id: entry.id, error: `the projection could not be put back: ${error?.message ?? error}` })
+        }
+      }
+    }
     try {
       await mkdir(dirname(target), { recursive: true })
       await rename(held, target)
@@ -860,6 +895,7 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       files: landed.files,
       bytes: landed.bytes,
       verified: landed.ok,
+      ...(entry.projection_path === undefined ? {} : { projection: projectionRestored }),
       title: entry.title,
     })
   }
