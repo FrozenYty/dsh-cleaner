@@ -1,3 +1,15 @@
+## [0.5.3] - 2026-11-15
+
+- **A click now says what it did, at the frame level** (`shell.overlay`, self-dismissing after 12 seconds):
+  *已删除。目录在回收站里，可以恢复。* / *没有删除：<原因>* / *删除失败：<原因>* / and, when the click cannot run
+  at all, *当前没有打开的会话，没有可以作为调用者的会话*. "点击没有效果" was never a wrong symptom — it was the
+  absence of one, and a row that deletes nothing and says nothing cannot be told apart from a row that is not
+  wired up. That ambiguity is what cost the most rounds here.
+- The notice reads the same sentence the report carries, so what a person sees in the window and what the next
+  listing prints cannot disagree.
+- The half's self-report gained `notice=contributed | refused: …`.
+
+## [0.5.2] - 2026-11-15
 ## [0.5.2] - 2026-11-15
 
 - **The row no longer needs a restarted Host.** It tried one carrier — the HTTP route — which exists only from
