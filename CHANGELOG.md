@@ -1,3 +1,18 @@
+## [0.5.13] - 2026-11-15
+
+- **The data directory is the workspace's `.agents/cleaner`, not the profile's.** `workingDirectory.defaultDirectory`
+  is documented as "an absolute fallback for Sessions without an original directory", and in a desktop profile it
+  is the profile's own directory — so resolving from it put the trash under
+  `~/.dsh/profiles/desktop/.agents/cleaner`. The workspace registry's records carry `path` (the same field the
+  sidebar compares a Session's `cwd` against), so that is what is asked now, and the answer is resolved when it is
+  first needed rather than frozen at load, because the registry may not be mounted yet when `apply` runs.
+- **The notices are short.** Every receipt now reads as one phrase — 已删除 / 未删除 / 无日志，已移出列表 /
+  已请求删除，回执见本会话 — instead of the paragraph the previous versions printed.
+- **The last click's outcome survives a reload**, in the window's own storage. Today's live fault became
+  unreadable exactly because a reload wiped it: the page came back with `lastClick=none`, and the only witness to
+  what the click did was gone. `lastClick` and `lastHide` are remembered across loads now.
+
+## [0.5.12] - 2026-11-15
 ## [0.5.12] - 2026-11-15
 
 - **A restore now reports what the store holds, not what the index remembered.** `restored` carried the entry's

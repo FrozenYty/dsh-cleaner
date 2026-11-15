@@ -643,7 +643,7 @@ test('a click with no session to name says so in the notice and in the report', 
   // Synchronously visible: the click sets the sentence and the notice reads it, so the person sees the reason
   // without opening anything, and the report carries the same sentence.
   const shown = rendered(panels.get('shell.overlay|dsh-cleaner.notice').component()).join(' ')
-  assert.match(shown, /no session is open/)
+  assert.match(shown, /No session is open/)
   return settle().then(() => {
     assert.equal(lastState(requests).lastClick, 'no session is open to name as the caller')
   })
@@ -730,7 +730,7 @@ test('a session that never wrote a log says so in the person\'s terms, and its r
   await settle()
   await settle()
   const notice = blank.panels.get('shell.overlay|dsh-cleaner.notice')
-  assert.match(JSON.stringify(notice.component()), /never wrote a log/)
+  assert.match(JSON.stringify(notice.component()), /no log — row removed/i)
   assert.deepEqual(hidden, ['session-blank-1'], 'the row is hidden, because there is nothing left to delete')
 
   const busy = mount({
