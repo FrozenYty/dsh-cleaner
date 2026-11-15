@@ -97,6 +97,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
   const retained = []
   const commands = []
   const released = []
+  const leaves = []
   let pendingInject
 
   page.fetch = async (url, options) => {
@@ -220,7 +221,13 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
           },
         }
       }
+      if (name === 'uiWorkspace') {
+        // The window's own workspace face: `startSession()` is the sidebar's 新会话 button, and with no workspace
+        // able to take a draft it clears the view to the default page. Recorded so a test can see the navigation.
+        return { startSession: () => leaves.push(current) }
+      }
       if (name === 'locale') {        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
+        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
         // the product's own fallback (an untranslated language lands on `en`).
         return {
           register: (ns, dicts) => {
@@ -283,6 +290,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
     retained,
     commands,
     released,
+    leaves,
     cleanup,
     pendingInject: () => pendingInject,
   }
@@ -807,4 +815,36 @@ test('the notice matrix: every outcome a person can reach says something', async
   nothing.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
   await settle()
   assert.match(JSON.stringify(nothing.panels.get('shell.overlay|dsh-cleaner.notice').component()), /No session is open/)
+})
+
+test('deleting the session on screen leaves its dead view, and nothing else does', async () => {
+  // The person asked for this: a deletion that ends the session being viewed must land on the default page, not stay
+  // in a conversation that no longer exists. `uiWorkspace.startSession()` is the sidebar's own 新会话 call, so the
+  // plugin reuses it instead of inventing navigation. Two guards are asserted here: a successful deletion of the
+  // session on screen moves, a successful deletion of any other session does not, and a *refused* deletion of the
+  // session on screen does not either — that session is still alive and the page is where the person means to stay.
+  const moved = {
+    removed: [{ id: 'session-blank-1' }], refused: [], trash: { root: 'x' },
+  }
+  const held = {
+    removed: [], refused: [], protected: [{ id: 'session-blank-1', reason: 'a live agent holds this session (status: running)' }],
+  }
+
+  const onScreen = mount({ menus: true, slots: true, current: 'session-blank-1', answer: moved })
+  onScreen.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  await settle()
+  assert.deepEqual(onScreen.leaves, ['session-blank-1'], 'the window left the view it had just deleted')
+
+  const other = mount({ menus: true, slots: true, current: 'session-blank-1', answer: moved })
+  other.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-other-1' })[0].run()
+  await settle()
+  await settle()
+  assert.deepEqual(other.leaves, [], 'deleting another session leaves the page alone')
+
+  const refused = mount({ menus: true, slots: true, current: 'session-blank-1', answer: held })
+  refused.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  await settle()
+  assert.deepEqual(refused.leaves, [], 'a refusal means the session is alive, so the page stays')
 })

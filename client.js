@@ -343,6 +343,32 @@ window.__ModuleLoader__.load({
         const cleanViaCommand = (caller, target) => commandViaSession(caller, `/clean ${target}`)
 
         /**
+         * Leave the view of a session that was just deleted, when it is the one on screen.
+         *
+         * A deleted session is released from the Host's store ([ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md)),
+         * so the window would otherwise sit on a dead page: a conversation whose session no longer exists. The
+         * product already has the call — `uiWorkspace.startSession()` is what the sidebar's *新会话* button runs, and
+         * with no workspace able to take a draft it clears the view to the default page — so this reuses the same
+         * seam instead of inventing a navigation of its own.
+         *
+         * Two guards, and both matter: only after a deletion that really happened (`moved` or `no log`, never a
+         * refusal — the session is alive there and the page is where the person wants to stay), and only when the
+         * id is the one the window shows.
+         * @param sessionId - the session the deletion named.
+         */
+        const leaveDeletedSession = (sessionId) => {
+          try {
+            if (sessionId !== currentSessionId()) return
+            const ui = ctx.get('uiWorkspace')
+            if (typeof ui?.startSession !== 'function') return
+            ui.startSession()
+          } catch (error) {
+            // The row and the log are gone either way; a window this call cannot move is reported, not thrown.
+            state.lastClick = `${state.lastClick}; could not leave the deleted view: ${reasonOf(error)}`
+          }
+        }
+
+        /**
          * Run the deletion for one session: the same operation the tool and the command run.
          *
          * Two carriers, tried in one order and reported either way. The route answers with the deletion's own
@@ -392,6 +418,11 @@ window.__ModuleLoader__.load({
               } else {
                 notify(why === undefined ? text('notice.kept', 'Not deleted') : `${text('notice.kept', 'Not deleted')}：${why}`)
               }
+              // Only a deletion that really happened, and only for the session being looked at: the view of a
+              // session that no longer exists is a dead page, and `startSession()` is the product's own "new
+              // session" (the same call the sidebar button makes, which falls back to the default page when no
+              // workspace can take a draft). A refused deletion leaves the session alive, so it must not move.
+              if (moved > 0 || noLog) leaveDeletedSession(sessionId)
               report()
               return
             }
