@@ -446,7 +446,7 @@ test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the
   assert.equal(shortcut.id, 'session.delete-log')
   assert.equal(typeof shortcut.label, 'function')
   assert.equal(shortcut.label(), 'Delete session')
-  for (const platform of ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:windows', 'web:macos', 'web:linux']) {
+  for (const platform of ['desktop:windows', 'desktop:macos', 'desktop:linux', 'web:windows', 'web:macos']) {
     // Serialised, because the definition was built in the page's realm: its objects are not this realm's.
     assert.equal(
       JSON.stringify(shortcut.defaults[platform]),
@@ -454,6 +454,9 @@ test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the
       platform,
     )
   }
+  // web:linux is deliberately unbound: the product admits only three fixed web combinations there, and a
+  // profile its rules reject refuses the **whole** registration — no catalogue entry, no keycap, no key.
+  assert.equal('web:linux' in shortcut.defaults, false, 'web:linux is left unbound rather than refusing everything')
 
   const resolved = shortcut.resolve()
   assert.equal(resolved.status, 'handled')
@@ -628,4 +631,28 @@ test('a click with no session to name says so in the notice and in the report', 
   return settle().then(() => {
     assert.equal(lastState(requests).lastClick, 'no session is open to name as the caller')
   })
+})
+
+test('a registry that refuses the full profile set still binds the desktop ones', () => {
+  // The product refuses a registration whose *every* declared profile must admit the key, so one unsupported
+  // profile used to cost the whole key. The fallback is what keeps a refused platform from costing all of them.
+  const attempts = []
+  const refuseFirst = (definition) => {
+    attempts.push(Object.keys(definition.defaults).sort().join(','))
+    if (attempts.length === 1) throw new Error('Unsupported Web shortcut: session.delete-log')
+    return () => {}
+  }
+  const definitions = []
+  const ctx = {
+    get: (name) => (name === 'shortcuts'
+      ? { register: refuseFirst, catalog: { getSnapshot: () => definitions.map((entry) => ({ id: entry.id })) } }
+      : undefined),
+    effect: (run) => { const dispose = run(); return () => dispose?.() },
+    inject: (deps, callback) => callback({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect }),
+  }
+  plugin(register()).apply(ctx)
+
+  assert.equal(attempts.length, 2, 'it tried the declared set, then the desktop-only set')
+  assert.match(attempts[0], /web:windows/)
+  assert.equal(attempts[1].includes('web:'), false, 'the retry declares no web profile')
 })
