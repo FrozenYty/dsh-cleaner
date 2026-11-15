@@ -1,3 +1,21 @@
+## [0.5.16] - 2026-11-15
+
+- **The deletion answer has no `unlogged` field — that one belongs to the listing.** Asking the running Host for the
+  answer verbatim settled it, after two rounds of guessing from reason strings:
+
+  ```json
+  "refused":   [ { "id": "01940c04-…", "reason": "no session directory is stored under that id" } ],
+  "workspace": { "detached": ["01940c04-…"], "archived": [], "orphans": ["01940c04-…"] },
+  "query":     { "still_listed": [] }
+  ```
+
+  `workspace.orphans` is the structural signal for "there was nothing to delete and the registry was asked to drop
+  the row", so that is what decides the branch now, with `unlogged` kept as a second shape for the listing's answer.
+  A log-less click therefore prints **无日志，已移出列表** instead of 未删除, and leaves the row to the registry it
+  already asked.
+- The test carries that answer verbatim, so the next person does not have to guess which field a deletion reports.
+
+## [0.5.15] - 2026-11-15
 ## [0.5.15] - 2026-11-15
 
 - **The engine reports an id with no directory under `unlogged`, and the window was looking in `refused`.** The

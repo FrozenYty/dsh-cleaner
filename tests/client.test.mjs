@@ -751,3 +751,31 @@ test('a held-back id keeps its row and shows the reason the engine gave', async 
   assert.match(lastState(busy.requests).lastClick, /status: running/)
   assert.match(JSON.stringify(busy.panels.get('shell.overlay|dsh-cleaner.notice').component()), /status: running/)
 })
+
+test('the deletion answer marks a log-less id under workspace.orphans, and that is done', async () => {
+  // Captured verbatim from the running Host: the answer has no `unlogged` field at all; what it carries is
+  // `workspace.orphans`, `workspace.detached` and `query.still_listed: []`. Reading the listing's field on a
+  // deletion answer is why a finished click kept printing 未删除.
+  const hidden = []
+  const blank = mount({
+    menus: true,
+    slots: true,
+    current: 'session-open-1',
+    answer: {
+      removed: [], removed_count: 0, removed_bytes: 0,
+      trash: { root: 'D:\\MYPROJS\\.agents\\cleaner\\trash', retention_days: 30, recoverable: [] },
+      failed: [],
+      refused: [{ id: 'session-blank-1', reason: 'no session directory is stored under that id' }],
+      workspace: { registry: 'workspaceRegistry', detached: ['session-blank-1'], archived: [], orphans: ['session-blank-1'], restored: [] },
+      query: { backend: 'sessionQuery', still_listed: [] },
+      verify: { backend: 'not-asked' },
+    },
+    archive: (sessionId) => { hidden.push(sessionId) },
+  })
+  blank.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  await settle()
+  assert.match(lastState(blank.requests).lastClick, /^nothing to delete: no log/)
+  assert.match(JSON.stringify(blank.panels.get('shell.overlay|dsh-cleaner.notice').component()), /no log — row removed/i)
+  assert.deepEqual(hidden, ['session-blank-1'], 'and the row is asked to leave')
+})
