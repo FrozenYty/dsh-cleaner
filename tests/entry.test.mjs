@@ -703,9 +703,9 @@ test('the human command is registered with the shape the command registry requir
   assert.match(definition.description, /logs/)
   assert.equal(definition.input.hint.length > 0, true)
   assert.equal(typeof definition.handler, 'function')
-  // The registry owns the definition's lifetime; the plugin registers it as an effect. Two effects are
-  // registered in a profile with both carriers: the command and the window's route.
-  assert.equal(tools.disposed.length, 2)
+  // The registry owns the definition's lifetime; the plugin registers it as an effect. Five effects are
+  // registered in a profile with both carriers: the command and the four window routes.
+  assert.equal(tools.disposed.length, 5)
   for (const dispose of tools.disposed) dispose()
   assert.deepEqual([...tools.commands.keys()], [])
   assert.deepEqual([...tools.routes.keys()], [], 'and the route goes with the plugin')
@@ -746,9 +746,17 @@ test('a command registry that mounts after the plugin still gets the command', (
     webServer: { register: (route) => { routes.set(route.path, route); return () => routes.delete(route.path) } },
     effect: ctx.effect,
   })
-  assert.deepEqual([...routes.keys()], ['/dsh-cleaner/'], 'and the window has a transport')
-  assert.equal(routes.get('/dsh-cleaner/').kind, 'prefix')
-  assert.equal(typeof routes.get('/dsh-cleaner/').resource, 'function')
+  assert.equal(
+    JSON.stringify([...routes.keys()].sort()),
+    JSON.stringify(['/dsh-cleaner/delete', '/dsh-cleaner/list', '/dsh-cleaner/state', '/dsh-cleaner/trash']),
+    'and the window has a transport',
+  )
+  for (const route of routes.values()) {
+    // Exact paths: a prefix route at `/dsh-cleaner/` registered cleanly and then never matched a request, which
+    // is exactly the failure this assertion exists to prevent from coming back.
+    assert.equal(route.kind, 'exact')
+    assert.equal(typeof route.handler, 'function')
+  }
 })
 
 test('the command lists without deleting, and deletes only what it is given', async () => {
@@ -834,21 +842,48 @@ test('a profile without the commands service still registers its tools', () => {
   const tools = install({ commands: false })
   assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'])
   assert.equal(tools.commands.size, 0)
-  assert.equal(tools.routes.size, 1, 'the window keeps its transport without a command registry')
+  assert.equal(tools.routes.size, 4, 'the window keeps its transport without a command registry')
 })
 
 
 
-/** Call the host route the way the page does: one POST, one JSON answer. */
-async function route(tools, action, body, method = 'POST') {
-  const registered = tools.routes.get('/dsh-cleaner/')
-  assert.ok(registered, 'the window has a transport')
-  const response = await registered.resource(new Request(`http://127.0.0.1:1/dsh-cleaner/${action}`, {
+/**
+ * Call a route the way the carrier does: a **handler** with a Node request and response.
+ *
+ * The read-only `resource` shape is not what this plugin registers — that one is refused for any method but GET
+ * and HEAD before matching — so the fixture hands over the raw request the way the carrier does, and reads the
+ * answer off the response object.
+ */
+async function callRoute(tools, action, raw, method = 'POST') {
+  const registered = tools.routes.get(`/dsh-cleaner/${action}`)
+  assert.ok(registered, `the window has a transport for ${action}`)
+  const text = raw === undefined ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw)
+  const request = {
     method,
-    headers: { 'content-type': 'application/json' },
-    ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
-  }))
-  return { status: response.status, value: await response.json() }
+    async *[Symbol.asyncIterator]() {
+      if (text !== '') yield Buffer.from(text)
+    },
+  }
+  const chunks = []
+  const response = {
+    statusCode: 0,
+    headers: {},
+    writeHead(status, headers) {
+      this.statusCode = status
+      this.headers = headers
+    },
+    end(chunk) {
+      if (chunk !== undefined) chunks.push(chunk)
+    },
+  }
+  await registered.handler(request, response)
+  const answer = chunks.join('')
+  return { status: response.statusCode, text: answer, value: answer === '' ? undefined : JSON.parse(answer) }
+}
+
+/** One POST with a JSON body, which is what every route call the window makes looks like. */
+async function route(tools, action, body, method = 'POST') {
+  return callRoute(tools, action, method === 'POST' ? body ?? {} : undefined, method)
 }
 
 test('the row deletes through one route call, and the answer says what moved', async () => {
@@ -888,7 +923,7 @@ test('the route lists without deleting, and names the trash in the same answer',
   assert.equal(status, 200)
   assert.equal(value.candidates.length, 3)
   assert.deepEqual(value.protected.map((entry) => entry.id), [CALLER])
-  assert.equal(value.window_transport.startsWith('route /dsh-cleaner/ registered'), true)
+  assert.equal(value.window_transport, 'routes /dsh-cleaner/delete /dsh-cleaner/list /dsh-cleaner/trash /dsh-cleaner/state registered')
   assert.equal(value.trash.count, 0)
 
   await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
@@ -945,17 +980,18 @@ test('the window reports over the route, and the next listing prints it', async 
   assert.match(text(tools.get('list_session_logs'), listing), /Window half: register=registered {2}row=contributed {2}route=ok \(state\)/)
 })
 
-test('the route answers a wrong method, a wrong body and a wrong action in words', async () => {
+test('a route answers a wrong method and a wrong body in words', async () => {
   const tools = install()
+  // An unknown path never reaches this plugin at all: the carrier owns the match order, and an exact path that
+  // is not registered is answered by the carrier's fallback. What this plugin must get right is the method and
+  // the body, which it can see.
   assert.equal((await route(tools, 'delete', {}, 'GET')).status, 405)
-  assert.equal((await route(tools, 'nonsense', {})).status, 404)
-  const registered = tools.routes.get('/dsh-cleaner/')
-  const broken = await registered.resource(new Request('http://127.0.0.1:1/dsh-cleaner/delete', {
-    method: 'POST',
-    body: 'not json',
-  }))
+  const broken = await callRoute(tools, 'delete', 'not json')
   assert.equal(broken.status, 400)
-  assert.match((await broken.json()).error, /must be JSON/)
+  assert.match(broken.value.error, /must be JSON/)
+  // A handler answers an empty body as an empty object rather than an error: the window's listing call sends
+  // no fields at all, and a body of "" is a body.
+  assert.equal((await callRoute(tools, 'list', undefined)).status, 200)
 })
 
 test('a profile without a web server still registers its tools, and says so in the listing', async () => {
