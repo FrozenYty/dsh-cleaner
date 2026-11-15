@@ -304,7 +304,9 @@ test('a session menu item deletes through the host route, naming the target and 
 
   const entry = registrations.get('dsh-cleaner.delete-log')
   assert.equal(entry.target, 'session')
-  assert.equal(entry.order, 350, 'after fork (300), before the id copy (450)')
+  // The product's own session menu contributions are pin 100, rename 200, fork 300, copy-id 450 and archive
+  // 600, and a data action sorts by order — so a number above 600 is what puts this row below 归档会话.
+  assert.equal(entry.order, 700, 'below archive (600), which is the last product row')
   assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
 
   const [item] = entry.resolve({ sessionId: 'session-other-1' })

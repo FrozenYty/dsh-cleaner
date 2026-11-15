@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.5.7。
+- 当前版本：v0.5.8。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -77,7 +77,7 @@ session files”。这个 bundle 就是那次外部清理，它只守一条规�
 模型**——没有回合、没有请求、不为一个你已经做完的决定再花一次上下文。两个调用者最终都落在同一份实现上，
 所以人打的命令和模型调的工具不可能给出不一样的答案（[ADR 0011](docs/adr/0011-one-operation-two-callers.md)）。
 
-会话自己的 **⋯ 菜单**里有同一件事的一行：*删除会话*（中文窗口）／*Delete session*（英文窗口），和`删除工作区`同一种红色，带产品为它注册的垃圾桶图标，紧跟在`分叉会话`之后、`复制 Session ID`之前（`order: 350`）。这是一条**数据贡献**，不是渲染器：bundle 只给出标签、图标键和点击之后做什么，菜单由侧边栏按它自己的动作画。打开菜单时它**不问宿主任何东西**，唯一的调用发生在你点击的那一刻；快捷键目录里存在这条绑定之后，标签旁边会印出 Ctrl+Shift+D。**Ctrl+Shift+D**（macOS 是 ⌘⇧D）对当前窗口正在看的会话做同一件事，它是产品快捷键表里的真实绑定，会出现在快捷键设置里、也能在那里改键。
+会话自己的 **⋯ 菜单**里有同一件事的一行：*删除会话*（中文窗口）／*Delete session*（英文窗口），和`删除工作区`同一种红色，带产品为它注册的垃圾桶图标，紧跟在`归档会话`**下面**、排在最后（`order: 700`；产品自己的行是置顶 100、重命名 200、分叉 300、复制会话 ID 450、归档 600）。这是一条**数据贡献**，不是渲染器：bundle 只给出标签、图标键和点击之后做什么，菜单由侧边栏按它自己的动作画。打开菜单时它**不问宿主任何东西**，唯一的调用发生在你点击的那一刻；快捷键目录里存在这条绑定之后，标签旁边会印出 Ctrl+Shift+D。**Ctrl+Shift+D**（macOS 是 ⌘⇧D）对当前窗口正在看的会话做同一件事，它是产品快捷键表里的真实绑定，会出现在快捷键设置里、也能在那里改键。
 
 窗口访问宿主走的是**宿主半边注册的唯一一条 HTTP 路由**——产品自带 web 载体上的
 `POST /dsh-cleaner/{delete,list,trash,state}`。这不是偏好：侧边栏那一行要处理的会话通常是**关着的**，
@@ -361,6 +361,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么 agent 忙就拒绝、只是驻留就不拒绝？ | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | 一次删除会碰哪些 workspace 记录？ | [ADR 0009](docs/adr/0009-two-records-two-cases.md)（已被取代） |
 | 为什么删掉的那一行会当场消失？ | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
+| 为什么这一行是会话菜单里最后、带分隔线的动作？ | [ADR 0016](docs/adr/0016-row-below-archive.md) |
 | 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |

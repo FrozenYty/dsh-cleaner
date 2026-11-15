@@ -431,9 +431,11 @@ window.__ModuleLoader__.load({
          * `resolve` is **synchronous and asks nothing**: every version that asked the host something while the
          * menu was opening found a way to take the menu down with it.
          *
-         * Presentation, in the product's own vocabulary: `order: 350` seats it directly after 分叉会话 (fork
-         * 300) and before the id copy (450); `danger` and the icon key are the pair the workspace plugin uses
-         * for its own delete row, so this row reads exactly like *删除工作区*.
+         * Presentation, in the product's own vocabulary: a data action sorts by `order` and then by id, and the
+         * session menu's own contributions, read from `dsh-client-ui-workspace`, are pin 100, rename 200, fork
+         * 300, copy-id 450 and **archive 600**. `order: 700` therefore seats this row below *归档会话* — the
+         * destructive row goes last, where *删除工作区* also sits in the workspace menu, with the same
+         * `danger` + `separatorBefore` pair the product uses for its own delete row.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -441,7 +443,7 @@ window.__ModuleLoader__.load({
           return menus.register({
             id: 'dsh-cleaner.delete-log',
             target: 'session',
-            order: 350,
+            order: 700,
             resolve: (target) => {
               const sessionId = target?.sessionId
               if (typeof sessionId !== 'string' || sessionId.length === 0) return []
@@ -450,6 +452,7 @@ window.__ModuleLoader__.load({
                 label: label(),
                 icon: { key: 'workspace.delete' },
                 danger: true,
+                separatorBefore: true,
                 ...shortcutHint(),
                 run: () => runClean(sessionId),
               }]
