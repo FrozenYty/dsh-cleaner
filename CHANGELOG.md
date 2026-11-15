@@ -7,6 +7,24 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.5.0] - 2026-11-15
+
+- **The trash has a page.** The browser half contributes one settings page — *已删除的会话 / Deleted
+  sessions* — listing what the trash holds: title and id, bytes, when it was deleted, and a **恢复 /
+  Restore** and **彻底删除 / Delete for good** button per entry. It is the seat the product documents
+  (`slots.inject` → `slots.register` on `settings.section`), registered only when a slot service exists, so a
+  profile without one keeps the menu row, the key and the dictionary.
+- **The page acts through the same route the menu row uses**, so the two cannot drift: one `POST
+  /dsh-cleaner/trash` with `op: list | restore | purge`, and every failure is shown in place instead of leaving
+  a stale list.
+- React comes from the page's own module table (`require('react')`, the documented shape for a Client module),
+  so the panel needs no build step and no duplicate installation.
+- The client manifest now declares the packages whose seats it uses (`dsh-client-ui-settings`,
+  `-layout`, `-locale`) instead of the stale session-controller id from the era when this half talked to
+  `ctx.sessions`.
+- The half's self-report gained `panel=contributed | refused: …`, so "the page is missing" is a sentence in the
+  listing rather than a question.
+
 ## [0.4.0] - 2026-11-15
 
 - **The trash moved out of `DSH_HOME`, and became configurable.** `DSH_HOME` holds Harness data — sessions,

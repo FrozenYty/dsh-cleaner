@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.4.0.
+- Current version: v0.5.0.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -109,6 +109,11 @@ the window is showing, which is what keeps the running session protected on this
 ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). Every listing prints what that
 transport is (`Window transport: route /dsh-cleaner/ registered`), because a row that is drawn and cannot act
 looks exactly like one that works.
+
+The same operation has a **page**: *Settings → 已删除的会话* / *Deleted sessions* lists what the trash holds —
+title and id, bytes, when it was deleted — with a *Restore* and a *Delete for good* button per entry. It is one
+contribution to the product's own settings seat, registered only when a slot service exists, and every button
+posts the same route the ⋯ row uses, so the page and the row cannot drift.
 
 ## Where the data lives
 

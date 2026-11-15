@@ -32,18 +32,49 @@ function register(page = {}) {
   return loaded[0]
 }
 
-/** The plugin object the loader's factory returns, with a `require` that must never be called. */
+/** The plugin object the loader's factory returns, with a `require` that knows only the page's module table. */
 function plugin(definition) {
-  return definition.factory(() => {
-    throw new Error('the bundle half must not require anything')
+  const asked = []
+  const value = definition.factory((name) => {
+    asked.push(name)
+    if (name === 'react') return fakeReact()
+    throw new Error(`the bundle half must not require anything but the page's own table (asked for ${name})`)
   })
+  value.asked = asked
+  return value
+}
+
+/**
+ * A React just real enough to call a component function once.
+ *
+ * `useState` answers the initial value and drops every update, and `useEffect` runs the effect immediately:
+ * enough to see the first render tree (the labels and the structure) without a renderer. The list itself is
+ * covered by the host-side tests, which exercise the same route answer.
+ */
+function fakeReact() {
+  return {
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
+    useState: (initial) => [initial, () => {}],
+    useEffect: (effect) => { effect() },
+  }
+}
+
+/** Everything the rendered tree says, as one string, so an assertion reads like a person's report. */
+function rendered(node) {
+  if (node === null || node === undefined || node === false) return []
+  if (typeof node === 'string' || typeof node === 'number') return [String(node)]
+  if (Array.isArray(node)) return node.flatMap(rendered)
+  return [
+    typeof node.type === 'string' ? '' : '',
+    ...rendered(node.children),
+  ]
 }
 
 /**
  * Mount the half against a fake page and return what it did.
  * @param options - the optional client services, the route's answer, and the page's own state.
  */
-function mount({ menus, locale, shortcuts, current, injectThrows, answer, transport } = {}) {
+function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrows, answer, transport } = {}) {
   const page = {
     localStorage: {
       getItem: (name) => (name === 'dsh.sessions.current' && current !== undefined
@@ -56,6 +87,10 @@ function mount({ menus, locale, shortcuts, current, injectThrows, answer, transp
   const registrations = new Map()
   const requests = []
   const dictionaries = new Map()
+  /** The settings page this half contributes, and the slots it asked for. */
+  const panels = new Map()
+  const slotRequests = []
+  const injections = []
   let pendingInject
 
   page.fetch = async (url, options) => {
@@ -115,8 +150,29 @@ function mount({ menus, locale, shortcuts, current, injectThrows, answer, transp
           },
         }
       }
-      if (name === 'locale') {
-        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
+      if (name === 'slots') {
+        if (!slots) return undefined
+        if (slots === 'refuse') {
+          return {
+            inject: () => {
+              throw new Error('the slot service refused this contribution')
+            },
+          }
+        }
+        return {
+          // The documented shape: wait for the slot, then register into it.
+          inject: (key, callback) => {
+            slotRequests.push(key)
+            callback()
+            return () => {}
+          },
+          register: (options, component) => {
+            panels.set(options.id, { options, component })
+            return () => panels.delete(options.id)
+          },
+        }
+      }
+      if (name === 'locale') {        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
         // the product's own fallback (an untranslated language lands on `en`).
         return {
           register: (ns, dicts) => {
@@ -149,10 +205,22 @@ function mount({ menus, locale, shortcuts, current, injectThrows, answer, transp
       : shortcuts === 'late'
         ? {
             inject: (deps, callback) => {
+              injections.push({ deps, callback })
               pendingInject = { deps, callback }
             },
           }
-        : {},
+        : {
+            // The ordinary case: each registration waits for its own service and is answered in turn.
+            inject: (deps, callback) => {
+              injections.push({ deps, callback })
+              if (deps.includes('shortcuts') && shortcuts !== undefined) {
+                callback({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
+              }
+              if (deps.includes('slots') && slots !== undefined) {
+                callback({ slots: ctx.get('slots'), effect: ctx.effect })
+              }
+            },
+          },
   }
   const cleanup = []
   plugin(register(page)).apply(ctx)
@@ -161,6 +229,9 @@ function mount({ menus, locale, shortcuts, current, injectThrows, answer, transp
     registered,
     registrations,
     shortcuts: registeredShortcuts,
+    panels,
+    slotRequests,
+    injections,
     cleanup,
     pendingInject: () => pendingInject,
   }
@@ -333,10 +404,15 @@ test('a shortcuts registry that refuses the definition costs the key, not the ro
 })
 
 test('a shortcut service that mounts after the page still gets the binding', () => {
-  const { pendingInject } = mount({ shortcuts: 'late' })
-  const pending = pendingInject()
-  // Serialised: the definition was built in the page's realm, so its arrays are not this realm's.
-  assert.equal(JSON.stringify(pending.deps), JSON.stringify(['shortcuts']), 'the binding waits for its service')
+  const mounted = mount({ shortcuts: 'late' })
+  // Both services are waited for, and each registration is answered with its own: the key and the panel are
+  // independent, so a profile that mounts only one of them still gets that one. Serialised, because the
+  // dependency arrays were built in the page's realm.
+  assert.equal(
+    JSON.stringify(mounted.injections.map((entry) => entry.deps)),
+    JSON.stringify([['shortcuts'], ['slots']]),
+  )
+  const pending = mounted.injections[0]
 
   const definitions = []
   pending.callback({
@@ -375,4 +451,57 @@ test('a menus service that refuses the contribution costs the row and nothing el
   assert.deepEqual(registered, [], 'the contribution was refused')
   await settle()
   assert.match(lastState(requests).row, /refused: the menu service refused this contribution/)
+})
+
+test('the trash page is contributed to the settings seat, in the window\'s language', () => {
+  // "A deletion is recoverable" is a fact a person should be able to see and click, not one they have to ask
+  // a model to print. The seat is the documented settings page, registered the documented way.
+  const { panels, slotRequests } = mount({ menus: true, slots: true, locale: 'zh-CN' })
+
+  assert.deepEqual(slotRequests, ['settings.section'], 'the page waits for its slot')
+  const panel = panels.get('dsh-cleaner.trash')
+  assert.ok(panel, 'the page is registered')
+  assert.equal(panel.options.name, 'settings.section')
+  assert.equal(panel.options.order, 500)
+  assert.equal(panel.options.label(), '已删除的会话')
+
+  const english = mount({ menus: true, slots: true })
+  assert.equal(english.panels.get('dsh-cleaner.trash').options.label(), 'Deleted sessions')
+})
+
+test('the page\'s first render says what it is and that it is reading', () => {
+  // The component is called once with a React stub: enough to hold the structure and the words, which is what
+  // a person sees first. The list itself arrives from the same route the row uses, covered host-side.
+  const { panels } = mount({ menus: true, slots: true })
+  const tree = panels.get('dsh-cleaner.trash').component()
+  const words = rendered(tree).join(' ')
+  assert.match(words, /Deleted sessions/)
+  assert.match(words, /A deletion is a move/)
+  assert.match(words, /Reading the trash/)
+})
+
+test('a profile with no slot service keeps the row, the key and the dictionary', () => {
+  // The panel is the one contribution that depends on a slot service, and it must be the only thing that goes
+  // without one: a hard `inject` would have taken the menu row down with it.
+  const { registered, shortcuts, requests } = mount({ menus: true, shortcuts: true })
+  assert.equal(registered.length, 1, 'the row is still contributed')
+  assert.equal(shortcuts.length, 1, 'the key is still bound')
+  return Promise.resolve().then(() => {
+    const state = lastState(requests)
+    assert.equal(state.row, 'contributed')
+    assert.equal(state.panel, 'not contributed')
+  })
+})
+
+test('a slot service that refuses the page costs the page, not the plugin', async () => {
+  const { registered, requests } = mount({ menus: true, slots: 'refuse' })
+  assert.equal(registered.length, 1, 'the row is still there')
+  await settle()
+  assert.match(lastState(requests).panel, /refused: the slot service refused this contribution/)
+})
+
+test('the half reports that the page is contributed', async () => {
+  const { requests } = mount({ menus: true, slots: true, current: 'session-open-1' })
+  await settle()
+  assert.equal(lastState(requests).panel, 'contributed')
 })
