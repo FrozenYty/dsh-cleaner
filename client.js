@@ -383,9 +383,12 @@ window.__ModuleLoader__.load({
               notify(moved > 0
                 ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
                 : `${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
-              // Even when the host moved nothing — an id with no log on disk — the row must leave: that is what
-              // the person asked for, and it is the one part of this the host cannot do by itself.
-              await hideRow(sessionId)
+              // Hide the row only when it should go. A real deletion or a session that never had a log both end
+              // with a row that must leave; a *refusal* — a busy agent, a directory that could not be moved —
+              // must leave the row alone, or the window would contradict the receipt printed beside it.
+              const ghostOnly = refused.length > 0
+                && refused.every((entry) => /no session directory|no log/iu.test(String(entry?.reason ?? '')))
+              if (moved > 0 || ghostOnly) await hideRow(sessionId)
               report()
               return
             }

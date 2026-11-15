@@ -129,6 +129,8 @@ function storagePaths() {
  */
 function protections(ctx, exec) {
   const protect = []
+  // Only an Agent's own session is held back: a window that names itself as the caller is showing a session, not
+  // writing to it, so the row a person clicks must be deletable even when it is the one on screen.
   const callerId = exec?.agent?.session?.id
   if (callerId !== undefined) protect.push({ id: String(callerId), reason: 'the session running this command' })
   const agents = ctx.get('agents')
@@ -456,8 +458,14 @@ async function unarchiveSessions(ctx, ids) {
  * @returns the deletion report: what was removed, what was kept, and what the records now say.
  */
 async function deleteLogs(ctx, exec, requested) {
-  if (exec?.agent === undefined) {
-    throw new Error('a deletion needs a calling Agent: without one the running session cannot be protected')
+  // Who is asking decides what is protected. A tool call or a `/clean` command comes from an Agent, and the
+  // session that Agent runs in must survive its own request; a window is not running anything, so the session
+  // it happens to be *showing* is not protected — otherwise a person could never delete the session in front of
+  // them, which is the ordinary case. A caller-less, window-less call is still refused.
+  const fromAgent = exec?.agent?.session?.id !== undefined
+  const fromWindow = exec?.window !== undefined && exec.window !== null
+  if (!fromAgent && !fromWindow) {
+    throw new Error('a deletion needs a calling Agent or a window: without one nothing can be held back')
   }
   const ids = [...new Set(requested)]
   if (ids.length === 0) throw new Error('a deletion must name at least one session')
@@ -960,10 +968,11 @@ async function handleRoute(ctx, action, request, response) {
     return respond(response, { error: `the body must be JSON (${reasonOf(error)})` }, 400)
   }
   const ids = Array.isArray(body?.ids) ? body.ids.filter((id) => typeof id === 'string' && id.length > 0) : []
-  // The caller is named by the window, because a route has no Agent of its own. Without one a deletion is
-  // refused by the same guard that protects the running session from a tool call.
+  // The window names the session it is showing, and that name is **not** an Agent: a route has no agent of its
+  // own, and the session on screen is not the one being written. Passing it as `window` keeps the name in the
+  // record without protecting a row the person deliberately clicked.
   const caller = typeof body?.caller === 'string' && body.caller.length > 0 ? body.caller : undefined
-  const exec = { agent: caller === undefined ? undefined : { session: { id: caller } } }
+  const exec = { window: caller ?? 'the window' }
   try {
     if (action === 'delete') return respond(response, await deleteLogs(ctx, exec, ids))
     if (action === 'list') return respond(response, await listLogs(ctx, exec))

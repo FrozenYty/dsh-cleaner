@@ -1,3 +1,18 @@
+## [0.5.10] - 2026-11-15
+
+- **The row can now delete the session you are looking at.** The window's own report from the live profile made
+  the fault plain: `lastClick=nothing moved: the session running this command`. The guard that protects an Agent's
+  own session was written for the `/clean` **command** carrier and had been copied onto the route, which fabricated
+  an Agent out of the session on screen — so clicking ⋯ → 删除会话 on an open session was refused, which is the
+  ordinary case for a cleanup tool. What is protected now follows the carrier
+  ([ADR 0018](docs/adr/0018-protection-follows-the-carrier.md)): an Agent call protects the session it runs in; a
+  window call names itself in the record and protects nothing; a call with neither is still refused. The busy-Agent
+  guard is unchanged and is what actually protects a session being written to.
+- **The row is hidden only when it should go.** A refusal — a busy Agent, a directory the filesystem would not let
+  go — now leaves the row alone, because hiding it would contradict the receipt printed beside it. A real deletion,
+  or a session that never had a log, still hides it: those are the two cases where the row must leave.
+
+## [0.5.9] - 2026-11-15
 ## [0.5.9] - 2026-11-15
 
 - **`order` was not the whole placement, and 0.5.8's conclusion was wrong.** The menu overlay splits resolved
