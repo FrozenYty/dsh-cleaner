@@ -417,38 +417,60 @@ window.__ModuleLoader__.load({
         /**
          * Ctrl+Shift+D (⌘⇧D on macOS): the keyboard path to the same act, on the session the window shows.
          *
-         * Registered with the product's own platform table, so the binding appears in the shortcut settings and
-         * is remappable there. The registration **waits for the service** (`ctx.inject`) instead of reading
-         * `ctx.get('shortcuts')` once while this half loads: a client service that mounts after this plugin is
-         * simply not there yet, and that silence is how a keycap went missing while the row worked.
+         * The defaults are declared **per profile**, and that list is load-bearing rather than cosmetic. The
+         * product's own validation (its `protocol.js`, read from the installed asar) admits a binding only if
+         * *every* declared profile admits it: `web:linux` accepts three fixed combinations and nothing else, so
+         * declaring it with `Control+Shift+D` made `register()` throw `Unsupported Web shortcut` and **the whole
+         * registration was refused** — no entry in the catalogue, hence no keycap beside the menu row and a key
+         * that never fired. An omitted profile is simply unbound, which is the honest state on that platform.
+         *
+         * The registration **waits for the service** (`ctx.inject`) instead of reading `ctx.get('shortcuts')`
+         * once while this half loads: a client service that mounts after this plugin is simply not there yet.
          */
         const registerShortcut = (scope) => {
           const binding = { code: 'KeyD', modifiers: ['primary', 'shift'] }
+          // Verified against the product's rules, profile by profile: desktop accepts it everywhere, web accepts
+          // it on macOS and Windows, and web on Linux does not — so that one is left unbound.
+          const supported = {
+            'desktop:macos': binding,
+            'desktop:windows': binding,
+            'desktop:linux': binding,
+            'web:macos': binding,
+            'web:windows': binding,
+          }
+          // If a profile above ever becomes unsupported, the desktop set still registers: a refused key must cost
+          // the key, not every key on every platform.
+          const desktopOnly = {
+            'desktop:macos': binding,
+            'desktop:windows': binding,
+            'desktop:linux': binding,
+          }
+          const define = (defaults) => ({
+            id: SHORTCUT_ID,
+            label,
+            aliases: ['delete session'],
+            defaults,
+            resolve: () => {
+              const sessionId = currentSessionId()
+              if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
+              return { status: 'handled', run: () => runClean(sessionId) }
+            },
+          })
           try {
             state.service = typeof scope.shortcuts?.register === 'function' ? 'present' : 'unusable'
-            scope.effect(() => scope.shortcuts.register({
-              id: SHORTCUT_ID,
-              label,
-              aliases: ['delete session'],
-              defaults: {
-                'desktop:macos': binding,
-                'desktop:windows': binding,
-                'desktop:linux': binding,
-                'web:macos': binding,
-                'web:windows': binding,
-                'web:linux': binding,
-              },
-              resolve: () => {
-                const sessionId = currentSessionId()
-                if (sessionId === undefined) return { status: 'blocked', reason: 'no session is open' }
-                return { status: 'handled', run: () => runClean(sessionId) }
-              },
-            }))
+            scope.effect(() => scope.shortcuts.register(define(supported)))
             state.register = 'registered'
           } catch (error) {
-            // Isolated like every contribution: a registry that refuses this definition costs the key only.
-            state.register = `refused: ${reasonOf(error)}`
-            console.error('dsh-cleaner: the shortcut was refused', error)
+            // Isolated like every contribution, and reported with the product's own words: "refused" without a
+            // reason is the same silence one layer down.
+            const reason = reasonOf(error)
+            try {
+              scope.effect(() => scope.shortcuts.register(define(desktopOnly)))
+              state.register = `registered desktop-only; the full set was refused (${reason})`
+            } catch (retry) {
+              state.register = `refused: ${reason}; desktop-only also refused (${reasonOf(retry)})`
+              console.error('dsh-cleaner: the shortcut was refused', error)
+            }
           }
         }
 

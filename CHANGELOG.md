@@ -1,3 +1,26 @@
+## [0.5.4] - 2026-11-15
+
+- **The keycap was missing because the registration was refused, and this is why.** The product's own validation
+  (its `protocol.js`, read from the installed asar) admits a shortcut only when **every declared profile** admits
+  it. `web:linux` accepts three fixed combinations and nothing else, so declaring it with `Control+Shift+D` made
+  `register()` throw `Unsupported Web shortcut` — and **the whole registration was refused**: no catalogue entry,
+  hence no key beside the menu row, and a key that never fired. Reproduced outside the browser with the
+  product's own pure functions before changing anything:
+
+  ```
+  web:macos    issue=none webAllowed=true   → accepted
+  web:windows  issue=none webAllowed=true   → accepted
+  web:linux    issue=unsupported-browser    → REGISTRATION THROWS
+  ```
+
+- `web:linux` is now **left unbound** — an omitted profile is simply unbound, which is the honest state on a
+  platform whose rules do not admit the combination. The other five keep `Ctrl+Shift+D` / `⌘⇧D`.
+- If a declared profile is ever refused again, the half **retries with the desktop profiles only**, so a refused
+  platform costs one platform instead of every key, and the report says which attempt won.
+- The three bug reports that started this — *「标签旁边不会印 Ctrl+Shift+D」*, *「点击没有效果」* — were two
+  different faults with one shape: a contribution that fails silently. Both now name their own failure.
+
+## [0.5.3] - 2026-11-15
 ## [0.5.3] - 2026-11-15
 
 - **A click now says what it did, at the frame level** (`shell.overlay`, self-dismissing after 12 seconds):
