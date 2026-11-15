@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.5.26。
+- 当前版本：v0.5.27。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -32,7 +32,7 @@
   前两项有 fixture 测试；第三项失败方向是安全的（0 个候选），见 [docs/design.md](docs/design.md) §8。
 - `scripts/check.mjs` 从不加载 Harness，也不该加载：激活是 profile 才能显示的事实，不是仓库能证明的东西。
 - 版本列表：[CHANGELOG.md](CHANGELOG.md)。机制与候选状态矩阵：[docs/design.md](docs/design.md)。
-  决策记录：[ADR](docs/adr/)。
+  决策记录：[ADR](docs/adr/)。每次改动为什么这么改、当时怎么验证的：[PROGRESS.md](PROGRESS.md)。
 
 ## 契约
 
@@ -377,6 +377,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | 每个版本包含什么？ | [CHANGELOG.md](CHANGELOG.md) |
+| 某次改动为什么这么做、当时怎么验证的？ | [PROGRESS.md](PROGRESS.md) |
 | 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | 助手在这里要守什么规则？ | [AGENTS.md](AGENTS.md) |

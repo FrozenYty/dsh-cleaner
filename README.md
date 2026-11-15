@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.26.
+- Current version: v0.5.27.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -40,7 +40,8 @@ delete one.
 - `scripts/check.mjs` never loads the Harness, and it is not meant to: activation is what a profile
   shows, not what a repository can prove.
 - Release list: [CHANGELOG.md](CHANGELOG.md). Mechanism and state matrix:
-  [docs/design.md](docs/design.md). Decisions: [the ADRs](docs/adr/).
+  [docs/design.md](docs/design.md). Decisions: [the ADRs](docs/adr/). Why a change was made, and how it was
+  checked at the time: [PROGRESS.md](PROGRESS.md).
 
 ## The contract
 
@@ -445,6 +446,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | Why is there a command as well as a tool? | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
 | What did each release contain? | [CHANGELOG.md](CHANGELOG.md) |
+| Why did a change happen, and how was it checked then? | [PROGRESS.md](PROGRESS.md) |
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
