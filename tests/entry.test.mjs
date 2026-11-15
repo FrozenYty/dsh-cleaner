@@ -898,37 +898,51 @@ test('the row deletes through one route call, and the answer says what moved', a
   assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false, 'out of the store at once')
 })
 
-test('the route refuses a deletion with no caller, and answers instead of rejecting', async () => {
-  // A route has no Agent of its own, so the window names the session it is showing. Without one the guard that
-  // protects the running session would have nothing to compare against.
+test('a route call with no caller deletes: a window is not an agent', async () => {
+  // The window names itself for the record, and that name is deliberately **not** treated as an Agent: a route
+  // runs nothing, so there is no session that has to survive its own request. A caller-less call is still a
+  // person's click, and it deletes.
   const tools = install()
   const { status, value } = await route(tools, 'delete', { ids: ['session-archived-1'] })
-  assert.equal(status, 500)
-  assert.match(value.error, /needs a calling Agent/)
-  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), 'and nothing was touched')
+  assert.equal(status, 200)
+  assert.equal(value.removed_count, 1)
+  assert.equal(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-1')), false, 'and the log is gone')
 })
 
-test('the caller the window names is the one the route protects', async () => {
+test('the session the window is showing is deletable, because it is not running anything', async () => {
+  // This is the case that made the row useless: a person opens a session, clicks its own ⋯ → 删除会话, and the
+  // guard for the *command* carrier refused it as "the session running this command". A route runs nothing, so
+  // the row in front of the person is exactly the row that must go.
   const tools = install()
   const { value } = await route(tools, 'delete', { caller: CALLER, ids: [CALLER] })
-  assert.deepEqual(value.refused.map((entry) => entry.id), [CALLER])
-  assert.equal(value.removed_count, 0)
+  assert.deepEqual(value.refused.map((entry) => entry.id), [])
+  assert.equal(value.removed_count, 1)
+  assert.equal(existsSync(join(ROOT, '--D-BETA--', CALLER)), false)
+})
+
+test('the command carrier still refuses its own session, and the tool still refuses its own', async () => {
+  // The agent path is the one that must be protected: deleting the log of the session whose turn is running
+  // would pull the file out from under the writer.
+  const tools = install()
+  const answer = await command(tools, `/clean ${CALLER}`)
+  assert.match(answer.text, /Kept/)
 })
 
 test('the route lists without deleting, and names the trash in the same answer', async () => {
   const tools = install()
-  // The caller travels with a listing too: without one there is no running session to protect, and the
-  // window's own session would be offered back as a candidate.
+  // The window names the session it is showing, and that session is a **candidate**: a route runs nothing, so
+  // there is no session that has to survive its own request, and the row in front of the person is the row this
+  // whole plugin exists to remove.
   const { status, value } = await route(tools, 'list', { caller: CALLER })
   assert.equal(status, 200)
-  assert.equal(value.candidates.length, 3)
-  assert.deepEqual(value.protected.map((entry) => entry.id), [CALLER])
+  assert.equal(value.candidates.length, 4)
+  assert.deepEqual(value.protected.map((entry) => entry.id), [])
   assert.equal(value.window_transport, 'routes /dsh-cleaner/delete /dsh-cleaner/list /dsh-cleaner/trash /dsh-cleaner/state registered')
   assert.equal(value.trash.count, 0)
 
   await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
   const after = (await route(tools, 'list', { caller: CALLER })).value
-  assert.equal(after.candidates.length, 2)
+  assert.equal(after.candidates.length, 3)
   assert.equal(after.trash.count, 1)
   assert.equal(after.trash.bytes, 200)
 })
