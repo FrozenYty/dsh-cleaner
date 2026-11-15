@@ -519,25 +519,32 @@ test('a second directory with the same session id is reported, not silently igno
   assert.ok(existsSync(duplicate) || existsSync(original))
 })
 
-test('a file that cannot be unlinked is reported, and the session stays a candidate', {
-  // POSIX refuses to remove an entry from a directory it may not write to, which is the portable way to
-  // hold a deletion open. Windows offers none without native calls or ACL work — and the branch under
-  // test is the same throw either way, so the invariant is covered where it can be.
-  skip: process.platform === 'win32' ? 'no portable way to deny an unlink on Windows' : false,
+test('a session that cannot be moved into the trash is reported, and stays a candidate', {
+  // POSIX refuses to take an entry out of a directory it may not write to, which is the portable way to hold a
+  // deletion open. Windows offers none without native calls or ACL work — and the branch under test is the
+  // same refusal either way, so the invariant is covered where it can be.
+  //
+  // Since ADR 0014 the deletion is one atomic rename, so what a denied write denies is the move, not an
+  // unlink: the report says so, and the session is still on disk under its own id.
+  skip: process.platform === 'win32' ? 'no portable way to deny a rename on Windows' : false,
 }, async () => {
-  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-2')
+  const project = join(ROOT, '--D-ALPHA--')
+  const dir = join(project, 'session-archived-2')
   const file = join(dir, 'session.v4.jsonl.zstd')
-  await chmod(dir, 0o500)
+  // Deny the *parent*: a rename needs write permission where the entry is taken from, and the session
+  // directory itself must stay readable so the walk still finds it.
+  await chmod(project, 0o500)
 
   try {
     const listing = await plan({ only: ['session-archived-2'] })
+    assert.ok(listing.candidates.some((entry) => entry.id === 'session-archived-2'), 'the walk still finds it')
     const report = await applyCleanup(listing)
 
     assert.deepEqual(report.removed, [])
     assert.equal(report.removed_bytes, 0)
     assert.equal(report.failed.length, 1)
     assert.equal(report.failed[0].id, 'session-archived-2')
-    assert.match(report.failed[0].error, /cannot be removed/)
+    assert.match(report.failed[0].error, /cannot be moved into the trash/)
     assert.ok(existsSync(file), 'a failure leaves the session where it was')
 
     // The promise the README makes about this state: the log is still on disk, so the next run offers it
@@ -546,7 +553,7 @@ test('a file that cannot be unlinked is reported, and the session stays a candid
     assert.deepEqual(ids(again.candidates), ['session-archived-2'])
     assert.deepEqual(again.requested, [])
   } finally {
-    await chmod(dir, 0o755)
+    await chmod(project, 0o755)
   }
 })
 

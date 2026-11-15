@@ -586,12 +586,13 @@ test('the archive is asked for while the log is still there, because the registr
 })
 
 test('a removal that fails gives the archive state back', {
-  // POSIX refuses to remove an entry from a directory it may not write to; Windows has no portable way to
-  // hold an unlink open, so this runs where it can (CI covers Linux and macOS).
-  skip: process.platform === 'win32' ? 'no portable way to deny an unlink on Windows' : false,
+  // POSIX refuses to take an entry out of a directory it may not write to; Windows has no portable way to hold
+  // a move open, so this runs where it can (CI covers Linux and macOS). Since the deletion is one atomic
+  // rename (ADR 0014), the permission that has to be denied is the *parent's*, not the directory's.
+  skip: process.platform === 'win32' ? 'no portable way to deny a rename on Windows' : false,
 }, async () => {
-  const dir = join(ROOT, '--D-ALPHA--', 'session-archived-1')
-  await chmod(dir, 0o500)
+  const project = join(ROOT, '--D-ALPHA--')
+  await chmod(project, 0o500)
   const registry = {
     archivedSessionIds: [],
     list: () => [{ sessionIds: ['session-archived-1'], async detachSession() {} }],
@@ -614,7 +615,7 @@ test('a removal that fails gives the archive state back', {
     assert.deepEqual(registry.archivedSessionIds, [])
     assert.match(text(tools.get('delete_session_logs'), value), /their archive state was put back/)
   } finally {
-    await chmod(dir, 0o755)
+    await chmod(project, 0o755)
   }
 })
 
