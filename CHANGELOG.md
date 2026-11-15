@@ -1,3 +1,16 @@
+## [0.5.8] - 2026-11-15
+
+- **The row can sit below 归档会话, and now does.** `contextMenus` documents its ordering as "Contributions sort
+  by `order`, then ID" — ascending and numeric, with no relative placement. The session family's own rows, read
+  from `dsh-client-ui-workspace` in the installed asar, are pin 100, rename 200, fork 300, copy-id 450 and
+  **archive 600**, so `order: 350` had always sorted the row *above* 归档会话 rather than under 分叉会话 as ADR
+  0011 recorded. It now registers `order: 700` with `separatorBefore: true`, which is the shape the product's own
+  destructive row uses in a workspace menu (*删除工作区*). The number is still not a contract, and
+  [ADR 0016](docs/adr/0016-row-below-archive.md) says so.
+- The product's five numbers are recorded in the ADR, the README pair and `docs/seams.md`, so the next reader can
+  re-check them in one command instead of trusting this text.
+
+## [0.5.7] - 2026-11-15
 ## [0.5.7] - 2026-11-15
 
 - **Every 405 in this plugin's history had one cause: a `resource` route is read-only.** The carrier serves
