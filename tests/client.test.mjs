@@ -65,7 +65,7 @@ function plugin(definition) {
  * Mount the half against a fake page and return what it did.
  * @param options - the views to plant, the host's answer, and the optional client services.
  */
-function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent, throwing } = {}) {
+function mount({ views, list, answer, menus, locale, commands, shortcuts, current, silent, throwing, injectThrows } = {}) {
   const store = storage(views)
   const listeners = new Map()
   const page = {
@@ -176,13 +176,19 @@ function mount({ views, list, answer, menus, locale, commands, shortcuts, curren
     },
     // `ctx.inject` holds a callback until the service exists, which is how a client service that mounts after
     // this plugin is still reached. The fake records the request so a test can mount the service itself.
-    ...shortcuts === 'late'
+    ...injectThrows
       ? {
-          inject: (deps, callback) => {
-            pendingInject = { deps, callback }
+          inject: () => {
+            throw new Error('this Context refuses to inject')
           },
         }
-      : {},
+      : shortcuts === 'late'
+        ? {
+            inject: (deps, callback) => {
+              pendingInject = { deps, callback }
+            },
+          }
+        : {},
     effect: (run) => {
       const dispose = run()
       cleanup.push(dispose)
@@ -225,7 +231,9 @@ test('a page load drops the ids the view kept that the host no longer lists', as
   })
   await new Promise((resolve) => setImmediate(resolve))
 
-  assert.equal(calls.length, 1, 'it asks the host for the list, once')
+  // Two calls, on purpose: the repair asks once, and the self-report asks for itself so that a half which
+  // fails before the repair can still speak. Both are unfiltered reads of the same list.
+  assert.equal(calls.length, 2, 'the repair and the report each ask once')
   assert.deepEqual(Object.keys(calls[0]), [], 'and asks for everything, with no filter')
   assert.deepEqual(JSON.parse(store.getItem('dsh.workspace.view.v5')).sessionOrderByAccount, {
     'project-a': ['session-live-1', 'session-live-2'],
@@ -502,22 +510,43 @@ test('a shortcut service that mounts after the page still gets the binding', () 
 test('the half reports what it managed to do, through the command it already has', async () => {
   // The channel exists because "the row is there but the key is missing" is invisible from the host side, and
   // asking a person to read a console for us is not a diagnostic. The report answers silently, so no
-  // transcript grows a line.
+  // transcript grows a line. The last report wins: the first one speaks before a registration that waits for
+  // its service has had its turn, which is exactly why there is a second one.
   const { executed } = mount({
     views: {},
     answer: [{ sessionId: 'session-live-1' }],
     menus: true,
     shortcuts: true,
   })
-  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setTimeout(resolve, 2100))
 
-  const report = executed.find((call) => String(call.line).startsWith('/clean --state '))
-  assert.ok(report, 'the half spoke')
-  assert.equal(report.sessionId, 'session-live-1', 'through a session the host named')
-  const state = JSON.parse(String(report.line).slice('/clean --state '.length))
+  const reports = executed.filter((call) => String(call.line).startsWith('/clean --state '))
+  assert.ok(reports.length >= 1, 'the half spoke')
+  const last = reports[reports.length - 1]
+  assert.equal(last.sessionId, 'session-live-1', 'through a session the host named')
+  const state = JSON.parse(String(last.line).slice('/clean --state '.length))
   assert.equal(state.register, 'registered')
   assert.equal(state.catalog, 'holds the id')
   assert.equal(state.menu, 'menu service present')
+  assert.equal(state.row, 'contributed')
+})
+
+test('a half that fails while setting up still says so', async () => {
+  // The diagnostic has to survive the failure it reports: the report is sent first, before anything that can
+  // throw, and the guard around the setup sends another with the reason. A silent half is how three releases
+  // were lost.
+  const { executed } = mount({
+    views: {},
+    answer: [{ sessionId: 'session-live-1' }],
+    menus: true,
+    injectThrows: true,
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const reports = executed.filter((call) => String(call.line).startsWith('/clean --state '))
+  assert.ok(reports.length >= 1, 'the half spoke even though its setup threw')
+  const state = JSON.parse(String(reports[reports.length - 1].line).slice('/clean --state '.length))
+  assert.match(state.fatal, /refuses to inject/)
 })
 
 test('a page without the menus service still prunes the view', async () => {

@@ -7,6 +7,18 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.17] - 2026-11-15
+
+- **The window half now speaks before it can fail.** Its report is sent first, before anything that can throw,
+  and once more from inside the guard that catches a setup failure — so a half that dies while setting up still
+  says which error killed it (atal=…) instead of leaving Window half: nothing heard from a window yet as the
+  only evidence. The report also fetches its own session id, because leaning on the repair meant silence in exactly
+  the case that mattered.
+- The report now carries ow=contributed|refused: … and dictionary=…, and the listing prints all of it.
+- Diagnostics on the live machine: Human command: /clean — registered (the host registration fix works) with
+  Window half: nothing heard from a window yet — that pair is what pointed at the browser half being dead on
+  arrival rather than the row being refused.
+
 ## [0.2.16] - 2026-11-14
 
 - **The label comes from the product's dictionary service.** The window half now contributes
@@ -324,3 +336,4 @@ A release adds its section in the same pull request that writes the change, so t
   tools appeared, and the six archived logs on this machine were listed and then deleted through the
   tools — 4,169,349 bytes reclaimed, the mounted persistence backend confirming the removal, and an
   independent directory count agreeing (36 session directories before, 30 after).
+
