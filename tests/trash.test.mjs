@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { readdir, lstat, mkdir, rm, rmdir, writeFile, symlink, readFile } from 'node:fs/promises'
+import { readdir, lstat, mkdir, rm, rmdir, symlink, unlink, writeFile, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import test, { afterEach, beforeEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -61,11 +61,24 @@ async function planned(ids = STORED.map((entry) => entry.id)) {
 }
 
 /**
+ * Remove a link of either kind.
+ *
+ * POSIX removes a symlink with `unlink` and refuses `rmdir` on it; Windows reports a junction as a directory
+ * and removes it with `rmdir`, refusing `unlink`. One helper, so the teardown works on both.
+ */
+async function removeLink(path) {
+  try {
+    await unlink(path)
+  } catch {
+    await rmdir(path)
+  }
+}
+
+/**
  * Remove a fixture tree, links included.
  *
  * `rm(…, { recursive: true })` cannot remove a Windows junction — and a *dangling* one survives it, so a
- * single leftover link would fail every later teardown. A link is removed with `rmdir`, which is also how
- * Windows removes a junction.
+ * single leftover link would fail every later teardown.
  */
 async function removeTree(path) {
   let names
@@ -80,11 +93,11 @@ async function removeTree(path) {
     try {
       info = await lstat(child)
     } catch {
-      // A dangling junction cannot even be `lstat`ed on Windows; `rmdir` still removes the link itself.
-      await rmdir(child).catch(() => {})
+      // A dangling junction cannot even be `lstat`ed on Windows; removing the link itself still works.
+      await removeLink(child)
       continue
     }
-    if (info.isSymbolicLink()) await rmdir(child)
+    if (info.isSymbolicLink()) await removeLink(child)
     else if (info.isDirectory()) await removeTree(child)
     else await rm(child, { force: true })
   }
@@ -225,7 +238,7 @@ test('a link is never moved into the trash or purged through', async () => {
   assert.equal((await readFile(join(outside, 'precious'), 'utf8')), 'x')
   // The junction itself goes last: a recursive delete cannot remove one on Windows, and leaving it behind
   // would poison every later test in this file. `rmdir` is what removes a link whose target is a directory.
-  await rmdir(plan.candidates[0].path)
+  await removeLink(plan.candidates[0].path)
 })
 
 test('an unreadable index is an error, not an empty trash', async () => {
