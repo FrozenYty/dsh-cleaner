@@ -125,3 +125,24 @@ Dates are the commit dates, in the order the work happened.
   ADR, and nothing in it is a release note copied out of `CHANGELOG.md`. Verified by sampling three entries and
   matching each hash's date and subject with `git show -s`, and by the repository gate, which now covers this
   file: `ROOT_SINGLE_LANGUAGE` in `scripts/check.mjs` had been missing `PLAN.md` as well.
+
+## 2026-11-16
+
+- **The repository moved to `DSH_PLUGINS\dsh-cleaner`, and the migration was verified rather than assumed.**
+  The workspace contract now separates a plugin's source from its output, so a repository whose code is linked
+  into a profile and runs in every session lives in `DSH_PLUGINS\<short-name>`; the old path is gone and the
+  profile's four `link:` rows point at the new one. No code, test or fixture was touched — the only edit is this
+  entry. The failure this migration could have caused is the unrecoverable one, so it was checked first: **the
+  data directory is not derived from where the repository lives.** `resolveDataDir` reads the configured override,
+  then the workspace, then a frozen fallback under the user's home; it has no input that is the plugin's own file.
+  Proven by running the same probe twice, from two different working directories (the drive root, and the checkout
+  itself) with identical inputs: every leg answered identically — an override from the environment wins, the
+  workspace gives `<workspace>/.agents/cleaner`, and with neither the frozen fallback gives `~/.dsh/cleaner` —
+  which a path derived from `import.meta.url` or `process.cwd()` could not do. Confirmed live as well: the running
+  host still answers `trash.root = <workspace>/.agents/cleaner/trash`, with 53 stored sessions and 49 candidates,
+  because the location comes from the workspace the registry names and from the profile's configuration, never
+  from the checkout. `npm test` (124 tests, 121 pass, 0 fail, 3 skipped) and `node scripts/check.mjs` both exit 0
+  from the new path, and the bundle's `package.json` reads through the rebuilt junction. One stale reference was
+  found **outside** this repository and is reported rather than fixed: the profile's `pnpm-lock.yaml` still records
+  the old root for all four plugins while its `package.json` points at the new one; the junctions are what
+  actually resolve, so nothing is broken today.
