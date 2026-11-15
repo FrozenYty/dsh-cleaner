@@ -121,15 +121,19 @@ two cannot report different things about the same deletion
    depends on the archive list, and re-reading it would only re-introduce the refusal that rule removed.
 2. For each candidate, in order: does the directory name still encode this id (a plan naming someone
    else's path is refused, so the report cannot lie)? `lstat` a real directory (a link is refused)? its
-   `realpath` inside the root? every entry directly inside a regular file? Only then: `lstat` each file
-   for its size, `unlink` it, and `rmdir` the directory. Why every step is repeated rather than trusted:
-   [ADR 0005](adr/0005-re-verify-at-execution.md).
-3. Report `removed` (id, path, file count, bytes), `removed_bytes` (measured at unlink time, so it is
-   what actually left the disk), `failed` (with the bytes freed before the failure) and `refused` (with
-   the reason). One candidate's failure does not abort the sweep. The listing carries two more facts a
-   person needs to decide: `modified`, the newest file's write time in each candidate directory, and
-   `stored_bytes`, what the whole store holds — a reclaimable number without the total behind it cannot
-   be judged.
+   `realpath` inside the root? every entry directly inside a regular file? Only then: **rename the directory
+   into the trash** — one atomic move to `<DSH_HOME>/dsh-cleaner-trash/<stamp>-<escaped-id>/`, recorded in
+   `index.json` beside it. Why a rename and not an unlink: a rename either happens or does not, where
+   unlinking file by file can stop in the middle with a live writer holding the session, and the store stops
+   listing the session either way. Why every step is repeated rather than trusted:
+   [ADR 0005](adr/0005-re-verify-at-execution.md); why the deletion became recoverable:
+   [ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md).
+3. Report `removed` (id, path, file count, bytes), `removed_bytes` (the bytes that left the store — they are
+   held in the trash, so this is not yet a *freed* number), `trash` (where they are and how long they are
+   kept), `failed` (with the bytes moved before the failure) and `refused` (with the reason). One
+   candidate's failure does not abort the sweep. The listing carries two more facts a person needs to decide:
+   `modified`, the newest file's write time in each candidate directory, and `stored_bytes`, what the whole
+   store holds — a reclaimable number without the total behind it cannot be judged.
 4. Ask the mounted persistence service whether it still lists the removed ids, and report the answer.
 5. **Before** the files go, ask the workspace registry to detach the ids from their project and to
    **archive** them. Archiving is the step that makes a row disappear: the sidebar's default filter is
@@ -161,27 +165,29 @@ Where the promise stops: the sidebar also renders from a view the window persist
 (`localStorage["dsh.workspace.view.v5"]`, a `sessionOrderByAccount` map of account to ordered Session ids),
 which it re-reads on every start and which no host event rewrites. That copy does not decide visibility —
 the archive filter does, and step 5 already made the row hidden — so it only matters to a later page load,
-and the browser half prunes it then: the ids it kept that the host no longer lists are dropped. One
-consequence worth stating: a session the host still holds in memory keeps its *name* in the client's
-session list until that list is rebuilt, so the row exists in the window's data and is merely not drawn. A
-restart is what ends that, and nothing a plugin can call does.
+where the sidebar drops any id the Host no longer catalogs. An earlier version of this plugin also pruned
+that store from the browser half; that code never ran, because it depended on a client `remote` service this
+build does not have ([ADR 0013](adr/0013-reuse-the-client-sessions-service.md)). One consequence worth
+stating: a session the host still holds in memory keeps its *name* in the client's session list until that
+list is rebuilt, so the row exists in the window's data and is merely not drawn. A restart is what ends
+that, and nothing a plugin can call does.
 
-## 6. Why files are unlinked one at a time
+## 6. Why a purge unlinks one file at a time
 
-`rm -r` on the directory would be shorter. It would also decide, on the plugin's behalf, what to do with
-a link that appeared between the listing and the unlink, and that decision differs by platform. Doing
-it here means: a non-regular entry stops the removal and is reported, a link is never traversed, and the
-bytes reported are the bytes measured on the files that were actually removed. A candidate whose files
-are partly gone is reported as `failed` with the bytes freed, and the next run finds the rest. See
-[ADR 0004](adr/0004-refuse-links.md).
+A deletion is one atomic rename into the trash, but a purge really removes a directory, and `rm -r` on it
+would be shorter. It would also decide, on the plugin's behalf, what to do with a link that appeared since
+the entry was filed, and that decision differs by platform. Doing it here means: a non-regular entry stops
+the removal and is reported, a link is never traversed, and the bytes reported are the bytes measured on the
+files that were actually removed. An entry whose files are partly gone is reported as `failed` with the
+bytes freed, and the next purge finds the rest. See [ADR 0004](adr/0004-refuse-links.md).
 
 ## 7. What the checks and the tests can prove
 
 | Layer | Proves | Cannot prove |
 |---|---|---|
 | `scripts/check.mjs` | the manifest, the published file set, the dependency surface, the schema keywords, the locale pair, the patch, every document citation | that the plugin activates |
-| `tests/*.test.mjs` | the candidate matrix, the deletion path, the protections, the link and irregular-directory refusals, the idempotent second run, and the two tool wrappers | that the Host accepts the definitions, or that a live call reaches them |
-| the installed Host validator (`dsh-tools`, run by hand against a fixture) | that both output schemas pass the assertion `tools.register()` runs, that both parameter schemas are object-rooted, and that both real results satisfy the schema they declare | that a profile registers, assembles a prompt and calls the tool |
+| `tests/*.test.mjs` | the candidate matrix, the deletion path (the move, the restore, the purge), the protections, the link and irregular-directory refusals, the idempotent second run, the route the window uses, and the three tool wrappers | that the Host accepts the definitions, or that a live call reaches them |
+| the installed Host validator (`dsh-tools`, run by hand against a fixture) | that every output schema passes the assertion `tools.register()` runs, that every parameter schema is object-rooted, and that real results satisfy the schema they declare | that a profile registers, assembles a prompt and calls the tool |
 | a live install | the tool list, a real listing, a real deletion | that the deletion was wise |
 
 The fixture tests never touch a real `DSH_HOME`: the engine takes paths, and the entry tests point

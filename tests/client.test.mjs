@@ -1,10 +1,10 @@
 /**
  * The browser half, mounted against a fake page.
  *
- * What these tests are for: the half contributes one menu row, one shortcut and one dictionary, and it says
- * what it managed to do through the one client-side channel that exists — `sessions.retain(id).ready` →
- * `binding.session.command(line)`. Every service is optional, and a service that refuses this plugin's
- * definition must cost exactly that one thing.
+ * What these tests are for: the half contributes one menu row, one shortcut and one dictionary, and every act
+ * it performs goes through the host half's route — `POST /dsh-cleaner/<action>` — because a session-menu row
+ * acts on a session that may have no agent at all. A service that refuses this plugin's definition must cost
+ * exactly that one thing, and the half must survive a route that is not there.
  */
 
 import { readFileSync } from 'node:fs'
@@ -20,9 +20,9 @@ const source = readFileSync(join(root, 'client.js'), 'utf8')
 function register(page = {}) {
   const loaded = []
   page.__ModuleLoader__ = { load: (definition) => loaded.push(definition) }
-  // A page has timers and storage, so the sandbox has them too.
   const context = {
     window: page,
+    // The page has timers, so the sandbox has them too.
     setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
     clearTimeout: (id) => globalThis.clearTimeout(id),
   }
@@ -32,7 +32,7 @@ function register(page = {}) {
   return loaded[0]
 }
 
-/** The plugin object the loader's factory returns, with `require` that must never be called. */
+/** The plugin object the loader's factory returns, with a `require` that must never be called. */
 function plugin(definition) {
   return definition.factory(() => {
     throw new Error('the bundle half must not require anything')
@@ -41,9 +41,9 @@ function plugin(definition) {
 
 /**
  * Mount the half against a fake page and return what it did.
- * @param options - the optional client services and their behaviour.
+ * @param options - the optional client services, the route's answer, and the page's own state.
  */
-function mount({ menus, locale, shortcuts, sessions, current, injectThrows, commandResult } = {}) {
+function mount({ menus, locale, shortcuts, current, injectThrows, answer, transport } = {}) {
   const page = {
     localStorage: {
       getItem: (name) => (name === 'dsh.sessions.current' && current !== undefined
@@ -54,29 +54,21 @@ function mount({ menus, locale, shortcuts, sessions, current, injectThrows, comm
   const registered = []
   const registeredShortcuts = []
   const registrations = new Map()
-  const commands = []
-  const releases = []
+  const requests = []
   const dictionaries = new Map()
   let pendingInject
 
-  const sessionsService = {
-    // The official client-side channel: retain a session, use the binding's `command`, release it.
-    retain: (sessionId, options) => {
-      commands.push({ retained: sessionId, options })
-      const reference = {
-        ready: Promise.resolve({
-          sessionId,
-          session: {
-            command: async (line) => {
-              commands.push({ command: line, from: sessionId })
-              return commandResult ?? { ok: true, value: { matched: true } }
-            },
-          },
-        }),
-        release: () => releases.push(sessionId),
-      }
-      return reference
-    },
+  page.fetch = async (url, options) => {
+    const body = JSON.parse(options?.body ?? '{}')
+    requests.push({ url, options, body })
+    if (transport === 'refuse') throw new Error('the network is gone')
+    if (transport === 'not-json') return { ok: true, status: 200, text: async () => '<html>' }
+    const value = typeof answer === 'function' ? answer(url, body) : (answer ?? {})
+    return {
+      ok: value?.__status === undefined || value.__status < 400,
+      status: value?.__status ?? 200,
+      text: async () => JSON.stringify(value),
+    }
   }
 
   const ctx = {
@@ -97,10 +89,6 @@ function mount({ menus, locale, shortcuts, sessions, current, injectThrows, comm
             return () => registrations.delete(definition.id)
           },
         }
-      }
-      if (name === 'sessions') {
-        if (sessions === 'absent') return undefined
-        return sessionsService
       }
       if (name === 'shortcuts') {
         if (!shortcuts) return undefined
@@ -143,7 +131,6 @@ function mount({ menus, locale, shortcuts, sessions, current, injectThrows, comm
             }
             return key
           },
-          getLocale: () => ({ active: locale ?? 'en', locales: [], revision: 1 }),
         }
       }
       return undefined
@@ -170,8 +157,7 @@ function mount({ menus, locale, shortcuts, sessions, current, injectThrows, comm
   const cleanup = []
   plugin(register(page)).apply(ctx)
   return {
-    commands,
-    releases,
+    requests,
     registered,
     registrations,
     shortcuts: registeredShortcuts,
@@ -180,13 +166,14 @@ function mount({ menus, locale, shortcuts, sessions, current, injectThrows, comm
   }
 }
 
-const reports = (commands) => commands.filter((call) => String(call.command ?? '').startsWith('/clean --state '))
-const clicks = (commands) => commands.filter((call) => call.command !== undefined && !String(call.command).startsWith('/clean --state '))
-const lastState = (commands) => {
-  const all = reports(commands)
+const attempted = (requests) => requests.filter((call) => !call.url.endsWith('/state'))
+const states = (requests) => requests.filter((call) => call.url.endsWith('/state')).map((call) => call.body.state)
+const lastState = (requests) => {
+  const all = states(requests)
   assert.ok(all.length > 0, 'the half spoke')
-  return JSON.parse(String(all[all.length - 1].command).slice('/clean --state '.length))
+  return all[all.length - 1]
 }
+const settle = () => new Promise((resolve) => setImmediate(resolve))
 
 test('the registered id is the package the Host installed', () => {
   const definition = register()
@@ -199,14 +186,14 @@ test('the bundle half requires nothing', () => {
   assert.doesNotThrow(() => plugin(definition))
 })
 
-test('a session menu item runs the command in the window\'s own session, naming the target', async () => {
-  // A command needs an agent, so it is carried by the session in front of the person; the target travels as
-  // the argument. This is also where the receipt lands, which is the only place the person will look.
-  const { registrations, commands, cleanup } = mount({ menus: true, sessions: true, current: 'session-open-1' })
+test('a session menu item deletes through the host route, naming the target and the caller', async () => {
+  // The caller is the session the window is showing: the host protects that one, and it is the only thing a
+  // route has instead of an agent. The target travels in the same body — one request, one act.
+  const { registrations, requests } = mount({ menus: true, current: 'session-open-1' })
 
   const entry = registrations.get('dsh-cleaner.delete-log')
   assert.equal(entry.target, 'session')
-  assert.equal(entry.order, 350, 'after fork (300), before copy-id (450)')
+  assert.equal(entry.order, 350, 'after fork (300), before the id copy (450)')
   assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
 
   const [item] = entry.resolve({ sessionId: 'session-other-1' })
@@ -216,24 +203,18 @@ test('a session menu item runs the command in the window\'s own session, naming 
   assert.equal(typeof item.run, 'function')
 
   item.run()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(clicks(commands).length, 1)
-  assert.equal(commands[0].retained, 'session-open-1', 'the carrier is the open session, retained first')
-  assert.equal(clicks(commands)[0].from, 'session-open-1', 'the command runs in the carrier')
-  assert.equal(clicks(commands)[0].command, '/clean session-other-1', 'and the target is the argument')
+  await settle()
+  assert.equal(attempted(requests).length, 1)
+  assert.equal(attempted(requests)[0].url, '/dsh-cleaner/delete')
+  assert.deepEqual(attempted(requests)[0].body, { caller: 'session-open-1', ids: ['session-other-1'] })
 
   // No target, no item: the menu must not offer a deletion it cannot name.
   assert.equal(entry.resolve(undefined).length, 0)
   assert.equal(entry.resolve({}).length, 0)
-
-  // The contribution goes away with the plugin.
-  assert.equal(registrations.size, 1)
-  cleanup[0]()
-  assert.equal(registrations.size, 0)
 })
 
 test('the row is offered without asking the host anything', () => {
-  const { registered } = mount({ menus: true, sessions: true })
+  const { registered } = mount({ menus: true })
   const entry = registered[0]
   const item = entry.resolve({ sessionId: 'session-1' })[0]
   assert.equal(Array.isArray(item), false, 'resolve is synchronous and returns the item itself')
@@ -258,38 +239,63 @@ test('the keys print beside the label only when the catalogue holds the id', () 
   assert.equal(broken.registered[0].resolve({ sessionId: 'session-1' })[0].commandId, undefined)
 })
 
-test('a click with no session open to carry it says so instead of failing silently', async () => {
-  const { registered, commands } = mount({ menus: true, sessions: true })
+test('a click with no session open to name as the caller says so instead of failing silently', async () => {
+  const { registered, requests } = mount({ menus: true })
   registered[0].resolve({ sessionId: 'session-1' })[0].run()
-  await new Promise((resolve) => setImmediate(resolve))
-  // Nothing to execute, and nothing to speak through either: the honest outcome is silence, and the state
-  // that would have said so is only readable when a report could be carried.
-  assert.deepEqual(clicks(commands), [], 'nothing was executed')
-  assert.deepEqual(reports(commands), [], 'and there was no session to report through')
+  await settle()
+  assert.deepEqual(attempted(requests), [], 'nothing was executed')
+  assert.equal(lastState(requests).lastClick, 'no session is open to name as the caller')
 })
 
-test('a profile without the sessions service costs a silent click', async () => {
-  const { registered, commands } = mount({ menus: true, sessions: 'absent', current: 'session-open-1' })
-  registered[0].resolve({ sessionId: 'session-1' })[0].run()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(clicks(commands), [])
-  assert.deepEqual(reports(commands), [], 'the report needs the same service')
-})
-
-test('a refusal from the command is recorded rather than thrown', async () => {
-  const { registered, commands } = mount({
+test('an answer naming what moved is recorded as a deletion, and what was kept as a refusal', async () => {
+  const moved = mount({
     menus: true,
-    sessions: true,
     current: 'session-open-1',
-    commandResult: { ok: false, error: { message: 'the session is running' } },
+    answer: { removed: [{ id: 'session-1' }], trash: { root: 'D:\\home\\dsh-cleaner-trash' } },
+  })
+  moved.registered[0].resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  assert.match(lastState(moved.requests).lastClick, /^deleted \(recoverable under D:\\home\\dsh-cleaner-trash\)/)
+
+  const kept = mount({
+    menus: true,
+    current: 'session-open-1',
+    answer: { removed: [], refused: [{ id: 'session-1', reason: 'the session is running' }] },
+  })
+  kept.registered[0].resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  assert.match(lastState(kept.requests).lastClick, /nothing moved: the session is running/)
+})
+
+test('a route that is not there, or not JSON, costs the click and nothing else', async () => {
+  // The whole reason this half reports `route=…`: a row that draws and does nothing must say which half of the
+  // conversation broke.
+  const gone = mount({ menus: true, current: 'session-open-1', transport: 'refuse' })
+  gone.registered[0].resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  // The report itself could not be carried either, so the state is only visible on the retry that did not happen;
+  // what must hold is that nothing threw and the page is still alive.
+  assert.equal(gone.registrations.size, 1, 'the row is still registered')
+
+  const html = mount({ menus: true, current: 'session-open-1', transport: 'not-json' })
+  html.registered[0].resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  assert.equal(html.registrations.size, 1)
+})
+
+test('a refused deletion is recorded rather than thrown', async () => {
+  const { registered, requests } = mount({
+    menus: true,
+    current: 'session-open-1',
+    answer: { __status: 500, error: 'a deletion needs a calling Agent' },
   })
   registered[0].resolve({ sessionId: 'session-1' })[0].run()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.match(lastState(commands).lastClick, /refused: the session is running/)
+  await settle()
+  assert.match(lastState(requests).lastClick, /refused: a deletion needs a calling Agent/)
 })
 
 test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the window shows', async () => {
-  const { shortcuts, commands } = mount({ shortcuts: true, sessions: true, current: 'session-live-1' })
+  const { shortcuts, requests } = mount({ shortcuts: true, current: 'session-live-1' })
 
   assert.equal(shortcuts.length, 1)
   const [shortcut] = shortcuts
@@ -308,22 +314,22 @@ test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the
   const resolved = shortcut.resolve()
   assert.equal(resolved.status, 'handled')
   resolved.run()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(clicks(commands)[0].command, '/clean session-live-1')
+  await settle()
+  assert.deepEqual(attempted(requests)[0].body, { caller: 'session-live-1', ids: ['session-live-1'] })
 })
 
 test('the shortcut says why it cannot act instead of guessing a session', () => {
-  const { shortcuts } = mount({ shortcuts: true, sessions: true })
+  const { shortcuts } = mount({ shortcuts: true })
   const resolved = shortcuts[0].resolve()
   assert.equal(resolved.status, 'blocked')
   assert.equal(resolved.reason, 'no session is open')
 })
 
 test('a shortcuts registry that refuses the definition costs the key, not the row', async () => {
-  const { registered, commands } = mount({ menus: true, sessions: true, shortcuts: 'refuse', current: 'session-1' })
+  const { registered, requests } = mount({ menus: true, shortcuts: 'refuse', current: 'session-1' })
   assert.equal(registered.length, 1, 'the row is still contributed')
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.match(lastState(commands).register, /refused: the shortcut registry refused this definition/)
+  await settle()
+  assert.match(lastState(requests).register, /refused: the shortcut registry refused this definition/)
 })
 
 test('a shortcut service that mounts after the page still gets the binding', () => {
@@ -340,13 +346,12 @@ test('a shortcut service that mounts after the page still gets the binding', () 
   assert.deepEqual(definitions.map((definition) => definition.id), ['session.delete-log'])
 })
 
-test('the half reports what it managed to do, through the official session binding', async () => {
+test('the half reports what it managed to do, through the route the host registers', async () => {
   // The channel exists because "the row is there but the key is missing" is invisible from the host side.
-  // The last report wins: the first speaks before a registration that waits for its service has had its turn.
-  const { commands, releases } = mount({ menus: true, shortcuts: true, sessions: true, current: 'session-open-1' })
-  await new Promise((resolve) => setTimeout(resolve, 2100))
+  const { requests } = mount({ menus: true, shortcuts: true, current: 'session-open-1' })
+  await settle()
 
-  const state = lastState(commands)
+  const state = lastState(requests)
   assert.equal(state.row, 'contributed')
   assert.equal(state.register, 'registered')
   assert.equal(state.catalog, 'holds the id')
@@ -354,20 +359,20 @@ test('the half reports what it managed to do, through the official session bindi
   assert.equal(state.dictionary, 'locale service present')
   assert.equal(state.current, 'session-open-1')
   assert.equal(state.fatal, undefined)
-  assert.ok(releases.length >= 1, 'every retained reference was released')
+  assert.equal(requests[0].url, '/dsh-cleaner/state', 'and it is the first thing the half does')
 })
 
 test('a half that fails while setting up still says so', async () => {
-  // The diagnostic has to survive the failure it reports: the report is sent first, and the guard sends
-  // another with the reason. A silent half is how three releases were lost.
-  const { commands } = mount({ menus: true, sessions: true, current: 'session-open-1', injectThrows: true })
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.match(lastState(commands).fatal, /refuses to inject/)
+  // The diagnostic has to survive the failure it reports: the report is sent first, and the guard sends another
+  // with the reason. A silent half is how three releases were lost.
+  const { requests } = mount({ menus: true, current: 'session-open-1', injectThrows: true })
+  await settle()
+  assert.match(lastState(requests).fatal, /refuses to inject/)
 })
 
 test('a menus service that refuses the contribution costs the row and nothing else', async () => {
-  const { registered, commands } = mount({ menus: 'refuse', sessions: true, current: 'session-open-1' })
+  const { registered, requests } = mount({ menus: 'refuse', current: 'session-open-1' })
   assert.deepEqual(registered, [], 'the contribution was refused')
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.match(lastState(commands).row, /refused: the menu service refused this contribution/)
+  await settle()
+  assert.match(lastState(requests).row, /refused: the menu service refused this contribution/)
 })

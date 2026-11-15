@@ -43,7 +43,14 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { applyCleanup, planCleanup } from './engine.js'
+import {
+  listTrash,
+  moveToTrash,
+  planCleanup,
+  purgeTrash,
+  restoreFromTrash,
+  trashRootOf,
+} from './engine.js'
 
 export const name = 'dsh-cleaner'
 
@@ -71,8 +78,18 @@ function storagePaths() {
     sessionsRoot: join(home, 'sessions'),
     workspaceFile: join(home, 'storages', 'workspace.json'),
     projections: join(home, 'storages', 'session_projcache', 'sessions'),
+    trashRoot: trashRootOf(home),
   }
 }
+
+/**
+ * How long a trashed session is kept before the next look sweeps it away.
+ *
+ * A number a person may disagree with, so it is one line here rather than a setting nobody asked for. It is
+ * applied when somebody lists or deletes — never by a timer, because a schedule is a policy about the future
+ * and this plugin only ever acts when asked ([ADR 0001](docs/adr/0001-out-of-band-deletion.md)).
+ */
+const TRASH_RETENTION_DAYS = 30
 
 /**
  * The sessions that must not be touched, with the reason each one is protected.
@@ -265,7 +282,138 @@ function listIds(ids) {
  */
 function listLogs(ctx, exec) {
   return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
-    .then((plan) => ({ ...plan, human_command: humanCommand, client_half: clientHalf }))
+    .then(async (plan) => ({
+      ...plan,
+      human_command: humanCommand,
+      client_half: clientHalf,
+      window_transport: windowTransport,
+      // Read-only, and deliberately not a sweep: a listing is the one call that can never be a mistake, so it
+      // reports what the retention rule would do and lets the next deletion do it.
+      ...(await trashReadout()),
+    }))
+}
+
+/**
+ * What the trash holds, as facts a listing can print. Nothing is removed here.
+ * @returns `{ trash }` with the count, the bytes, the root and how many entries are past retention.
+ */
+async function trashReadout() {
+  const paths = storagePaths()
+  let listed
+  try {
+    listed = await listTrash(paths.trashRoot)
+  } catch (error) {
+    return { trash: { root: paths.trashRoot, retention_days: TRASH_RETENTION_DAYS, error: String(error?.message ?? error) } }
+  }
+  const cutoff = Date.now() - TRASH_RETENTION_DAYS * 86_400_000
+  const expired = listed.entries.filter((entry) => {
+    const at = Date.parse(String(entry.trashed_at ?? ''))
+    return Number.isFinite(at) && at <= cutoff
+  })
+  return {
+    trash: {
+      root: paths.trashRoot,
+      retention_days: TRASH_RETENTION_DAYS,
+      count: listed.entries.length,
+      bytes: listed.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0),
+      entries: listed.entries.map((entry) => ({
+        id: entry.id,
+        bytes: entry.bytes,
+        trashed_at: entry.trashed_at,
+        ...(entry.title === undefined ? {} : { title: entry.title }),
+      })),
+      expired: expired.length,
+      missing: listed.missing,
+    },
+  }
+}
+
+/**
+ * The sweep, run by the operations that already change something.
+ *
+ * Retention is enforced when somebody acts, never on a timer — the same rule the plugin has had since the
+ * first ADR. The listing only reports what this would do.
+ * @returns `{ purged, root }` — what the sweep freed, for the answer that triggered it.
+ */
+async function sweepTrash() {
+  const paths = storagePaths()
+  const listed = await listTrash(paths.trashRoot, { purgeAfterDays: TRASH_RETENTION_DAYS })
+  return { purged: listed.purged, root: paths.trashRoot, retention_days: TRASH_RETENTION_DAYS }
+}
+
+/**
+ * The recoverable half of the deletion, as a value: what the trash holds, put one back, or free its bytes.
+ *
+ * Restoring is also the one place this plugin unarchives — it is what makes "delete" honest as a reversible
+ * step, and ADR 0012's rule (never unarchive a *deletion*) still holds, because a restore is not a deletion.
+ * @param ctx - the plugin context.
+ * @param exec - the tool execution (or `{ agent }` from a command).
+ * @param action - `list`, `restore` or `purge`.
+ * @param requested - the ids, required for everything but `list`.
+ * @returns the trash report.
+ */
+async function trashLogs(ctx, exec, action, requested) {
+  const paths = storagePaths()
+  if (action === 'list') {
+    const swept = await sweepTrash()
+    return { action, ...(await trashReadout()), swept: swept.purged, restored: [], purged: [], refused: [] }
+  }
+  const ids = [...new Set(Array.isArray(requested) ? requested : [])]
+  if (ids.length === 0) throw new Error(`trash ${action} must name at least one session id`)
+  if (action === 'purge') {
+    // Purge is the irreversible one, so the sweep does not run first and nothing else is touched: the bytes
+    // reported are the bytes this call freed.
+    const report = await purgeTrash(paths.trashRoot, ids)
+    return { action, session_ids: ids, purged: report.purged, failed: report.failed, refused: report.refused, restored: [], swept: [] }
+  }
+  if (action !== 'restore') throw new Error(`unknown trash action: ${String(action)}`)
+  // 1. The directory goes back where the backend looks for it, and only the ids that actually moved are
+  //    unarchived — a restore that failed must not leave a row visible again.
+  const report = await restoreFromTrash(paths.trashRoot, paths.sessionsRoot, ids)
+  const back = report.restored.map((entry) => entry.id)
+  const unarchived = await unarchiveSessions(ctx, back)
+  const swept = await sweepTrash()
+  return {
+    action,
+    session_ids: ids,
+    restored: report.restored,
+    unarchived,
+    refused: report.refused,
+    failed: report.failed,
+    purged: [],
+    swept: swept.purged,
+  }
+}
+
+/**
+ * Ask the workspace registry to show the restored sessions again.
+ *
+ * The mirror of `hideSessions`, and the only place `unarchiveSession` is called: a restore that cannot
+ * unarchive still restored the log, so this reports rather than fails.
+ * @param ctx - the plugin context.
+ * @param ids - the session ids whose directories are back.
+ * @returns `{ registry, unarchived, error? }`.
+ */
+async function unarchiveSessions(ctx, ids) {
+  if (ids.length === 0) return { registry: 'not-asked' }
+  let registry
+  try {
+    registry = ctx.get('workspaceRegistry')
+  } catch (error) {
+    return { registry: 'error', error: String(error?.message ?? error) }
+  }
+  if (registry === undefined || typeof registry.unarchiveSession !== 'function') return { registry: 'absent' }
+  const unarchived = []
+  const failed = []
+  for (const id of ids) {
+    try {
+      await registry.unarchiveSession(id)
+      unarchived.push(id)
+    } catch (error) {
+      failed.push({ id, error: String(error?.message ?? error) })
+    }
+  }
+  return { registry: 'asked', unarchived, failed }
 }
 
 /**
@@ -296,14 +444,16 @@ async function deleteLogs(ctx, exec, requested) {
     : await hideSessions(ctx, target, orphans)
   let report
   try {
-    report = await applyCleanup(plan)
+    // One atomic rename per session: either the store stops holding it or nothing happened, so a session a
+    // live writer is holding cannot be left half-removed. The bytes are freed on purge, not here.
+    report = await moveToTrash(paths.trashRoot, plan)
   } catch (error) {
-    // Nothing was removed, so nothing may stay hidden: give the archive state back and let the failure be
+    // Nothing was moved, so nothing may stay hidden: give the archive state back and let the failure be
     // the caller's to see.
     if (Array.isArray(hidden.archived)) await restoreSessions(ctx, target, hidden.archived)
     throw error
   }
-  const removedIds = report.removed.map((entry) => entry.id)
+  const removedIds = report.moved.map((entry) => entry.id)
   const kept = target.filter((id) => !removedIds.includes(id))
   const restored = Array.isArray(hidden.archived) ? await restoreSessions(ctx, kept, hidden.archived) : []
   const drop = [...removedIds, ...orphans]
@@ -312,9 +462,17 @@ async function deleteLogs(ctx, exec, requested) {
   const query = drop.length === 0 ? { backend: 'not-asked' } : await verifyNotListed(ctx, drop)
   return {
     sessions_root: paths.sessionsRoot,
-    removed: report.removed,
-    removed_count: report.removed.length,
-    removed_bytes: report.removed_bytes,
+    // "Removed" means removed from the session store — the backend looks there, so the session is gone. The
+    // bytes are in the trash until an entry is purged, which is what `trash` below says in words.
+    removed: report.moved,
+    removed_count: report.moved.length,
+    removed_bytes: report.moved.reduce((sum, entry) => sum + entry.bytes, 0),
+    trash: {
+      root: paths.trashRoot,
+      retention_days: TRASH_RETENTION_DAYS,
+      // Recoverable by name until the sweep: the same ids go back where the backend looks for them.
+      recoverable: report.moved.map((entry) => entry.id),
+    },
     failed: report.failed,
     refused: [...plan.requested, ...report.refused],
     workspace: hidden.registry === 'not-asked'
@@ -331,9 +489,39 @@ async function deleteLogs(ctx, exec, requested) {
   }
 }
 
+/**
+ * The trash as lines for the listing that prints it.
+ *
+ * A deletion is recoverable, and a person cannot act on what they cannot see: the count, the bytes, where it
+ * is and how long it is kept are all facts, and the last line names the two operations that use them.
+ * @param trash - the `trash` object a listing carries.
+ * @returns the lines, possibly none.
+ */
+function trashLines(trash) {
+  if (trash === undefined) return []
+  if (trash.error !== undefined) return [`Trash: unreadable (${trash.error}) — deletions are unaffected.`]
+  const held = Number(trash.count) || 0
+  if (held === 0) return [`Trash: empty. Purged automatically after ${trash.retention_days} days, never by a timer.`]
+  const lines = [
+    `Trash: ${directories(held)}, ${formatBytes(Number(trash.bytes) || 0)} held under ${trash.root};`
+    + ` kept ${trash.retention_days} days`
+    + (Number(trash.expired) > 0 ? `, ${trash.expired} of them past that and freed by the next deletion` : '')
+    + '.',
+  ]
+  for (const entry of (trash.entries ?? []).slice(0, 10)) {
+    lines.push(`  ${title(entry)}${entry.id}  ${formatBytes(Number(entry.bytes) || 0)}  trashed ${entry.trashed_at ?? 'unknown'}`)
+  }
+  const rest = (trash.entries?.length ?? 0) - 10
+  if (rest > 0) lines.push(`  … and ${rest} more`)
+  lines.push('  trash_session_logs action=restore puts one back; action=purge frees its bytes for good.')
+  if (Array.isArray(trash.missing) && trash.missing.length > 0) {
+    lines.push(`Trash entries whose directory is gone: ${trash.missing.length}${listIds(trash.missing)}`)
+  }
+  return lines
+}
+
 /** Every line a listing answers with, including the ones that explain an empty result. */
-function renderList(value) {
-  const lines = []
+function renderList(value) {  const lines = []
   lines.push(
     value.candidates.length === 0
       ? 'No session log is on disk: there is nothing to delete.'
@@ -349,6 +537,10 @@ function renderList(value) {
   // What the window half last reported about itself. It is the only way to see that half from here: a browser
   // half that loads but fails to contribute anything is otherwise invisible, which cost several releases.
   lines.push(`Window half: ${value.client_half}`)
+  // How the window reaches this plugin at all. A missing route is why a sidebar row can look right and do
+  // nothing, so it is printed beside the other facts a person cannot see from disk.
+  lines.push(`Window transport: ${value.window_transport}`)
+  lines.push(...trashLines(value.trash))
   for (const candidate of value.candidates) {
     lines.push(
       `  ${title(candidate)}${candidate.id}  ${formatBytes(candidate.bytes)}  ${files(candidate.files.length)}  `
@@ -383,8 +575,17 @@ function renderDelete(value) {
   lines.push(
     value.removed.length === 0
       ? 'Deleted nothing: no session log on disk matched the ids given.'
-      : `Deleted ${directories(value.removed.length)}: ${formatBytes(value.removed_bytes)} reclaimed.`,
+      // The store no longer holds them, which is what a deletion has to mean; the bytes move to the trash and
+      // are freed on purge. Saying "reclaimed" here would be the kind of quiet lie this answer exists to avoid.
+      : `Deleted ${directories(value.removed.length)}: ${formatBytes(value.removed_bytes)} moved out of the`
+        + ' session store.',
   )
+  if (value.removed.length > 0 && value.trash !== undefined) {
+    lines.push(
+      `Recoverable until purged: held under ${value.trash.root}, kept ${value.trash.retention_days} days.`
+      + ' Restore one with trash_session_logs action=restore; free its bytes with action=purge.',
+    )
+  }
   for (const entry of value.removed) {
     lines.push(`  ${title(entry)}${entry.id}  ${formatBytes(entry.bytes)}  ${files(entry.files)}  ${entry.path}`)
   }
@@ -438,12 +639,73 @@ function renderDelete(value) {
   return lines.join('\n')
 }
 
+/** Every line a trash operation answers with: what moved, what did not, and what the retention rule did. */
+function renderTrash(value) {
+  const lines = []
+  if (value.action === 'restore') {
+    lines.push(value.restored.length === 0
+      ? 'Restored nothing: no id in the trash matched what was given.'
+      : `Restored ${directories(value.restored.length)}: the directories are back where the backend looks for them.`)
+    for (const entry of value.restored) {
+      lines.push(`  ${title(entry)}${entry.id}  ${formatBytes(Number(entry.bytes) || 0)}  ${entry.path}`)
+    }
+    for (const entry of value.refused) lines.push(`Not restored: ${entry.id} — ${entry.reason}`)
+    for (const entry of value.failed) lines.push(`Not restored: ${entry.id} — ${entry.error}`)
+    const shown = value.unarchived
+    if (shown?.registry === 'absent') {
+      lines.push('No workspace registry is mounted, so the row returns at the sidebar\'s next refresh.')
+    } else if (shown?.error !== undefined) {
+      lines.push(`The workspace record could not be re-read (${shown.error}); the log is back and the row is not.`)
+    } else if ((shown?.failed?.length ?? 0) > 0) {
+      lines.push(`The workspace record still hides ${shown.failed.map((entry) => entry.id).join(', ')}; the log is back, the row is not.`)
+    } else if ((shown?.unarchived?.length ?? 0) > 0) {
+      lines.push('The workspace record unarchived them, so the rows come back without a reload.')
+    }
+  } else if (value.action === 'purge') {
+    const freed = value.purged.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
+    lines.push(value.purged.length === 0
+      ? 'Freed nothing: no id in the trash matched what was given.'
+      : `Purged ${directories(value.purged.length)}: ${formatBytes(freed)} freed for good.`)
+    for (const entry of value.purged) lines.push(`  ${title(entry)}${entry.id}  ${formatBytes(Number(entry.bytes) || 0)}`)
+    for (const entry of value.refused) lines.push(`Not purged: ${entry.id} — ${entry.reason}`)
+    for (const entry of value.failed) {
+      lines.push(`Partially purged: ${entry.id} — ${entry.error} (${formatBytes(Number(entry.bytes_freed) || 0)} freed)`)
+    }
+  } else {
+    lines.push(...trashLines(value.trash))
+    if ((value.trash?.count ?? 0) === 0) lines.push('Nothing is recoverable right now.')
+  }
+  if ((value.swept?.length ?? 0) > 0) {
+    const freed = value.swept.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
+    lines.push(`The ${TRASH_RETENTION_DAYS}-day retention sweep also freed ${formatBytes(freed)} from ${directories(value.swept.length)}.`)
+  }
+  return lines.join('\n')
+}
+
+/** The trash operation's canonical value; every key is present on every answer, empty or not. */
+const TRASH_VALUE = {
+  type: 'object',
+  required: ['action', 'trash', 'restored', 'purged', 'refused', 'failed', 'unarchived', 'swept'],
+  properties: {
+    action: { type: 'string' },
+    session_ids: { type: 'array', items: { type: 'string' } },
+    trash: { type: 'object' },
+    restored: { type: 'array', items: { type: 'object' } },
+    purged: { type: 'array', items: { type: 'object' } },
+    refused: { type: 'array', items: { type: 'object' } },
+    failed: { type: 'array', items: { type: 'object' } },
+    unarchived: { type: 'object' },
+    swept: { type: 'array', items: { type: 'object' } },
+  },
+}
+
 /** The listing's canonical value. Keys are the plan's, so nothing is renamed on the way out. */
 const LIST_VALUE = {
   type: 'object',
   required: [
     'sessions_root', 'workspace_file', 'archived_ids', 'stored_sessions', 'stored_bytes', 'candidates',
     'total_bytes', 'already_gone', 'protected', 'skipped', 'requested', 'human_command', 'client_half',
+    'window_transport', 'trash',
   ],
   properties: {
     sessions_root: { type: 'string' },
@@ -459,18 +721,21 @@ const LIST_VALUE = {
     requested: { type: 'array', items: { type: 'object' } },
     human_command: { type: 'string' },
     client_half: { type: 'string' },
+    window_transport: { type: 'string' },
+    trash: { type: 'object' },
   },
 }
 
 /** The deletion's canonical value; every key is present on every answer, empty or not. */
 const DELETE_VALUE = {
   type: 'object',
-  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'failed', 'refused', 'workspace', 'query', 'verify'],
+  required: ['sessions_root', 'removed', 'removed_count', 'removed_bytes', 'trash', 'failed', 'refused', 'workspace', 'query', 'verify'],
   properties: {
     sessions_root: { type: 'string' },
     removed: { type: 'array', items: { type: 'object' } },
     removed_count: { type: 'number' },
     removed_bytes: { type: 'number' },
+    trash: { type: 'object' },
     failed: { type: 'array', items: { type: 'object' } },
     refused: { type: 'array', items: { type: 'object' } },
     workspace: { type: 'object' },
@@ -498,12 +763,14 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'delete_session_logs',
     description:
-      'Permanently delete the stored logs of the named sessions, and report the bytes reclaimed. Pass exactly the '
-      + 'ids from list_session_logs that the person approved: this call is the confirmation step, so never pass an '
-      + 'id nobody has seen. An archived session and an unarchived one are both deletable; an id that cannot be '
-      + 'deleted — held by the running session or by a busy agent, already gone, or stored under a directory the '
-      + 'plugin refuses to touch — is refused in the answer with the reason instead of failing the call. Each '
-      + 'session\'s own directory is removed whole; no log line is rewritten.',
+      'Delete the stored logs of the named sessions by moving each session directory out of the session store '
+      + 'in one atomic rename, and report what moved. Pass exactly the ids from list_session_logs that the '
+      + 'person approved: this call is the confirmation step, so never pass an id nobody has seen. An archived '
+      + 'session and an unarchived one are both deletable; an id that cannot be deleted — held by the running '
+      + 'session or by a busy agent, already gone, or stored under a directory the plugin refuses to touch — is '
+      + 'refused in the answer with the reason instead of failing the call. The moved directories are kept in '
+      + 'the trash for a retention window, so a mistake is recoverable with trash_session_logs; the bytes are '
+      + 'freed when an entry is purged, not here.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -523,6 +790,46 @@ export function apply(ctx) {
         throw new Error('delete_session_logs: session_ids must be an array of non-empty session ids')
       }
       return deleteLogs(ctx, exec, requested)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'trash_session_logs',
+    description:
+      'The recoverable half of a deletion: list what the trash holds, put a deleted session back, or free its '
+      + 'bytes for good. action="list" (the default) is read-only and needs no ids. action="restore" puts the '
+      + 'named session directories back where the session backend looks for them and unarchives them, so the '
+      + 'row returns; it refuses to overwrite anything already sitting at that path. action="purge" removes the '
+      + 'named directories for good and is the only step that frees their bytes. Entries older than the '
+      + 'retention window are freed by the next deletion, never on a timer. Name ids exactly as '
+      + 'list_session_logs or a trash listing gave them.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'restore', 'purge'],
+          description: 'list what the trash holds, restore the named ids, or purge them for good. Defaults to list.',
+        },
+        session_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Exact session ids, required for restore and purge and ignored by list.',
+        },
+      },
+    },
+    output: { schema: TRASH_VALUE, render: (_args, value) => [{ type: 'text', text: renderTrash(value) }] },
+    async execute(args, exec) {
+      const action = args?.action === undefined ? 'list' : args.action
+      if (!['list', 'restore', 'purge'].includes(action)) {
+        throw new Error(`trash_session_logs: action must be list, restore or purge (got ${String(action)})`)
+      }
+      const ids = args?.session_ids
+      if (ids !== undefined && (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || id.length === 0))) {
+        throw new Error('trash_session_logs: session_ids must be an array of non-empty session ids')
+      }
+      return trashLogs(ctx, exec, action, ids)
     },
   }))
 
@@ -550,6 +857,103 @@ export function apply(ctx) {
     if (commands === undefined || typeof commands.register !== 'function') humanCommand = 'not registered (no command registry)'
     else registerCommand(ctx, commands)
   }
+
+  // The window half's own transport, and the reason this plugin finally works from the sidebar: an HTTP route
+  // on the product's web carrier. A session-menu row acts on a session that may have **no agent at all** — the
+  // session is closed, its log is still on disk — and every carrier that runs a command needs one, which is
+  // why the row used to do nothing. A route needs nothing but the request.
+  //
+  // Contract read from the running Host rather than assumed: `webServer.register({ kind, path, resource })`,
+  // `kind: 'exact' | 'prefix'`, and `resource: (request: Request, peer?) => Promise<Response>`. The prefix is
+  // this plugin's own, so no product route can be shadowed.
+  const registerRoutes = (scope, server) => {
+    try {
+      scope.effect(() => server.register({
+        kind: 'prefix',
+        path: ROUTE_PREFIX,
+        resource: (request) => serveRoute(ctx, request),
+      }))
+      windowTransport = `route ${ROUTE_PREFIX} registered`
+    } catch (error) {
+      // Isolated like every other contribution: a carrier that refuses this route costs the sidebar row only,
+      // and the listing says so in words.
+      windowTransport = `route not registered (${reasonOf(error)})`
+    }
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['webServer'], (scope) => registerRoutes(scope, scope.webServer))
+  else {
+    const server = ctx.get('webServer')
+    if (server === undefined || typeof server.register !== 'function') windowTransport = 'not registered (no web server)'
+    else registerRoutes(ctx, server)
+  }
+}
+
+/** This plugin's own route prefix on the browser's HTTP carrier. */
+const ROUTE_PREFIX = '/dsh-cleaner/'
+
+/** A JSON response, the one shape this route answers with. */
+function jsonResponse(value, status = 200) {
+  return new Response(JSON.stringify(value, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  })
+}
+
+/**
+ * The window half's whole protocol, in one function.
+ *
+ * `POST /dsh-cleaner/<action>` with a JSON body:
+ *
+ * - `delete`  `{ caller, ids }` — the same deletion the tool runs; `caller` is the session the window is
+ *   showing, and it is what keeps the running session protected;
+ * - `list`    `{}`             — the listing, so the window can show counts without asking a model;
+ * - `trash`   `{ caller, op?, ids? }` — `op` is `list`, `restore` or `purge`;
+ * - `state`   `{ state }`      — the window's own account of itself, printed by the next listing.
+ *
+ * Every guard is the one the tools use: this function only chooses a caller and decodes a body.
+ * @param ctx - the plugin context.
+ * @param request - the Fetch request the carrier hands over.
+ * @returns a JSON response; never throws.
+ */
+async function serveRoute(ctx, request) {
+  let action = ''
+  try {
+    action = new URL(request.url, 'http://localhost').pathname.slice(ROUTE_PREFIX.length).replace(/\/+$/u, '')
+  } catch {
+    return jsonResponse({ error: 'the request URL cannot be read' }, 400)
+  }
+  if (request.method !== 'POST') return jsonResponse({ error: 'this route answers POST only' }, 405)
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return jsonResponse({ error: 'the body must be JSON' }, 400)
+  }
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((id) => typeof id === 'string' && id.length > 0) : []
+  // The caller is named by the window, because a route has no Agent of its own. Without one a deletion is
+  // refused by the same guard that protects the running session from a tool call.
+  const caller = typeof body?.caller === 'string' && body.caller.length > 0 ? body.caller : undefined
+  const exec = { agent: caller === undefined ? undefined : { session: { id: caller } } }
+  try {
+    if (action === 'delete') return jsonResponse(await deleteLogs(ctx, exec, ids))
+    if (action === 'list') return jsonResponse(await listLogs(ctx, exec))
+    if (action === 'trash') {
+      const op = body?.op === 'restore' || body?.op === 'purge' ? body.op : 'list'
+      return jsonResponse(await trashLogs(ctx, exec, op, ids))
+    }
+    if (action === 'state') {
+      const state = body?.state
+      if (state === null || typeof state !== 'object' || Array.isArray(state)) {
+        return jsonResponse({ error: 'state must be a JSON object' }, 400)
+      }
+      clientHalf = formatState(state)
+      return jsonResponse({ ok: true, recorded: clientHalf })
+    }
+    return jsonResponse({ error: `unknown action ${action || '(none)'}; use delete, list, trash or state` }, 404)
+  } catch (error) {
+    // A route that throws takes the whole page down with it, so a failure is an answer here, never a rejection.
+    return jsonResponse({ error: reasonOf(error) }, 500)
+  }
 }
 
 /**
@@ -570,6 +974,17 @@ let humanCommand = 'not registered yet'
  * nothing was indistinguishable from a half that never loaded.
  */
 let clientHalf = 'nothing heard from a window yet'
+
+/**
+ * How the window reaches this plugin — the route, or the reason there is none.
+ *
+ * The same reasoning as `humanCommand`: a sidebar row that is drawn but cannot act looks exactly like a row
+ * that works, and this is the fact that tells the two apart.
+ */
+let windowTransport = 'not registered yet'
+
+/** A one-line reason from anything that was thrown, cross-realm safe. */
+const reasonOf = (error) => (typeof error?.message === 'string' ? error.message : String(error))
 
 /** The `/clean` definition, kept beside the registration so the two cannot drift. */
 function CLEAN_COMMAND(ctx) {
@@ -592,7 +1007,21 @@ function CLEAN_COMMAND(ctx) {
       if (named.length === 0) {
         const listing = await listLogs(ctx, exec)
         // No tool to call from here, so the one line the listing cannot say itself: how to act on it.
-        return { kind: 'success', text: `${renderList(listing)}\n\nName the ids to delete: /clean <id> <id> …` }
+        return {
+          kind: 'success',
+          text: `${renderList(listing)}\n\nName the ids to delete: /clean <id> <id> …`
+            + '\nThe trash: /clean trash · put one back: /clean restore <id> … · free its bytes: /clean purge <id> …',
+        }
+      }
+      // The recoverable half, reachable without a model: three words a person can remember.
+      const [first, ...rest] = named
+      if (first === 'trash' || first === 'restore' || first === 'purge') {
+        const action = first === 'trash' ? 'list' : first
+        if (action === 'list') {
+          const listing = await listLogs(ctx, exec)
+          return { kind: 'success', text: `${renderTrash(await trashLogs(ctx, exec, 'list'))}\n\n${trashLines(listing.trash).join('\n')}` }
+        }
+        return { kind: 'success', text: renderTrash(await trashLogs(ctx, exec, action, rest)) }
       }
       const report = await deleteLogs(ctx, exec, named)
       return { kind: 'success', text: renderDelete(report) }
@@ -617,9 +1046,22 @@ function stateReport(rawInput) {
     return undefined
   }
   if (state === null || typeof state !== 'object' || Array.isArray(state)) return undefined
+  return formatState(state)
+}
+
+/**
+ * One line about a window half, from the object it sent.
+ *
+ * Both carriers end here — the route and the `/clean --state` line the older half used — so the next listing
+ * reads the same sentence whichever one arrived.
+ * @param state - the object the window half reported.
+ * @returns the one-line summary.
+ */
+function formatState(state) {
   const parts = []
-  for (const key of ['inject', 'service', 'register', 'catalog', 'menu']) {
+  for (const key of ['inject', 'service', 'register', 'catalog', 'menu', 'dictionary', 'row', 'route', 'current', 'lastClick', 'fatal']) {
     if (state[key] !== undefined) parts.push(`${key}=${String(state[key])}`)
   }
   return parts.length === 0 ? 'the window half sent an empty state' : parts.join('  ')
 }
+
