@@ -43,6 +43,54 @@ do it better?* This ADR records what four neighbours actually do, and what that 
    `trashByteLimit` as patch `config` fields and builds no editor for them; this plugin keeps `retentionDays`,
    `trashLimit` and `dataDir` the same way, and shows the effective values rather than offering controls.
 
+## The wider survey (source-read, not summaries)
+
+The sibling plugin is one data point; a second pass read eleven projects' own code or docs (GitHub Contents API
+and `code.claude.com` raw markdown — GitHub's web UI is unreachable from this machine):
+
+| project | removal | UI sync | settings |
+| --- | --- | --- | --- |
+| openai/codex | rollout files first, then state-DB rows, one lifecycle lock; separate `/archive` | rescan of session dirs / state DB | `config.toml` `history.max_bytes`, enforced by the writer |
+| Claude Code | **row only**: leaves the list, transcript stays for `--resume` | the session index; a lazy sweep prunes it | `settings.json` `cleanupPeriodDays`, written by `/config` |
+| anomalyco/opencode | hard: interrupt, publish `SessionEvent.Deleted`, `bus.remove`, recurse into children | clients subscribe to server events | plugin KV storage |
+| open-webui | chat + messages + view state + comments; `AutomationRun.chat_id` **set to NULL** rather than cascaded; `archived` flag as the soft tier | `refreshChatList()` refetch guarded by a generation counter | — |
+| LibreChat | wave-based cascade, tag counts decremented, project stats refreshed, retry x3 | — | — |
+| cline | hard delete of rows | **in-memory state first**, then push state to the webview | — |
+| continue | `history/delete` | redux filter of the session list | — |
+| chatbox | archive (hidden, restorable) + permanent delete; `session-will-delete`/`session-deleted` events | events, archive page lists separately | — |
+| lobe-chat | hard delete in a transaction; **agents** soft-deleted into a recycle bin | reads carry `IS NOT TRUE`, auto-applied by a shared where-builder | — |
+| Aider | none: `/clear` only; there is no session index | n/a | n/a |
+
+Six conclusions that bear on this plugin:
+
+1. **Delete ≠ erase, deliberately** (Claude Code's wording is the clearest). This plugin already splits the two:
+   the trash holds bytes, only a purge frees them.
+2. **Ordering beats atomicity.** Codex removes artifacts before rows, under one lock, and refuses while a child
+   thread exists; LobeChat documents the reverse bug in a comment. Our order is the platform's: this product's
+   registry refuses to archive a session whose log is already gone, so the record is written first.
+3. **Derived state is the real stale-row risk, and every project cleans it as a fan-out** — LibreChat decrements
+   tag counts and refreshes stats; OpenCode projects the delete event so each subsystem cleans itself. **This
+   plugin has one derived record it does not yet touch: the session projection cache**
+   (`storages/session_projcache/sessions/<id>.json`). It is what carries a session's title and `cwd`, it is what a
+   **blank** session's row is drawn from (the sidebar's placeholder path requires `summary.blank && summary.cwd ===
+   workspace.path && workspace.sessionIds.includes(id) && !archived.includes(id)`), and 111 ids on this machine have
+   a projection with no directory at all. That single condition also explains why this plugin archives at all: for a
+   session with no log there is nothing to move, and the archive flag is the only lever the product offers for its
+   row. **Follow-up, not done here:** drop the projection for an id a deletion removed, through the projection
+   service's own API, instead of leaving a cache entry nothing reads.
+4. **References you must not delete get nulled, not cascaded** (Open WebUI). Nothing in this plugin owns another
+   plugin's rows, so nothing needs nulling today — recorded because the workspace membership is the closest thing.
+5. **UI sync is refetch-or-optimistic; no surveyed project keeps a live list feed.** This plugin hides the row
+   optimistically with the product's own archive call and leaves the rest to the product's own feed, which is the
+   same shape as Cline's "mutate local state first, then push".
+6. **No surveyed project enforces a trash window with a timer.** Retention is either indefinite (archive) or a lazy
+   age sweep (Claude Code's `cleanupPeriodDays`, run when a session starts). This plugin's sweep runs when somebody
+   looks — the same choice — and the rule that follows from it is the one already written down: *if the plugin
+   promises N days, the plugin owns the trigger.*
+
+Unverified in that pass: LibreChat's UI sync and config path; the config-persistence route of cline, continue,
+chatbox, lobe-chat and open-webui; whether chatbox expires archived chats at all.
+
 ## Consequences
 
 - No behaviour changes: the archive writes stay, because they are harmless when they succeed and the client-side
