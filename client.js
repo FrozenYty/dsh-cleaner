@@ -431,11 +431,15 @@ window.__ModuleLoader__.load({
          * `resolve` is **synchronous and asks nothing**: every version that asked the host something while the
          * menu was opening found a way to take the menu down with it.
          *
-         * Presentation, in the product's own vocabulary: a data action sorts by `order` and then by id, and the
-         * session menu's own contributions, read from `dsh-client-ui-workspace`, are pin 100, rename 200, fork
-         * 300, copy-id 450 and **archive 600**. `order: 700` therefore seats this row below *归档会话* — the
-         * destructive row goes last, where *删除工作区* also sits in the workspace menu, with the same
-         * `danger` + `separatorBefore` pair the product uses for its own delete row.
+         * Presentation, in the product's own vocabulary. Two facts had to be read from the installed renderer
+         * rather than assumed: a data action sorts by `order` then id, **but** the overlay splits actions into
+         * `items` and `footer` by `afterContent`, and *归档会话* is a footer action (`ui-workspace` returns
+         * `afterContent: true` for it) — so no `order` value can seat this row below it. `afterContent: true`
+         * here puts us in the same footer, where the product's own order (600) then sorts before ours (700).
+         *
+         * `separatorBefore` is deliberately **not** set: the archive row already carries it, so the destructive
+         * block below the item list is divided once, and a second divider between two adjacent rows reads as a
+         * mistake.
          */
         const registerMenu = () => {
           const menus = ctx.get('contextMenus')
@@ -452,7 +456,7 @@ window.__ModuleLoader__.load({
                 label: label(),
                 icon: { key: 'workspace.delete' },
                 danger: true,
-                separatorBefore: true,
+                afterContent: true,
                 ...shortcutHint(),
                 run: () => runClean(sessionId),
               }]

@@ -43,7 +43,8 @@ keep, a decision to change, or a risk we accept with the reason.
   that cannot be unlinked is reported, and the session stays a candidate for the next run.
 - **The archive check and the archive write are not atomic.** The product documents the same tolerance: a turn
   that starts between the check and the write is hidden while it runs. This plugin adds nothing on top.
-- **`order: 700` is a number, not a contract.** The menu sorts data contributions by it, ascending, with no
-  relative placement; the product's own session rows are pin 100, rename 200, fork 300, copy-id 450 and archive
-  600, so 700 is what puts this one below 归档会话. A build that inserts another action above 700 moves this row
-  up again, and nothing would break ([ADR 0016](adr/0016-row-below-archive.md)).
+- **`order: 700` is a number, not a contract, and it is not the whole placement.** The overlay splits resolved
+  actions into its item list and its footer by `afterContent`, and 归档会话 is a footer action — so the flag, not
+  the number, is what puts this row below it; the number only orders the footer
+  ([ADR 0017](adr/0017-row-belongs-in-the-footer.md)). A build that inserts a footer action above 700 moves this
+  row up again, and nothing would break ([ADR 0016](adr/0016-row-below-archive.md)).

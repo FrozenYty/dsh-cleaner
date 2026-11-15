@@ -304,12 +304,17 @@ test('a session menu item deletes through the host route, naming the target and 
 
   const entry = registrations.get('dsh-cleaner.delete-log')
   assert.equal(entry.target, 'session')
-  // The product's own session menu contributions are pin 100, rename 200, fork 300, copy-id 450 and archive
-  // 600, and a data action sorts by order — so a number above 600 is what puts this row below 归档会话.
-  assert.equal(entry.order, 700, 'below archive (600), which is the last product row')
+  // The overlay splits actions into items and footer by `afterContent`, and 归档会话 is a footer action, so
+  // `order` alone cannot seat this row below it — 700 only decides where it lands *within* the footer.
+  assert.equal(entry.order, 700, 'below archive (600) inside the footer')
   assert.equal(typeof entry.run, 'undefined', 'the click belongs to the item it resolves, not the entry')
 
   const [item] = entry.resolve({ sessionId: 'session-other-1' })
+  // `afterContent` is a field of the resolved **action**, not of the registration — the reason ADR 0016 got the
+  // mechanism wrong. This row belongs in the menu footer, under 归档会话, and nowhere else.
+  assert.equal(item.afterContent, true, 'the row belongs in the menu footer, below 归档会话')
+  // No separator of our own: the archive row carries one, and two adjacent dividers read as a mistake.
+  assert.equal(item.separatorBefore, undefined, 'the archive row already divides the block')
   assert.equal(item.label, 'Delete session')
   assert.equal(item.danger, true, 'the colour 删除工作区 has')
   assert.equal(item.icon.key, 'workspace.delete')

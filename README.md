@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.8.
+- Current version: v0.5.9.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -94,7 +94,7 @@ calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md))
 
 A session's own **⋯ menu** carries the same thing as one row — *删除会话* / *Delete session*, in the window's
 language, drawn in the same red as 删除工作区, with the trash glyph the product registers for it, seated
-below 归档会话, last in the list (`order: 700`; the product's own rows are pin 100, rename 200, fork 300, copy-id 450 and archive 600). It is a data contribution to the menu, not a
+below 归档会话, at the very end of the menu: 归档会话 is a **footer** action (`afterContent: true`, which the product sets on it), so this row sets the same flag and sorts after it with `order: 700` ([ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md)). It is a data contribution to the menu, not a
 renderer: the bundle supplies the label, the icon key and the click, and the sidebar draws it like its own
 actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the
 click, with Ctrl+Shift+D printed beside the label once the shortcut catalogue holds it. **Ctrl+Shift+D** (⌘⇧D
@@ -429,7 +429,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
-| Why is the row the last, separated action in a session menu? | [ADR 0016](docs/adr/0016-row-below-archive.md) |
+| Why is the row the last one in a session menu, below 归档会话? | [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md) (corrects [ADR 0016](docs/adr/0016-row-below-archive.md)) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
