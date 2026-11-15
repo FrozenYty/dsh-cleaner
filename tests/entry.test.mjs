@@ -22,6 +22,7 @@ const ROOT = join(TMP, 'sessions')
 const WORKSPACE = join(TMP, 'storages', 'workspace.json')
 const CALLER = 'session-caller'
 const PREVIOUS_HOME = process.env.DSH_HOME
+const PREVIOUS_DATA_DIR = process.env.DSH_CLEANER_DATA_DIR
 
 const ARCHIVED = [
   { id: 'session-archived-1', project: '--D-ALPHA--', bytes: 100 },
@@ -99,7 +100,9 @@ function harness({ agents = [], persistence, workspaces, query, commands = true,
 
 const install = (options) => {
   const { ctx, tools, commands, routes, disposed } = harness(options)
-  apply(ctx)
+  // The loader passes the patch row's config as the second argument; a test that supplies one is exercising the
+  // documented way a profile configures this plugin.
+  apply(ctx, options?.config)
   return Object.assign(tools, { commands, routes, disposed })
 }
 
@@ -128,6 +131,9 @@ async function buildFixture() {
 
 before(async () => {
   process.env.DSH_HOME = TMP
+  // This plugin's own data goes under the fixture too. Without it the suite would write a trash into the
+  // real `~/.dsh/cleaner` (or worse, into a workspace), and a test that touches real data is not a test.
+  process.env.DSH_CLEANER_DATA_DIR = join(TMP, 'cleaner')
 })
 
 beforeEach(buildFixture)
@@ -136,6 +142,8 @@ after(async () => {
   await rm(TMP, { recursive: true, force: true })
   if (PREVIOUS_HOME === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = PREVIOUS_HOME
+  if (PREVIOUS_DATA_DIR === undefined) delete process.env.DSH_CLEANER_DATA_DIR
+  else process.env.DSH_CLEANER_DATA_DIR = PREVIOUS_DATA_DIR
 })
 
 test('the entry registers exactly the listing and the deleting tool', () => {
@@ -957,3 +965,31 @@ test('a profile without a web server still registers its tools, and says so in t
   assert.match(text(tools.get('list_session_logs'), listing), /Window transport: not registered \(no web server\)/)
 })
 
+
+test('a profile config moves the data directory, and a bad one fails the load', async () => {
+  // The configurable part of ADR 0015, exercised through the entry rather than the resolver: what a profile
+  // writes into its patch row has to reach the trash a deletion uses.
+  const dataDir = join(TMP, 'configured-cleaner')
+  const tools = install({ config: { dataDir, retentionDays: 7, trashLimit: 3 } })
+  const { value } = await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  assert.equal(value.trash.root, join(dataDir, 'trash'), 'the deletion went where the config says')
+  assert.equal(value.trash.retention_days, 7)
+  assert.ok(existsSync(join(dataDir, 'trash', 'index.json')))
+
+  // A value that cannot be honoured is refused while the plugin loads, with the field named — not later, in
+  // front of a person who just clicked delete.
+  assert.throws(() => install({ config: { retentionDays: 0 } }), /field "retentionDays" must be an integer >= 1/)
+  assert.throws(() => install({ config: { trashLimit: 'lots' } }), /field "trashLimit"/)
+})
+
+test('the cap is applied by the next deletion, and the answer says what it cost', async () => {
+  const tools = install({ config: { trashLimit: 1 } })
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
+
+  const held = (await route(tools, 'trash', { op: 'list' })).value
+  assert.equal(held.trash.count, 1, 'the cap keeps the newest entry')
+  assert.deepEqual(held.trash.entries.map((entry) => entry.id), ['session-archived-2'])
+  assert.equal(held.swept.length, 1, 'and the one it pruned is reported')
+  assert.equal(held.swept[0].id, 'session-archived-1')
+})

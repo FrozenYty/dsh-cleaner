@@ -122,7 +122,7 @@ two cannot report different things about the same deletion
 2. For each candidate, in order: does the directory name still encode this id (a plan naming someone
    else's path is refused, so the report cannot lie)? `lstat` a real directory (a link is refused)? its
    `realpath` inside the root? every entry directly inside a regular file? Only then: **rename the directory
-   into the trash** — one atomic move to `<DSH_HOME>/dsh-cleaner-trash/<stamp>-<escaped-id>/`, recorded in
+   into the trash** — one atomic move to `<dataDir>/trash/<stamp>-<escaped-id>/`, recorded in
    `index.json` beside it. Why a rename and not an unlink: a rename either happens or does not, where
    unlinking file by file can stop in the middle with a live writer holding the session, and the store stops
    listing the session either way. Why every step is repeated rather than trusted:

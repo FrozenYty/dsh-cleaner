@@ -41,13 +41,15 @@
  */
 
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import {
   listTrash,
   moveToTrash,
   planCleanup,
   purgeTrash,
+  resolveCleanerConfig,
+  resolveDataDir,
   restoreFromTrash,
   trashRootOf,
 } from './engine.js'
@@ -72,24 +74,47 @@ function defineTool(options) {
 }
 
 /** The paths this plugin works on: the session root, the workspace store, and the cache it reads titles from. */
+/**
+ * The settings this plugin runs with, resolved once from the bundle patch row.
+ *
+ * The defaults are the documented behaviour with no configuration at all: a 30-day window and a 200-entry cap,
+ * in a `.agents/cleaner` folder inside the workspace. A profile that wants something else writes the fields
+ * into its own patch row ([ADR 0015](docs/adr/0015-our-own-data-directory.md)).
+ */
+let settings = resolveCleanerConfig(undefined)
+
+/**
+ * The data directory this process bound itself to, resolved once.
+ *
+ * Once, and not per call: a session's working directory can change while it runs (`working_directory` is a
+ * tool), and re-resolving would move the trash out from under a deletion that is in flight. What is durable is
+ * the directory and its `index.json`, and every listing prints the path that is in effect, so a person can see
+ * where their bytes went without asking.
+ */
+let boundDataDir
+
+/** The workspace this process speaks for, when the Host can say. */
+function defaultWorkspace(ctx) {
+  try {
+    const directory = ctx.get('workingDirectory')?.defaultDirectory
+    return typeof directory === 'string' && directory.length > 0 ? directory : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function storagePaths() {
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const dataDir = boundDataDir ?? resolveDataDir(process.env, homedir(), undefined)
   return {
     sessionsRoot: join(home, 'sessions'),
     workspaceFile: join(home, 'storages', 'workspace.json'),
     projections: join(home, 'storages', 'session_projcache', 'sessions'),
-    trashRoot: trashRootOf(home),
+    // This plugin's own data, never inside the session store: a trashed session must stop being a session.
+    dataDir,
+    trashRoot: trashRootOf(dataDir),
   }
 }
-
-/**
- * How long a trashed session is kept before the next look sweeps it away.
- *
- * A number a person may disagree with, so it is one line here rather than a setting nobody asked for. It is
- * applied when somebody lists or deletes — never by a timer, because a schedule is a policy about the future
- * and this plugin only ever acts when asked ([ADR 0001](docs/adr/0001-out-of-band-deletion.md)).
- */
-const TRASH_RETENTION_DAYS = 30
 
 /**
  * The sessions that must not be touched, with the reason each one is protected.
@@ -303,9 +328,9 @@ async function trashReadout() {
   try {
     listed = await listTrash(paths.trashRoot)
   } catch (error) {
-    return { trash: { root: paths.trashRoot, retention_days: TRASH_RETENTION_DAYS, error: String(error?.message ?? error) } }
+    return { trash: { root: paths.trashRoot, retention_days: settings.retentionDays, error: String(error?.message ?? error) } }
   }
-  const cutoff = Date.now() - TRASH_RETENTION_DAYS * 86_400_000
+  const cutoff = Date.now() - settings.retentionDays * 86_400_000
   const expired = listed.entries.filter((entry) => {
     const at = Date.parse(String(entry.trashed_at ?? ''))
     return Number.isFinite(at) && at <= cutoff
@@ -313,7 +338,7 @@ async function trashReadout() {
   return {
     trash: {
       root: paths.trashRoot,
-      retention_days: TRASH_RETENTION_DAYS,
+      retention_days: settings.retentionDays,
       count: listed.entries.length,
       bytes: listed.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0),
       entries: listed.entries.map((entry) => ({
@@ -337,8 +362,12 @@ async function trashReadout() {
  */
 async function sweepTrash() {
   const paths = storagePaths()
-  const listed = await listTrash(paths.trashRoot, { purgeAfterDays: TRASH_RETENTION_DAYS })
-  return { purged: listed.purged, root: paths.trashRoot, retention_days: TRASH_RETENTION_DAYS }
+  // Both rules run here, and only here: age, and the cap on entries. A listing is still only a read.
+  const listed = await listTrash(paths.trashRoot, {
+    purgeAfterDays: settings.retentionDays,
+    limit: settings.trashLimit,
+  })
+  return { purged: listed.purged, root: paths.trashRoot, retention_days: settings.retentionDays, limit: settings.trashLimit }
 }
 
 /**
@@ -469,7 +498,7 @@ async function deleteLogs(ctx, exec, requested) {
     removed_bytes: report.moved.reduce((sum, entry) => sum + entry.bytes, 0),
     trash: {
       root: paths.trashRoot,
-      retention_days: TRASH_RETENTION_DAYS,
+      retention_days: settings.retentionDays,
       // Recoverable by name until the sweep: the same ids go back where the backend looks for them.
       recoverable: report.moved.map((entry) => entry.id),
     },
@@ -677,7 +706,7 @@ function renderTrash(value) {
   }
   if ((value.swept?.length ?? 0) > 0) {
     const freed = value.swept.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
-    lines.push(`The ${TRASH_RETENTION_DAYS}-day retention sweep also freed ${formatBytes(freed)} from ${directories(value.swept.length)}.`)
+    lines.push(`The ${settings.retentionDays}-day retention sweep also freed ${formatBytes(freed)} from ${directories(value.swept.length)}.`)
   }
   return lines.join('\n')
 }
@@ -744,7 +773,18 @@ const DELETE_VALUE = {
   },
 }
 
-export function apply(ctx) {
+export function apply(ctx, config) {
+  // Validated before anything is registered: a patch value that cannot be honoured fails this load, with the
+  // field and the value named, rather than the first deletion — hours later, in front of a person.
+  settings = resolveCleanerConfig(config)
+  {
+    // The data directory is resolved once, in the documented order: the configured path, then the environment
+    // override, then the workspace this process speaks for, then the frozen fallback outside any workspace.
+    const workspace = defaultWorkspace(ctx)
+    boundDataDir = settings.dataDir !== undefined
+      ? resolve(workspace ?? process.cwd(), settings.dataDir)
+      : resolveDataDir(process.env, homedir(), workspace)
+  }
   ctx.tools.register(defineTool({
     name: 'list_session_logs',
     description:

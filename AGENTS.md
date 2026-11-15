@@ -68,9 +68,10 @@ The load-bearing constraints, each with an ADR:
   that is what makes the row disappear from an open window at once
   ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)); a **restore** is the one caller of
   `unarchiveSession` ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
-- a deletion is one atomic rename into `<DSH_HOME>/dsh-cleaner-trash/`, recoverable for 30 days, and only a
-  purge frees bytes — never a timer, and never a listing
-  ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
+- a deletion is one atomic rename into `<dataDir>/trash/`, inside the `.agents/cleaner` folder this plugin
+  owns, recoverable for 30 days, and only a purge frees bytes — never a timer, and never a listing
+  ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md),
+  [ADR 0015](docs/adr/0015-our-own-data-directory.md));
 - archiving is not a precondition: the store is the index, and a session is a candidate when its directory
   is under the storage root, well formed and unprotected
   ([ADR 0010](docs/adr/0010-no-archive-precondition.md));

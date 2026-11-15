@@ -29,8 +29,8 @@ keep, a decision to change, or a risk we accept with the reason.
 | Thing | Why it is ours | How it fails safe |
 |---|---|---|
 | Decoding a session directory name back to a session id | the backend escapes ids "injectively … to one safe path segment" but publishes no id→path API, and a deletion needs a path | a name that does not decode to the id it was looked up as is **skipped**, never guessed ([ADR 0005](adr/0005-re-verify-at-execution.md)) |
-| Removing the directory | the seam has no deletion API; that is the plugin's whole reason to exist | a deletion is one atomic **rename** into `<DSH_HOME>/dsh-cleaner-trash/`, and a purge unlinks file by file, re-checking every guard first ([ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md)) |
-| The trash index (`dsh-cleaner-trash/index.json`) | nothing in the product knows about a recoverable deletion | written atomically, re-read on every operation, and an unreadable index is an error rather than an empty trash |
+| Removing the directory | the seam has no deletion API; that is the plugin's whole reason to exist | a deletion is one atomic **rename** into `<dataDir>/trash/`, and a purge unlinks file by file, re-checking every guard first ([ADR 0014](adr/0014-route-transport-and-recoverable-deletion.md)) |
+| The trash index (`<dataDir>/trash/index.json`) | nothing in the product knows about a recoverable deletion | written atomically, re-read on every operation, and an unreadable index is an error rather than an empty trash |
 | The 30-day retention window | a policy somebody has to choose | applied only by an operation that already changes something; a **listing only reports** what it would do |
 
 ## Accepted risks, with the reason
