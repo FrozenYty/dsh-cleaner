@@ -83,6 +83,8 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         /** The ids the host named last, so the report below has a session to speak through. */
         let lastListed = []
+        /** Whether the menu row was contributed — reported, because a missing row is the thing people see. */
+        let rowRegistered = false
 
         /**
          * Ask the host and prune. An unanswerable or empty list prunes nothing: a view is evidence of what
@@ -302,40 +304,55 @@ window.__ModuleLoader__.load({
         }
 
         return ctx.effect(() => {
-          // The report speaks through a session, so it waits for the list that names one; the second call
-          // covers a service that mounted after this half and finished registering a moment later.
-          void prune().then(() => report())
-          // A deletion made while this window was in the background is covered when it comes back.
-          const onFocus = () => void prune()
-          window.addEventListener('focus', onFocus)
-          // Every contribution is optional and isolated: a service that refuses this plugin's definition
-          // must cost that one thing, never the rest. The rule was learned the hard way — a contribution the
-          // popup could not render took every session's menu down with it once.
           let unregisterMenu
-          try {
-            unregisterMenu = registerMenu()
-          } catch (error) {
-            console.error('dsh-cleaner: the session menu row was refused', error)
-          }
           let unregisterDictionary
+          let onFocus
+          // One guard around the whole setup, and a report from inside it: if anything below throws, the half
+          // still gets a sentence out through the channel that does not depend on it. A browser half that
+          // fails silently is how three releases were lost — the row simply was not there and nothing said why.
           try {
-            unregisterDictionary = registerDictionary()
+            // First, before anything that can throw: the host should hear from this half in every outcome.
+            void report()
+            // The report speaks through a session, so it waits for the list that names one; the second call
+            // covers a service that mounted after this half and finished registering a moment later.
+            void prune().then(() => report())
+            // A deletion made while this window was in the background is covered when it comes back.
+            onFocus = () => void prune()
+            window.addEventListener('focus', onFocus)
+            // Every contribution is optional and isolated: a service that refuses this plugin's definition
+            // must cost that one thing, never the rest. The rule was learned the hard way — a contribution the
+            // popup could not render took every session's menu down with it once.
+            try {
+              unregisterMenu = registerMenu()
+              rowRegistered = unregisterMenu !== undefined
+            } catch (error) {
+              state.row = `refused: ${error instanceof Error ? error.message : String(error)}`
+              console.error('dsh-cleaner: the session menu row was refused', error)
+            }
+            try {
+              unregisterDictionary = registerDictionary()
+            } catch (error) {
+              state.dictionary = `refused: ${error instanceof Error ? error.message : String(error)}`
+              console.error('dsh-cleaner: the dictionary was refused', error)
+            }
+            // The key waits for its service, so it is registered through `inject` (disposed with this plugin);
+            // the fallback is for a Context without that Core API, where the service must already be there.
+            if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
+            else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
+            else {
+              state.service = 'not seen'
+              console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
+            }
+            // What the window did, told to the host so that the next listing can say it out loud — the
+            // catalogue question is answered a moment later, because a registration may be waiting.
+            setTimeout(report, 2000)
           } catch (error) {
-            console.error('dsh-cleaner: the dictionary was refused', error)
+            state.fatal = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+            console.error('dsh-cleaner: the window half failed while setting up', error)
+            void report()
           }
-          // The key waits for its service, so it is registered through `inject` (disposed with this plugin);
-          // the fallback is for a Context without that Core API, where the service must already be there.
-          if (typeof ctx.inject === 'function') ctx.inject(['shortcuts'], registerShortcut)
-          else if (ctx.get('shortcuts') !== undefined) registerShortcut({ shortcuts: ctx.get('shortcuts'), effect: ctx.effect })
-          else {
-            state.service = 'not seen'
-            console.warn('dsh-cleaner: no shortcut service yet, so Ctrl+Shift+D is not bound')
-          }
-          // What the window did, told to the host so that the next listing can say it out loud — the catalogue
-          // question is answered a moment later, because the registration may be waiting for a service.
-          setTimeout(report, 2000)
           return () => {
-            window.removeEventListener('focus', onFocus)
+            if (onFocus !== undefined) window.removeEventListener('focus', onFocus)
             for (const unregister of [unregisterMenu, unregisterDictionary]) {
               try {
                 unregister?.()
@@ -351,10 +368,11 @@ window.__ModuleLoader__.load({
          * registry. `/clean --state <json>` is recorded by the host and printed by the next listing, and it
          * answers silently, so nothing lands in anybody's transcript.
          *
-         * This exists because "the row is there but the key is missing" is invisible from the host side, and
-         * the alternative is asking a person to open a console and read an error for us.
+         * It fetches its own session id instead of leaning on `prune`, because the report has to survive the
+         * failure it reports: a half that dies before the first list still gets a sentence out, which is
+         * exactly what the first version of this could not do — it stayed silent in the one case that mattered.
          */
-        function report() {
+        async function report() {
           try {
             const catalog = ctx.get('shortcuts')?.catalog?.getSnapshot?.()
             state.catalog = Array.isArray(catalog)
@@ -364,7 +382,15 @@ window.__ModuleLoader__.load({
             state.catalog = 'not readable'
           }
           state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
-          const sessionId = lastListed[0]
+          state.row = rowRegistered ? 'contributed' : 'not contributed'
+          let sessionId = lastListed[0]
+          if (typeof sessionId !== 'string' || sessionId.length === 0) {
+            try {
+              sessionId = [...idsOf(await ctx.remote.session.list({}))][0]
+            } catch {
+              sessionId = undefined
+            }
+          }
           if (typeof sessionId !== 'string' || sessionId.length === 0) return
           try {
             void Promise.resolve(
