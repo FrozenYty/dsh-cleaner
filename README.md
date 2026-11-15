@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.21.
+- Current version: v0.5.22.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -435,6 +435,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | How do other tools delete a session, and which parts of that do we adopt? | [ADR 0020](docs/adr/0020-what-the-neighbours-do.md) |
 | Why does the projection cache travel with the log? | [ADR 0021](docs/adr/0021-derived-records-travel-with-the-log.md) |
 | How does a deletion cross from the store's volume to the trash's? | [ADR 0022](docs/adr/0022-deletion-crosses-volumes.md) |
+| What makes a deleted row leave the sidebar — detach or archive? | [ADR 0023](docs/adr/0023-detach-never-archive.md) (supersedes [ADR 0012](docs/adr/0012-archive-never-unarchive.md)) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |

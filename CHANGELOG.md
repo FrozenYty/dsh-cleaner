@@ -1,3 +1,18 @@
+## [0.5.22] - 2026-11-15
+
+- **A deletion detaches the session and never archives it — the row now leaves instead of turning into a dimmed
+  "archived" row.** The sidebar draws a row only while the id is a **member** of a workspace and not archived
+  (`sessionVisible`), and a blank session's placeholder tests the same membership. Archiving was both unnecessary
+  and harmful: under the product's "show archived" filter the row is still drawn, dimmed, and the registry refuses to
+  archive a session whose log is already gone — the case that needed it most. `detachSessions` replaces
+  `hideSessions`, the window's own `archiveSession` call is gone, the answer no longer speaks of an archive, and a
+  restore no longer unarchives. [ADR 0023](docs/adr/0023-detach-never-archive.md) supersedes ADR 0012's mechanism.
+- **The notice matrix is a test.** Every outcome a person can reach — the log moved, there was nothing to delete,
+  the Host held it back, the route is absent, the command matched nothing, no session to name — is asserted in one
+  case each. Writing it found a real gap: a command that matched nothing was reported as *delete requested*, which
+  reads as success while nothing happened; it now says *删除失败：宿主没有匹配到 /clean 命令*.
+
+## [0.5.21] - 2026-11-15
 ## [0.5.21] - 2026-11-15
 
 - **A deletion now works when the trash is on another volume — which it is on this machine.** The trash lives in the

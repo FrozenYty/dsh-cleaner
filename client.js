@@ -85,7 +85,6 @@ window.__ModuleLoader__.load({
           report: 'not sent',
           current: 'not read',
           lastClick: 'none',
-          lastHide: 'none',
           fatal: undefined,
         }
         // The last click's outcome survives a reload, in the window's own storage. Without this the only record of
@@ -96,14 +95,12 @@ window.__ModuleLoader__.load({
           const remembered = JSON.parse(localStorage.getItem(CLICK_KEY) ?? 'null')
           if (remembered !== null && typeof remembered === 'object') {
             if (typeof remembered.lastClick === 'string') state.lastClick = remembered.lastClick
-            if (typeof remembered.lastHide === 'string') state.lastHide = remembered.lastHide
           }
         } catch {
           // Storage that cannot be read costs the memory of one click, never the plugin.
         }
         const remember = () => {
           try {
-            localStorage.setItem(CLICK_KEY, JSON.stringify({ lastClick: state.lastClick, lastHide: state.lastHide }))
           } catch {
             // Same: a window with no writable storage still deletes.
           }
@@ -235,6 +232,7 @@ window.__ModuleLoader__.load({
               'notice.gone': 'No log — row removed',
               'notice.requested': 'Delete requested — see this conversation',
               'notice.failed': 'Delete failed',
+              'notice.unmatched': 'the Host matched no /clean command',
               'notice.working': 'Deleting…',
               'notice.noSession': 'No session is open to name as the caller',
             },
@@ -253,6 +251,7 @@ window.__ModuleLoader__.load({
               'notice.gone': '无日志，已移出列表',
               'notice.requested': '已请求删除，回执见本会话',
               'notice.failed': '删除失败',
+              'notice.unmatched': '宿主没有匹配到 /clean 命令',
               'notice.working': '正在删除……',
               'notice.noSession': '没有打开的会话可作为调用者',
             },
@@ -344,38 +343,6 @@ window.__ModuleLoader__.load({
         const cleanViaCommand = (caller, target) => commandViaSession(caller, `/clean ${target}`)
 
         /**
-         * Hide the row with the product's own action, so a deletion is visible where the person clicked.
-         *
-         * A window draws its rows from the workspace records and the sidebar never draws an archived session, so
-         * `archiveSession` is the **only** call that makes a row leave an open window at once. The registry
-         * refuses to archive a session that is "neither live nor in session persistence" — which is exactly what
-         * a session that never wrote a log is, and why clicking delete on one left its row standing: the host
-         * deletion skips the archive for an id whose log is already gone, and nothing else could write the flag.
-         *
-         * So the window opens the session first. That is the same thing clicking its row does, so the session
-         * becomes live, the registry accepts the archive, and the row goes. For a session that *did* have a log
-         * the host has already archived it, and the registry resolves a second archive as a no-op.
-         * @param sessionId - the row's session.
-         */
-        const hideRow = async (sessionId) => {
-          try {
-            const ui = ctx.get('uiWorkspace')
-            if (ui === undefined || typeof ui.archiveSession !== 'function') {
-              state.lastHide = 'no uiWorkspace service'
-              return
-            }
-            try {
-              await ui.archiveSession(sessionId, { stopActivity: false })
-              state.lastHide = `archived ${sessionId}`
-            } catch (error) {
-              state.lastHide = `refused: ${reasonOf(error)}`
-            }
-          } catch (error) {
-            state.lastHide = `refused: ${reasonOf(error)}`
-          }
-        }
-
-        /**
          * Run the deletion for one session: the same operation the tool and the command run.
          *
          * Two carriers, tried in one order and reported either way. The route answers with the deletion's own
@@ -425,24 +392,27 @@ window.__ModuleLoader__.load({
               } else {
                 notify(why === undefined ? text('notice.kept', 'Not deleted') : `${text('notice.kept', 'Not deleted')}：${why}`)
               }
-              if (moved > 0 || noLog) await hideRow(sessionId)
               report()
               return
             }
             // The route is not there (a Host older than 0.3.0 answers 405): use the command it does serve.
             const routeError = answer.error
             const viaCommand = await cleanViaCommand(caller, sessionId)
-            state.lastClick = viaCommand.error === undefined
+            // `matched: false` means no command by that line exists in this Host — a failure, not a handover. The
+            // matrix check found this: the branch treated "the Host did not match the command" as "the Host was
+            // asked", which reads as success while nothing at all happened.
+            const handed = viaCommand.error === undefined && viaCommand.matched !== false
+            const failure = viaCommand.error ?? (viaCommand.matched === false ? text('notice.unmatched', 'the Host matched no /clean command') : undefined)
+            state.lastClick = handed
               ? `handed to /clean (matched=${String(viaCommand.matched)}); route unavailable (${routeError})`
-              : `refused: ${viaCommand.error}; route unavailable (${routeError})`
+              : `refused: ${failure}; route unavailable (${routeError})`
             // The command answers with "did a command match", not with what it deleted, so this carrier must not
             // claim a deletion it cannot see. The Host prints its own answer in this conversation, which is where
             // the outcome actually is — a blank session genuinely has no log to delete, and saying "deleted"
             // there would be the kind of quiet lie that cost the most rounds here.
-            notify(viaCommand.error === undefined
+            notify(handed
               ? text('notice.requested', 'Delete requested — the Host\'s answer is in this conversation.')
-              : `${text('notice.failed', 'Delete failed')}: ${viaCommand.error}`)
-            if (viaCommand.error === undefined) await hideRow(sessionId)
+              : `${text('notice.failed', 'Delete failed')}: ${failure}`)
             report()
           })
         }

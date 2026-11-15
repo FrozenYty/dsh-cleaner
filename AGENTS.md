@@ -64,10 +64,12 @@ The load-bearing constraints, each with an ADR:
   [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
 - a loaded agent does not block a deletion — a **busy** one does, and the refusal names the status
   ([ADR 0008](docs/adr/0008-busy-not-resident.md));
-- a deleted session is detached **and archived**, never unarchived: the sidebar draws no archived row, so
-  that is what makes the row disappear from an open window at once
-  ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)); a **restore** is the one caller of
-  `unarchiveSession` ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md));
+- a deleted session is **detached** and never archived: the sidebar draws a row only while the id is a
+  member of a workspace and not archived, so the membership is what makes the row leave an open window —
+  and an archived row is still drawn, dimmed, under the product's "show archived" filter
+  ([ADR 0023](docs/adr/0023-detach-never-archive.md), which supersedes
+  [ADR 0012](docs/adr/0012-archive-never-unarchive.md)'s mechanism); the record is written **after** the
+  files, so a move that fails leaves the row where it was;
 - a deletion is one atomic rename into `<dataDir>/trash/`, inside the `.agents/cleaner` folder this plugin
   owns, recoverable for 30 days, and only a purge frees bytes — never a timer, and never a listing
   ([ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md),
