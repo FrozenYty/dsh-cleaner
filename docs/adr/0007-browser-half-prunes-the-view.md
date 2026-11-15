@@ -1,6 +1,7 @@
 # 0007 — The bundle ships a browser half that prunes the window's own view
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0013](0013-reuse-the-client-sessions-service.md) — the repair was built on
+  `ctx.remote.session.list`, and this build's client root has no `remote` service, so it never ran.
 - **Date:** 2026-11-14
 - **Supersedes:** —
 
