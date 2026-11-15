@@ -166,3 +166,13 @@ Dates are the commit dates, in the order the work happened.
   can take a draft — and only after a deletion that really happened, and only for the session on screen: a refusal
   means the session is alive, so the page must stay. Proven both ways: the new client test failed before the change
   (`[]` against `['session-blank-1']`) and passes after it, with `npm test` at 125 tests / 122 pass.
+
+- **Deleting the session on screen lands on a new session, and the alternatives were considered and declined.**
+  With 0.5.29 shipped, the question was whether "leave the dead view" should have other destinations. Three were
+  weighed and rejected: falling back to the sidebar's **neighbour row** would mean re-implementing the window's own
+  ordering record (`localStorage["dsh.workspace.view.v5"]`), which is exactly what ADR 0013 refuses; staying put
+  with a banner is the dead view 0.5.29 removed; asking every time adds a dialog to an action that is already a
+  confirmation. The one implementable alternative — **`openSession()` to the most recently updated other session**,
+  which the product already exposes — is **deliberately not built**: it would need a `onSelfDelete` config field
+  whose default is the current behaviour, and nobody asked for it. If that use becomes real, it is a small field and
+  two tests, and the guards stay: succeed + current session only.
