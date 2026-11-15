@@ -398,29 +398,32 @@ window.__ModuleLoader__.load({
           void post('delete', { caller, ids: [sessionId] }).then(async (answer) => {
             if (answer.error === undefined) {
               const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
+              // The answer's own fields decide what happened; a reason string is not an interface. An id with no
+              // directory is reported under `unlogged`, an id that is held back under `protected`, and something
+              // the plan could not use under `refused` — reading the wrong one is how a finished deletion looked
+              // like a bare "nothing moved" with the row still standing.
+              const idOf = (entry) => (typeof entry === 'string' ? entry : entry?.id)
+              const unlogged = (Array.isArray(answer.unlogged) ? answer.unlogged : []).map(idOf)
+              const held = Array.isArray(answer.protected) ? answer.protected : []
               const refused = Array.isArray(answer.refused) ? answer.refused : []
-              // "Nothing moved" has two very different meanings, and the receipt must not confuse them: a session
-              // that never wrote a log is *done* (there is nothing to delete, and its row goes), while a refusal
-              // is not (the log stays, and so does the row).
-              const ghostOnly = refused.length > 0
-                && refused.every((entry) => /no session directory|no log/iu.test(String(entry?.reason ?? '')))
+              // A session that never wrote a log is *done*: there is nothing to delete, and the row — the thing
+              // the person asked to be rid of — still has to leave. A refusal is not done: the log stays, and so
+              // does the row.
+              const noLog = moved === 0 && unlogged.includes(sessionId)
+              const why = refused.find((entry) => idOf(entry) === sessionId)?.reason
+                ?? held.find((entry) => idOf(entry) === sessionId)?.reason
+                ?? refused[0]?.reason
               state.lastClick = moved > 0
                 ? `deleted over the route (recoverable under ${answer.trash?.root ?? 'the trash'})`
-                : `nothing moved${refused.length > 0 ? `: ${refused[0]?.reason ?? 'refused'}` : ''}`
+                : `${noLog ? 'nothing to delete: no log' : 'nothing moved'}${why === undefined ? '' : `: ${why}`}`
               if (moved > 0) {
-                notify(text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.'))
-              } else if (ghostOnly) {
-                // Nothing was moved because there was nothing to move: a session that never wrote a log still has
-                // a row, and the row is what the person asked to be rid of. Say that, instead of the engine's
-                // internal sentence about a missing directory.
-                notify(text('notice.gone', 'Nothing to delete — it never wrote a log. The row has been removed.'))
+                notify(text('notice.deleted', 'Deleted'))
+              } else if (noLog) {
+                notify(text('notice.gone', 'No log — row removed'))
               } else {
-                notify(`${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
+                notify(why === undefined ? text('notice.kept', 'Not deleted') : `${text('notice.kept', 'Not deleted')}：${why}`)
               }
-              // Hide the row only when it should go. A real deletion or a session that never had a log both end
-              // with a row that must leave; a *refusal* — a busy agent, a directory that could not be moved —
-              // must leave the row alone, or the window would contradict the receipt printed beside it.
-              if (moved > 0 || ghostOnly) await hideRow(sessionId)
+              if (moved > 0 || noLog) await hideRow(sessionId)
               report()
               return
             }

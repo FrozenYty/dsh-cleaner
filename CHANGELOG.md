@@ -1,3 +1,15 @@
+## [0.5.15] - 2026-11-15
+
+- **The engine reports an id with no directory under `unlogged`, and the window was looking in `refused`.** The
+  window's own record of the click said it plainly — `lastClick=nothing moved` with no reason at all, `lastHide=none`,
+  `archived_ids` unchanged — so the answer had been understood as "nothing happened" while it actually said
+  "there was nothing to delete". Reading the answer's **own fields** fixes it: `unlogged` means done (there is
+  nothing to delete, and the row goes), `protected` means held back (the log stays, the row stays, and the reason
+  is shown verbatim). A reason string is not an interface; guessing which field carries it cost two rounds.
+- Both branches are asserted with the shapes the engine really produces: `unlogged` takes the row with it and says
+  *无日志，已移出列表*; `protected` keeps the row and prints its reason.
+
+## [0.5.14] - 2026-11-15
 ## [0.5.14] - 2026-11-15
 
 - **The trash page says it in one breath.** *删除只是搬走，可恢复。* replaces a sentence that explained the session
