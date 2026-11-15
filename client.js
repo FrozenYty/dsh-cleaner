@@ -88,6 +88,26 @@ window.__ModuleLoader__.load({
           lastHide: 'none',
           fatal: undefined,
         }
+        // The last click's outcome survives a reload, in the window's own storage. Without this the only record of
+        // what a click did is gone the moment the page refreshes — which is how one live fault became unreadable
+        // today: the person reloaded, and the evidence went with it.
+        const CLICK_KEY = 'dsh.cleaner.lastClick'
+        try {
+          const remembered = JSON.parse(localStorage.getItem(CLICK_KEY) ?? 'null')
+          if (remembered !== null && typeof remembered === 'object') {
+            if (typeof remembered.lastClick === 'string') state.lastClick = remembered.lastClick
+            if (typeof remembered.lastHide === 'string') state.lastHide = remembered.lastHide
+          }
+        } catch {
+          // Storage that cannot be read costs the memory of one click, never the plugin.
+        }
+        const remember = () => {
+          try {
+            localStorage.setItem(CLICK_KEY, JSON.stringify({ lastClick: state.lastClick, lastHide: state.lastHide }))
+          } catch {
+            // Same: a window with no writable storage still deletes.
+          }
+        }
         /** Whether the menu row was contributed — reported, because a missing row is the thing people see. */
         let rowRegistered = false
 
@@ -209,13 +229,13 @@ window.__ModuleLoader__.load({
               'trash.unavailable': 'The plugin\'s Host half is not loaded yet. Restart the Harness and it comes to life.',
               'trash.bytes': 'bytes',
               'trash.trashed': 'deleted',
-              'notice.deleted': 'Deleted. The directory is in the trash and can be restored.',
-              'notice.kept': 'Nothing was deleted',
-              'notice.gone': 'Nothing to delete — it never wrote a log. The row has been removed.',
-              'notice.requested': 'Delete requested — the Host\'s answer is in this conversation.',
+              'notice.deleted': 'Deleted',
+              'notice.kept': 'Not deleted',
+              'notice.gone': 'No log — row removed',
+              'notice.requested': 'Delete requested — see this conversation',
               'notice.failed': 'Delete failed',
               'notice.working': 'Deleting…',
-              'notice.noSession': 'Delete session: no session is open, so there is nothing to name as the caller.',
+              'notice.noSession': 'No session is open to name as the caller',
             },
             zh: {
               [LABEL_KEY]: '删除会话',
@@ -228,13 +248,13 @@ window.__ModuleLoader__.load({
               'trash.unavailable': '插件的宿主半边还没加载，重启 Harness 后就能用。',
               'trash.bytes': '字节',
               'trash.trashed': '删除于',
-              'notice.deleted': '已删除。目录在回收站里，可以恢复。',
-              'notice.kept': '没有删除',
-              'notice.gone': '这个会话从未写过日志，没有东西可删——已把这一行移出列表。',
-              'notice.requested': '已发出删除请求——宿主的回执就在这个会话里。',
+              'notice.deleted': '已删除',
+              'notice.kept': '未删除',
+              'notice.gone': '无日志，已移出列表',
+              'notice.requested': '已请求删除，回执见本会话',
               'notice.failed': '删除失败',
               'notice.working': '正在删除……',
-              'notice.noSession': '删除会话：当前没有打开的会话，没有可以作为调用者的会话。',
+              'notice.noSession': '没有打开的会话可作为调用者',
             },
           })
         }
@@ -559,6 +579,7 @@ window.__ModuleLoader__.load({
           state.dictionary = keepRefusal(state.dictionary, ctx.get('locale')?.register === undefined ? 'no locale service' : 'locale service present')
           state.row = keepRefusal(state.row, rowRegistered ? 'contributed' : 'not contributed')
           state.current = currentSessionId() ?? 'none'
+          remember()
           void post('state', { state: { ...state, report: 'route' } }).then(async (answer) => {
             if (answer.error === undefined) {
               state.report = 'route'

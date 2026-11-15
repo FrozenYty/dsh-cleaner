@@ -850,7 +850,18 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       remaining.push(entry)
       continue
     }
-    restored.push({ id: entry.id, path: target, files: entry.files, bytes: entry.bytes, title: entry.title })
+    // Measured at the destination, after the move, because the index's own numbers describe where the directory
+    // **was**. A restore that quotes the record can report success while the store is empty, which is exactly
+    // what a lost log looks like from the outside; `verified` is the store's answer, not the index's.
+    const landed = await readDirectoryFiles(target)
+    restored.push({
+      id: entry.id,
+      path: target,
+      files: landed.files,
+      bytes: landed.bytes,
+      verified: landed.ok,
+      title: entry.title,
+    })
   }
   await writeTrashIndex(trashRoot, remaining)
   return { restored, refused, failed }

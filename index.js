@@ -93,8 +93,28 @@ let settings = resolveCleanerConfig(undefined)
  */
 let boundDataDir
 
-/** The workspace this process speaks for, when the Host can say. */
+/** The context this plugin was applied in, kept so a data directory can be resolved after the load. */
+let runtimeCtx
+/**
+ * The directory the person actually works in — the workspace this profile holds, asked of the registry that owns
+ * it.
+ *
+ * `workingDirectory.defaultDirectory` is a **fallback for Sessions without an original directory**, and in a
+ * desktop profile it is the profile's own directory: resolving the data directory from it put the trash under
+ * `~/.dsh/profiles/desktop/.agents/cleaner` instead of the workspace's `.agents/cleaner`. The workspace records
+ * carry `path` (the same field the sidebar compares a Session's `cwd` against), so they are the honest source.
+ * @param ctx - the plugin context.
+ * @returns the workspace path, or undefined when no registry is mounted or no record names a directory.
+ */
 function defaultWorkspace(ctx) {
+  try {
+    const registry = ctx?.get?.('workspaceRegistry')
+    const list = typeof registry?.list === 'function' ? registry.list() : []
+    const named = list.find((workspace) => typeof workspace?.path === 'string' && workspace.path.length > 0)
+    if (named !== undefined) return named.path
+  } catch {
+    // A registry that cannot be read leaves the fallback below.
+  }
   try {
     const directory = ctx.get('workingDirectory')?.defaultDirectory
     return typeof directory === 'string' && directory.length > 0 ? directory : undefined
@@ -105,7 +125,9 @@ function defaultWorkspace(ctx) {
 
 function storagePaths() {
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  const dataDir = boundDataDir ?? resolveDataDir(process.env, homedir(), undefined)
+  // Resolved here rather than once at load: the workspace registry may not be mounted yet when `apply` runs, and a
+  // data directory frozen from the wrong answer is a trash nobody can find.
+  const dataDir = boundDataDir ?? resolveDataDir(process.env, homedir(), defaultWorkspace(runtimeCtx))
   return {
     sessionsRoot: join(home, 'sessions'),
     workspaceFile: join(home, 'storages', 'workspace.json'),
@@ -786,12 +808,15 @@ export function apply(ctx, config) {
   // field and the value named, rather than the first deletion — hours later, in front of a person.
   settings = resolveCleanerConfig(config)
   {
-    // The data directory is resolved once, in the documented order: the configured path, then the environment
-    // override, then the workspace this process speaks for, then the frozen fallback outside any workspace.
+    // The data directory is resolved in the documented order: the configured path, then the environment override,
+    // then **the workspace the registry owns**, then the frozen fallback outside any workspace. Only an answer we
+    // actually have is bound here: a workspace the Host cannot name yet leaves it unresolved, so `storagePaths()`
+    // asks again on first use instead of freezing the profile's own directory for the whole process.
     const workspace = defaultWorkspace(ctx)
     boundDataDir = settings.dataDir !== undefined
       ? resolve(workspace ?? process.cwd(), settings.dataDir)
-      : resolveDataDir(process.env, homedir(), workspace)
+      : workspace === undefined ? undefined : resolveDataDir(process.env, homedir(), workspace)
+    runtimeCtx = ctx
   }
   ctx.tools.register(defineTool({
     name: 'list_session_logs',
