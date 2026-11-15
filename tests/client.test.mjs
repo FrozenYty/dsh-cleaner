@@ -715,34 +715,39 @@ test('a profile without the workspace service still deletes', async () => {
   assert.match(lastState(requests).lastClick, /^handed to \/clean/)
 })
 
-test('a session that never wrote a log says so in the person\'s terms, and its row goes', async () => {
-  // The receipt a person reads must not confuse "there was nothing to delete" with "the Host refused". The first
-  // is finished work whose row leaves; the second leaves both the log and the row alone.
+test('an id the engine reports as unlogged still takes its row with it', async () => {
+  // The answer's own fields decide what happened. An id with no directory is reported under `unlogged` — not under
+  // `refused` — so a client that looks for a reason string in the wrong field reports "nothing moved" and leaves
+  // the row standing, which is exactly what a person saw on screen.
   const hidden = []
   const blank = mount({
     menus: true,
     slots: true,
     current: 'session-open-1',
-    answer: { removed: [], refused: [{ id: 'session-blank-1', reason: 'no session directory is stored under that id' }] },
+    answer: { removed: [], refused: [], unlogged: [{ id: 'session-blank-1' }] },
     archive: (sessionId) => { hidden.push(sessionId) },
   })
   blank.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
   await settle()
   await settle()
-  const notice = blank.panels.get('shell.overlay|dsh-cleaner.notice')
-  assert.match(JSON.stringify(notice.component()), /no log — row removed/i)
-  assert.deepEqual(hidden, ['session-blank-1'], 'the row is hidden, because there is nothing left to delete')
+  assert.deepEqual(hidden, ['session-blank-1'], 'the row leaves, because there was nothing to delete')
+  assert.match(JSON.stringify(blank.panels.get('shell.overlay|dsh-cleaner.notice').component()), /no log — row removed/i)
+  assert.match(lastState(blank.requests).lastClick, /^nothing to delete: no log/)
+})
 
+test('a held-back id keeps its row and shows the reason the engine gave', async () => {
+  const hidden = []
   const busy = mount({
     menus: true,
     slots: true,
     current: 'session-open-1',
-    answer: { removed: [], refused: [{ id: 'session-1', reason: 'a live agent holds this session (status: running)' }] },
-    archive: (sessionId) => { hidden.push(`refused:${sessionId}`) },
+    answer: { removed: [], refused: [], unlogged: [], protected: [{ id: 'session-1', reason: 'a live agent holds this session (status: running)' }] },
+    archive: (sessionId) => { hidden.push(sessionId) },
   })
   busy.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
   await settle()
   await settle()
-  assert.deepEqual(hidden, ['session-blank-1'], 'a refusal leaves the row exactly where it was')
+  assert.deepEqual(hidden, [], 'a held-back row stays exactly where it was')
+  assert.match(lastState(busy.requests).lastClick, /status: running/)
   assert.match(JSON.stringify(busy.panels.get('shell.overlay|dsh-cleaner.notice').component()), /status: running/)
 })
