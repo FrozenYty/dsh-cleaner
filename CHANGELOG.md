@@ -1,3 +1,20 @@
+## [0.5.20] - 2026-11-15
+
+- **A deletion now takes the session's derived record with its log.** The projection cache
+  (`storages/session_projcache/sessions/<id>.json`) carries a session's title, its `cwd` and whether it is **blank**,
+  and the sidebar's placeholder path draws a row from exactly that — so moving the log alone left the record that
+  puts the row on screen. The move now renames the projection into the trashed folder, a restore puts it back (and
+  answers `projection: true`), and a purge frees it through the same file walk that owns everything inside the
+  folder, so the reclaimed bytes are honest.
+- The cache package sanctions this itself: *"pruning stored checkpoints is out-of-band maintenance, same stance as
+  session persistence itself"* — the same stance and the same missing API as session logs.
+- A projection that is missing or held is reported on the entry and never fails the deletion: the log is the
+  authority and the cache rebuilds from it.
+- [ADR 0021](docs/adr/0021-derived-records-travel-with-the-log.md) records it, including the one case left alone on
+  purpose: ids **with no log** keep their projection, because their row is the one the window's archive call removes
+  and the projection is the only record of the title a person chose.
+
+## [0.5.19] - 2026-11-15
 ## [0.5.19] - 2026-11-15
 
 - **A survey of how four neighbours delete a session, recorded as
