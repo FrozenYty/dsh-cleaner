@@ -38,6 +38,9 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'dsh-cleaner.trash'
     const PANEL_SLOT = 'settings.section'
     const ICON_SLOT = 'settings.section.icon'
+    /** A floating notice at the frame level, so a click always says what it did. */
+    const NOTICE_ID = 'dsh-cleaner.notice'
+    const NOTICE_SLOT = 'shell.overlay'
 
     /**
      * A one-line reason from anything that was thrown.
@@ -77,6 +80,7 @@ window.__ModuleLoader__.load({
           row: 'not contributed',
           panel: 'not contributed',
           panel_icon: 'not contributed',
+          notice: 'not contributed',
           route: 'not called',
           report: 'not sent',
           current: 'not read',
@@ -109,6 +113,70 @@ window.__ModuleLoader__.load({
         /** The row's label in the window's language. */
         const label = () => text(LABEL_KEY, 'Delete session')
 
+        /**
+         * The last thing this half did, as a subscribable value.
+         *
+         * The click happens in a plain function and the notice is a component, so they meet here rather than in
+         * React state. One writer (`notify`), any number of readers.
+         */
+        let noticeText
+        const noticeReaders = new Set()
+        const notify = (text) => {
+          noticeText = text
+          for (const reader of noticeReaders) {
+            try {
+              reader()
+            } catch {
+              // A reader that throws must not stop the others, nor the click.
+            }
+          }
+        }
+
+        /**
+         * A frame-level notice: one line, self-dismissing, and it says what the click did.
+         *
+         * This exists because "点击没有效果" was never a wrong symptom — it was the absence of one. A row that
+         * deletes nothing and says nothing is indistinguishable from a row that is not wired at all, and that
+         * ambiguity is what cost the most rounds here.
+         */
+        function Notice() {
+          const [text, setText] = React.useState(noticeText)
+          React.useEffect(() => {
+            const update = () => setText(noticeText)
+            noticeReaders.add(update)
+            update()
+            return () => noticeReaders.delete(update)
+          }, [])
+          React.useEffect(() => {
+            if (text === undefined) return undefined
+            const timer = setTimeout(() => {
+              noticeText = undefined
+              setText(undefined)
+            }, 12000)
+            return () => clearTimeout(timer)
+          }, [text])
+          if (text === undefined || text === '') return null
+          return h('div', {
+            role: 'status',
+            style: {
+              position: 'fixed',
+              bottom: '24px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 2147483000,
+              maxWidth: 'min(92vw, 560px)',
+              padding: '9px 16px',
+              borderRadius: '999px',
+              border: '1px solid var(--dsw-alias-border-l2, #3a3a3a)',
+              background: 'var(--dsw-alias-bg-layer-2, #232323)',
+              color: 'var(--dsw-alias-label-primary, #e6e6e6)',
+              fontSize: '12px',
+              lineHeight: 1.5,
+              boxShadow: '0 8px 24px rgb(0 0 0 / 0.25)',
+              pointerEvents: 'none',
+            },
+          }, text)
+        }
         /** Every string the trash panel needs, resolved when it renders rather than when it loads. */
         const labels = () => ({
           // "Trash" is what a person already calls this place on every desktop they use; "deleted sessions"
@@ -140,6 +208,11 @@ window.__ModuleLoader__.load({
               'trash.unavailable': 'The plugin\'s Host half is not loaded yet. Restart the Harness and it comes to life.',
               'trash.bytes': 'bytes',
               'trash.trashed': 'deleted',
+              'notice.deleted': 'Deleted. The directory is in the trash and can be restored.',
+              'notice.kept': 'Nothing was deleted',
+              'notice.failed': 'Delete failed',
+              'notice.working': 'Deleting…',
+              'notice.noSession': 'Delete session: no session is open, so there is nothing to name as the caller.',
             },
             zh: {
               [LABEL_KEY]: '删除会话',
@@ -152,6 +225,11 @@ window.__ModuleLoader__.load({
               'trash.unavailable': '插件的宿主半边还没加载，重启 Harness 后就能用。',
               'trash.bytes': '字节',
               'trash.trashed': '删除于',
+              'notice.deleted': '已删除。目录在回收站里，可以恢复。',
+              'notice.kept': '没有删除',
+              'notice.failed': '删除失败',
+              'notice.working': '正在删除……',
+              'notice.noSession': '删除会话：当前没有打开的会话，没有可以作为调用者的会话。',
             },
           })
         }
@@ -254,10 +332,12 @@ window.__ModuleLoader__.load({
             state.lastClick = 'no session is open to name as the caller'
             // Reported even though the click did nothing: the report needs no caller, and this is the only way
             // the next listing can say why the click was a no-op.
+            notify(text('notice.noSession', 'Delete session: no session is open, so there is nothing to name as the caller.'))
             report()
             return
           }
           state.lastClick = `asked for ${sessionId}`
+          notify(text('notice.working', 'Deleting…'))
           void post('delete', { caller, ids: [sessionId] }).then(async (answer) => {
             if (answer.error === undefined) {
               const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
@@ -265,6 +345,9 @@ window.__ModuleLoader__.load({
               state.lastClick = moved > 0
                 ? `deleted over the route (recoverable under ${answer.trash?.root ?? 'the trash'})`
                 : `nothing moved${refused.length > 0 ? `: ${refused[0]?.reason ?? 'refused'}` : ''}`
+              notify(moved > 0
+                ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
+                : `${text('notice.kept', 'Nothing was deleted')}: ${refused[0]?.reason ?? 'no log on disk for that id'}`)
               report()
               return
             }
@@ -274,6 +357,9 @@ window.__ModuleLoader__.load({
             state.lastClick = viaCommand.error === undefined
               ? `deleted over /clean (matched=${String(viaCommand.matched)}); route unavailable (${routeError})`
               : `refused: ${viaCommand.error}; route unavailable (${routeError})`
+            notify(viaCommand.error === undefined
+              ? text('notice.deleted', 'Deleted. The directory is in the trash and can be restored.')
+              : `${text('notice.failed', 'Delete failed')}: ${viaCommand.error}`)
             report()
           })
         }
@@ -598,6 +684,19 @@ window.__ModuleLoader__.load({
           } catch (error) {
             state.panel_icon = `refused: ${reasonOf(error)}`
             console.error('dsh-cleaner: the trash page icon was refused', error)
+          }
+          try {
+            // One frame-level seat for the notice: a click always says what it did, even when what it did was
+            // nothing.
+            scope.effect(() => scope.slots.inject(NOTICE_SLOT, () => scope.slots.register({
+              name: NOTICE_SLOT,
+              id: NOTICE_ID,
+              order: 900,
+            }, Notice)))
+            state.notice = 'contributed'
+          } catch (error) {
+            state.notice = `refused: ${reasonOf(error)}`
+            console.error('dsh-cleaner: the notice was refused', error)
           }
         }
 

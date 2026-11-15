@@ -533,8 +533,8 @@ test('the trash page is contributed to the settings seat, in the window\'s langu
 
   assert.equal(
     JSON.stringify(slotRequests),
-    JSON.stringify(['settings.section', 'settings.section.icon']),
-    'the page and its icon wait for their seats',
+    JSON.stringify(['settings.section', 'settings.section.icon', 'shell.overlay']),
+    'the page, its icon and the notice each wait for their seat',
   )
   const panel = panels.get('settings.section|dsh-cleaner.trash')
   assert.ok(panel, 'the page is registered')
@@ -597,4 +597,35 @@ test('the half reports that the page is contributed', async () => {
   const { requests } = mount({ menus: true, slots: true, current: 'session-open-1' })
   await settle()
   assert.equal(lastState(requests).panel, 'contributed')
+})
+
+test('a click says what it did, at the frame level', () => {
+  // "点击没有效果" was never a wrong symptom: it was the absence of one. The notice is the seat that makes a
+  // silent no-op impossible — including the case where the click cannot run at all.
+  const silent = mount({ menus: true, slots: true, current: 'session-open-1' })
+  const notice = silent.panels.get('shell.overlay|dsh-cleaner.notice')
+  assert.ok(notice, 'the notice is registered')
+  assert.equal(notice.options.order, 900)
+  // Nothing has happened yet, so it renders nothing rather than an empty bar.
+  assert.equal(notice.component(), null)
+
+  const clicked = mount({ menus: true, slots: true, current: 'session-open-1', transport: 'refuse' })
+  clicked.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
+  return settle().then(() => {
+    // The sentence is recorded for the report; the notice reads the same value, so a person sees what the
+    // listing will say.
+    assert.match(lastState(clicked.requests).lastClick, /^deleted over \/clean/)
+  })
+})
+
+test('a click with no session to name says so in the notice and in the report', () => {
+  const { registrations, requests, panels } = mount({ menus: true, slots: true })
+  registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
+  // Synchronously visible: the click sets the sentence and the notice reads it, so the person sees the reason
+  // without opening anything, and the report carries the same sentence.
+  const shown = rendered(panels.get('shell.overlay|dsh-cleaner.notice').component()).join(' ')
+  assert.match(shown, /no session is open/)
+  return settle().then(() => {
+    assert.equal(lastState(requests).lastClick, 'no session is open to name as the caller')
+  })
 })
