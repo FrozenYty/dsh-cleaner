@@ -150,6 +150,22 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The session that carries a command for us: the one the window is looking at.
+         *
+         * `commands.execute` resolves against a **live agent**, and a row in the sidebar may belong to a session
+         * nobody holds any more — the product's own row actions go through host services for exactly that
+         * reason. So the command is run *in the session the person is in*, and it names the target as its
+         * argument: the carrier always has an agent, the command already accepts ids, and the receipt lands in
+         * front of the person instead of in a session they cannot see.
+         */
+        const carrierSessionId = () => {
+          const current = currentSessionId()
+          if (current !== undefined) return current
+          const listed = lastListed[0]
+          return typeof listed === 'string' && listed.length > 0 ? listed : undefined
+        }
+
+        /**
          * Run the deletion for one session: the same command the tool and the composer run.
          *
          * No render-time ask, no guard, no cache: the row is plain data and this is its only call. That is
@@ -162,10 +178,19 @@ window.__ModuleLoader__.load({
          * namespace throws inside the `try`, and the person sees the row and nothing else.
          */
         const runClean = (sessionId) => {
+          const carrier = carrierSessionId()
+          if (carrier === undefined) {
+            state.lastClick = 'no session is open to run the command in'
+            return
+          }
+          state.lastClick = `asked ${carrier} to delete ${sessionId}`
           try {
-            void Promise.resolve(ctx.remote.commands.execute(sessionId, `/clean ${sessionId}`, [])).catch(() => {})
-          } catch {
+            void Promise.resolve(ctx.remote.commands.execute(carrier, `/clean ${sessionId}`, [])).catch((error) => {
+              state.lastClick = `the command call failed: ${error instanceof Error ? error.message : String(error)}`
+            })
+          } catch (error) {
             // A client without the command namespace has nothing to run, and nothing to report.
+            state.lastClick = `no command namespace: ${error instanceof Error ? error.message : String(error)}`
           }
         }
 
@@ -372,7 +397,7 @@ window.__ModuleLoader__.load({
          * failure it reports: a half that dies before the first list still gets a sentence out, which is
          * exactly what the first version of this could not do — it stayed silent in the one case that mattered.
          */
-        async function report() {
+        function report() {
           try {
             const catalog = ctx.get('shortcuts')?.catalog?.getSnapshot?.()
             state.catalog = Array.isArray(catalog)
@@ -383,14 +408,7 @@ window.__ModuleLoader__.load({
           }
           state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
           state.row = rowRegistered ? 'contributed' : 'not contributed'
-          let sessionId = lastListed[0]
-          if (typeof sessionId !== 'string' || sessionId.length === 0) {
-            try {
-              sessionId = [...idsOf(await ctx.remote.session.list({}))][0]
-            } catch {
-              sessionId = undefined
-            }
-          }
+          const sessionId = carrierSessionId()
           if (typeof sessionId !== 'string' || sessionId.length === 0) return
           try {
             void Promise.resolve(

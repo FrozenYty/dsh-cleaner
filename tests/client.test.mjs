@@ -231,9 +231,9 @@ test('a page load drops the ids the view kept that the host no longer lists', as
   })
   await new Promise((resolve) => setImmediate(resolve))
 
-  // Two calls, on purpose: the repair asks once, and the self-report asks for itself so that a half which
-  // fails before the repair can still speak. Both are unfiltered reads of the same list.
-  assert.equal(calls.length, 2, 'the repair and the report each ask once')
+  // One call: the repair asks, and the self-report — which speaks through the session the window shows — has
+  // nothing to speak through in a page with no current session, so it stays quiet instead of asking twice.
+  assert.equal(calls.length, 1, 'the repair asks once')
   assert.deepEqual(Object.keys(calls[0]), [], 'and asks for everything, with no filter')
   assert.deepEqual(JSON.parse(store.getItem('dsh.workspace.view.v5')).sessionOrderByAccount, {
     'project-a': ['session-live-1', 'session-live-2'],
@@ -331,6 +331,8 @@ test('a session menu item runs the command for that session, and nothing else', 
     views: {},
     answer: [{ sessionId: 'session-live-1' }],
     menus: true,
+    commands: [{ name: 'clean', description: 'stub' }],
+    current: 'session-open-1',
   })
 
   assert.equal(registered.length, 1, 'one data contribution, no renderer')
@@ -365,12 +367,13 @@ test('a session menu item runs the command for that session, and nothing else', 
 
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
-  // The click is one call; a state report the half makes on its own is a different line and not a second
-  // deletion. Compared field by field: the arguments come from the page's realm.
+  // The click is one call, carried by the session the window shows — a sidebar row may belong to a session
+  // nobody holds, and `execute` resolves against a live agent. Compared field by field: the arguments come
+  // from the page's realm.
   const clicks = executed.filter((call) => !String(call.line).startsWith('/clean --state '))
   assert.equal(clicks.length, 1)
-  assert.equal(clicks[0].sessionId, 'session-archived-1')
-  assert.equal(clicks[0].line, '/clean session-archived-1')
+  assert.equal(clicks[0].sessionId, 'session-open-1', 'the carrier is the open session, not the target')
+  assert.equal(clicks[0].line, '/clean session-archived-1', 'and the target is named as the argument')
   assert.equal(clicks[0].attachments.length, 0)
 
   // No target, no item: the menu must not offer a deletion it cannot name.
@@ -418,15 +421,17 @@ test('a host without the command costs a silent click, not a failure', async () 
     menus: true,
     commands: [{ name: 'compact', description: 'some other command' }],
     silent: true,
+    current: 'session-open-1',
   })
   const [item] = silent.registered[0].resolve({ sessionId: 'session-1' })
   item.run()
   await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(silent.executed.length, 1, 'the click was attempted')
+  const clicks = silent.executed.filter((call) => !String(call.line).startsWith('/clean --state '))
+  assert.equal(clicks.length, 1, 'the click was attempted, and the state reports are not clicks')
   assert.equal(silent.registered[0].resolve({ sessionId: 'session-1' }).length, 1, 'and the row is still there')
 
   // A call that throws — a namespace that is not there, a transport that refuses — must not escape either.
-  const broken = mount({ views: {}, answer: [], menus: true, throwing: true })
+  const broken = mount({ views: {}, answer: [], menus: true, throwing: true, current: 'session-open-1' })
   broken.registered[0].resolve({ sessionId: 'session-2' })[0].run()
   await new Promise((resolve) => setImmediate(resolve))
 })
@@ -471,9 +476,12 @@ test('the shortcut is Ctrl+Shift+D on every platform and deletes the session the
   assert.equal(resolved.status, 'handled')
   resolved.run()
   await new Promise((resolve) => setImmediate(resolve))
-  assert.equal(executed.length, 1)
-  assert.equal(executed[0].sessionId, 'session-live-1')
-  assert.equal(executed[0].line, '/clean session-live-1')
+  // The key acts on the session the window shows, which is also the session that carries the command — so
+  // the carrier and the target are the same id here, and the command refuses nothing: it deletes it.
+  const clicks = executed.filter((call) => !String(call.line).startsWith('/clean --state '))
+  assert.equal(clicks.length, 1)
+  assert.equal(clicks[0].sessionId, 'session-live-1')
+  assert.equal(clicks[0].line, '/clean session-live-1')
 })
 
 test('the shortcut says why it cannot act instead of guessing a session', () => {
