@@ -588,7 +588,7 @@ test('the page\'s first render says what it is and that it is reading', () => {
   const tree = panels.get('settings.section|dsh-cleaner.trash').component()
   const words = rendered(tree).join(' ')
   assert.match(words, /Trash/)
-  assert.match(words, /A deletion is a move/)
+  assert.match(words, /Deleting only moves a directory/)
   assert.match(words, /Reading the trash/)
 })
 
