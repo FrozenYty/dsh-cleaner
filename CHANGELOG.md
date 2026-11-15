@@ -1,3 +1,14 @@
+## [0.5.11] - 2026-11-15
+
+- **"Nothing to delete" and "the Host refused" are now two different receipts.** A click on a session that never
+  wrote a log was answered with the engine's internal sentence — `no session directory is stored under that id` —
+  which reads like a fault report for what is actually finished work: there was nothing to delete, the row leaves,
+  and that is the outcome the person asked for. It now says so. A genuine refusal still prints the refusal's own
+  reason, and still leaves the row where it is.
+- The two cases had been one branch since hiding was introduced; separating the wording is what made the
+  difference visible, and both are asserted: the log-less case hides the row, the refusal case must not.
+
+## [0.5.10] - 2026-11-15
 ## [0.5.10] - 2026-11-15
 
 - **The row can now delete the session you are looking at.** The window's own report from the live profile made

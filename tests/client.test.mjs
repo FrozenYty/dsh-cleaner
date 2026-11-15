@@ -714,3 +714,35 @@ test('a profile without the workspace service still deletes', async () => {
   assert.equal(lastState(requests).lastHide, 'no uiWorkspace service')
   assert.match(lastState(requests).lastClick, /^handed to \/clean/)
 })
+
+test('a session that never wrote a log says so in the person\'s terms, and its row goes', async () => {
+  // The receipt a person reads must not confuse "there was nothing to delete" with "the Host refused". The first
+  // is finished work whose row leaves; the second leaves both the log and the row alone.
+  const hidden = []
+  const blank = mount({
+    menus: true,
+    slots: true,
+    current: 'session-open-1',
+    answer: { removed: [], refused: [{ id: 'session-blank-1', reason: 'no session directory is stored under that id' }] },
+    archive: (sessionId) => { hidden.push(sessionId) },
+  })
+  blank.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-blank-1' })[0].run()
+  await settle()
+  await settle()
+  const notice = blank.panels.get('shell.overlay|dsh-cleaner.notice')
+  assert.match(JSON.stringify(notice.component()), /never wrote a log/)
+  assert.deepEqual(hidden, ['session-blank-1'], 'the row is hidden, because there is nothing left to delete')
+
+  const busy = mount({
+    menus: true,
+    slots: true,
+    current: 'session-open-1',
+    answer: { removed: [], refused: [{ id: 'session-1', reason: 'a live agent holds this session (status: running)' }] },
+    archive: (sessionId) => { hidden.push(`refused:${sessionId}`) },
+  })
+  busy.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-1' })[0].run()
+  await settle()
+  await settle()
+  assert.deepEqual(hidden, ['session-blank-1'], 'a refusal leaves the row exactly where it was')
+  assert.match(JSON.stringify(busy.panels.get('shell.overlay|dsh-cleaner.notice').component()), /status: running/)
+})
