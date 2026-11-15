@@ -1,3 +1,10 @@
+## [0.5.14] - 2026-11-15
+
+- **The trash page says it in one breath.** *删除只是搬走，可恢复。* replaces a sentence that explained the session
+  backend, and *宿主半边未加载，重启后可用。* replaces the version naming the Harness. The page's other strings were
+  already short.
+
+## [0.5.13] - 2026-11-15
 ## [0.5.13] - 2026-11-15
 
 - **The data directory is the workspace's `.agents/cleaner`, not the profile's.** `workingDirectory.defaultDirectory`
