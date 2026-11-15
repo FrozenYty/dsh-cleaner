@@ -7,6 +7,27 @@ dates, and a later release adds a section above an older one instead of rewritin
 A release adds its section in the same pull request that writes the change, so the version in
 `package.json` always has a section here.
 
+## [0.2.19] - 2026-11-15
+
+- **The real cause, at last: this build's client root has no `remote` service.** Every `ctx.remote.*` call the
+  browser half made — `remote.session.list` for the view repair, `remote.commands.execute` for the click and
+  the self-report — threw, and each was swallowed by a `try`/`catch` written to keep failures non-fatal. That
+  is why the row appeared, the click did nothing and `Window half: nothing heard` stayed true, all at once.
+  The Client inspect directory lists `layout`, `locale`, `sessions`, `slots`, `theme`, `timer`, `uiWorkspace`
+  and `workspaces` — and no `remote`.
+- **The half now acts through the official `ctx.sessions` service**: `retain(id, { source: 'gateway' })` →
+  `await reference.ready` → `binding.session.command(line)` → `release()`. `retain` starts the initial history
+  open, so a session nobody had open still gets a live binding, and `command` is the admission the composer
+  runs — the deletion keeps one implementation behind every caller. The click carries the command in the
+  session the window shows and names the target as its argument, so the receipt lands where the person is
+  looking.
+- **The sidebar-view repair is removed** ([ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)
+  supersedes [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)): it was built on a remote that does
+  not exist here, so it never ran. What hides a deleted session's row is the archive write, a product rule
+  reached through a product interface.
+- The browser half shrank by a third, and its report now records `transport`, `current` and `lastClick`, so
+  the next fault of this kind names itself.
+
 ## [0.2.18] - 2026-11-15
 
 - **The command is carried by the session the window is showing.** commands.execute resolves against a live

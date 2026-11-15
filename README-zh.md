@@ -18,7 +18,7 @@
 
 ## 状态
 
-- 当前版本：v0.2.18。
+- 当前版本：v0.2.19。
 - **在这台机器的真实 profile 里跑过**（2026-11-13）：从这个目录装进 desktop profile 后两个工具都出现了，
   `list_session_logs` 列出 6 个日志，`delete_session_logs` 只删掉这 6 个目录——回收
   4,169,349 字节，失败 0、拒绝 0。挂载着的 `sessionPersistence` 后端确认已不再列出它们；再列一次是 0 个
@@ -153,7 +153,7 @@ workspace 文件永远不写，项目里的会话列表也不是插件写的：�
 会话，而 registry 会把这次改动推送给每个打开的窗口，所以**那一行当场就没了：不用刷新、不用重启、不用切排序**
 （[ADR 0012](docs/adr/0012-archive-never-unarchive.md)）。**绝不取消归档**是关键：那个调用属于“恢复”，也正是它
 过去把已删会话的那一行重新摆回屏幕上。唯一宿主事件碰不到的那份副本是窗口自己持久化的侧边栏视图，bundle 的浏览器
-半边会在每次页面加载时清一遍（[ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)）。
+半边通过官方客户端服务 `sessions` 执行同一个 `/clean` 命令（[ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)）。
 
 ## 它不做什么
 
@@ -310,7 +310,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么链接和不规则目录只拒绝、不跟随？ | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | 为什么执行时还要把 plan 再核一遍？ | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
 | 为什么删掉的会话是“请” registry 摘掉，而不是自己改 workspace 文件？ | [ADR 0006](docs/adr/0006-detach-by-asking.md) |
-| 为什么 bundle 里带一个浏览器半边？ | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md) |
+| 为什么 bundle 里带一个浏览器半边？ | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)（已被 [ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md) 取代） |
 | 为什么 agent 忙就拒绝、只是驻留就不拒绝？ | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | 一次删除会碰哪些 workspace 记录？ | [ADR 0009](docs/adr/0009-two-records-two-cases.md)（已被取代） |
 | 为什么删掉的那一行会当场消失？ | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
@@ -320,6 +320,8 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 它可能被弄成删什么，又信任什么？ | [SECURITY.md](SECURITY.md) |
 | 怎么开分支、写提交、合并？ | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | 助手在这里要守什么规则？ | [AGENTS.md](AGENTS.md) |
+
+
 
 
 

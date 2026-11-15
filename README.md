@@ -19,7 +19,7 @@ first** — archiving is how the sidebar hides a session, not a permission to de
 
 ## Status
 
-- Current version: v0.2.18.
+- Current version: v0.2.19.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted
@@ -179,9 +179,9 @@ away ([ADR 0006](docs/adr/0006-detach-by-asking.md)). Archiving is the lever, no
 sidebar draws no archived session, and the registry publishes the change to every open window, so **the row
 disappears at once — no reload, no restart, no sort switch**
 ([ADR 0012](docs/adr/0012-archive-never-unarchive.md)). Never unarchiving is the point: that call belongs
-to a restore, and it is what used to put a deleted session's row back on screen. The one copy no host event
-reaches is the window's own persisted sidebar view, and the bundle's browser half prunes it at every page
-load ([ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)).
+to a restore, and it is what used to put a deleted session's row back on screen. The bundle's browser half
+carries the same `/clean` command from the sidebar and from Ctrl+Shift+D, through the Client's own
+`sessions` service ([ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md)).
 
 ## What it does not do
 
@@ -300,10 +300,10 @@ It should not be: the plugin archives the session as part of the deletion, and t
 archived session, so the row goes the moment the registry change reaches the window — that is a live
 stream, not a reload. What is left is a record, not a row: the archive set names an id with no directory,
 which the listing reports as `already_gone`, and which appears only if you switch the archived filter to
-*show* or *only*. If a row really is still drawn, the window kept a copy from before the change: a page
-load also prunes the window's own persisted view, and a restart rebuilds the client's session list. One
-case is stated rather than fixed: a session the host still holds in memory keeps its *name* in that list
-until the host releases it (a restart does; no plugin API can), and the answer says so when it happens
+*show* or *only*. If a row really is still drawn, the window kept a copy from before the change: a **page
+reload** re-reads the stored view, and a restart rebuilds the client's session list. One case is stated
+rather than fixed: a session the host still holds in memory keeps its *name* in that list until the host
+releases it (a restart does; no plugin API can), and the answer says so when it happens
 (`the host holds that session in memory`).
 
 ## Compatibility
@@ -366,7 +366,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why are links and irregular directories refused? | [ADR 0004](docs/adr/0004-refuse-links.md) |
 | Why is a plan checked again when it is executed? | [ADR 0005](docs/adr/0005-re-verify-at-execution.md) |
 | Why does it detach a deleted session instead of editing the workspace file? | [ADR 0006](docs/adr/0006-detach-by-asking.md) |
-| Why does the bundle carry a browser half? | [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md) |
+| Why does the bundle carry a browser half? | [ADR 0013](docs/adr/0013-reuse-the-client-sessions-service.md) (supersedes [ADR 0007](docs/adr/0007-browser-half-prunes-the-view.md)) |
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
@@ -376,6 +376,8 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | What can it be made to delete, and what does it trust? | [SECURITY.md](SECURITY.md) |
 | How do we branch, commit and merge? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What are an assistant's rules here? | [AGENTS.md](AGENTS.md) |
+
+
 
 
 
