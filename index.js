@@ -361,6 +361,39 @@ function listIds(ids) {
  * @param exec - the tool execution, carrying the calling agent.
  * @returns the plan: what is on disk, what is protected, and what a deletion would take.
  */
+/**
+ * What the product itself says about the sessions it would draw, not what this plugin thinks.
+ *
+ * The audit's rule, made callable: a sidebar row needs the workspace's **membership getter** to report the id — which
+ * filters a record through the registry's own in-memory path map — and it needs the session list to hold the session.
+ * A restore can write the record and still leave no row, and the two lists below are what turns "the row is missing"
+ * into a fact instead of a theory.
+ * @param ctx - the plugin context.
+ * @returns `{ product_members, product_sessions }`, each empty when the service is not mounted.
+ */
+async function productView(ctx) {
+  const members = []
+  try {
+    for (const workspace of ctx.get('workspaceRegistry')?.list?.() ?? []) {
+      members.push({
+        title: workspace?.title,
+        path: workspace?.path,
+        session_ids: Array.isArray(workspace?.sessionIds) ? workspace.sessionIds : [],
+      })
+    }
+  } catch {
+    // A registry that throws costs the diagnostic, never the listing.
+  }
+  let sessions = []
+  try {
+    const listed = await ctx.get('sessionQuery')?.listSessions?.()
+    if (Array.isArray(listed)) sessions = listed.map((session) => String(session?.sessionId ?? session?.header?.id))
+  } catch {
+    // Same: a query that throws is reported as no sessions, and the rest of the answer stands.
+  }
+  return { product_members: members, product_sessions: sessions }
+}
+
 function listLogs(ctx, exec) {
   return planCleanup({ ...storagePaths(), protect: protections(ctx, exec) })
     .then(async (plan) => ({
@@ -371,6 +404,8 @@ function listLogs(ctx, exec) {
       // Read-only, and deliberately not a sweep: a listing is the one call that can never be a mistake, so it
       // reports what the retention rule would do and lets the next deletion do it.
       ...(await trashReadout()),
+      // The product's own view, beside this plugin's: a row needs both, and only one of them is ours.
+      ...(await productView(ctx)),
     }))
 }
 

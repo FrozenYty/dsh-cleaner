@@ -1,3 +1,13 @@
+## [0.5.35] - 2026-11-16
+
+- **The listing now reports what the product itself says.** The audit's rule — verify against the product's own record,
+  not this plugin's view — is now callable: `product_members` is the workspace registry's membership **getter** (the
+  list the sidebar actually reads, filtered by its own path map) and `product_sessions` is the session query's own
+  list. They are what turned "the restored session has no row" from a theory into two facts, and they answer the next
+  occurrence with records.
+- No behaviour change to any operation.
+
+## [0.5.34] - 2026-11-16
 ## [0.5.34] - 2026-11-16
 
 - **A restore accepts the same directory under another spelling.** Found by auditing the whole path against the
