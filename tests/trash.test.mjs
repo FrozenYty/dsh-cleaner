@@ -361,5 +361,7 @@ test('a restore accepts the same directory under another spelling', async () => 
   assert.equal(restored.restored.length, 1, JSON.stringify(restored.refused))
   assert.equal(restored.restored[0].path, plan.candidates[0].path.replace('sessions-alias', 'sessions'), 'it lands under the real root')
   assert.deepEqual((await readdir(restored.restored[0].path)).sort(), ['session.v3.jsonl.zstd', 'session.v4.jsonl.zstd'])
-  await rmdir(alias)
+  // A junction is removed with `rmdir`; a POSIX symlink with `unlink`. Getting this wrong fails the test in its
+  // own teardown on Linux and macOS while passing on Windows, which is exactly what the first CI run showed.
+  await (process.platform === 'win32' ? rmdir(alias) : unlink(alias))
 })
