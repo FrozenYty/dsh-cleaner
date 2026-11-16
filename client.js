@@ -767,7 +767,6 @@ window.__ModuleLoader__.load({
          * @param ids - the sessions the Host reported as restored.
          */
         const loadRestored = async (ids) => {
-            state.restoredIds = ids
           try {
             const sessions = ctx.get('sessions')
             const ui = ctx.get('uiWorkspace')
