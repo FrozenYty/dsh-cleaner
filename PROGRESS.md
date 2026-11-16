@@ -281,3 +281,13 @@ Dates are the commit dates, in the order the work happened.
   verbatim, the live host reports `enter: {entered: [session-52546605…, session-8b1fd430…], skipped: []}` and both ids
   appear in `live_sessions`: the sessions the restore put back are now entered and announced, which is exactly the
   summary the window needs to draw their rows.
+
+- **Studied the version he remembered instead of guessing again, and it explains the whole regression.** Checked out
+  `53e4d8f^` in a worktree and read its restore: `restoreFromTrash` + `unarchiveSessions`, no attach and no enter —
+  because that version's **deletion archived and never released the live session object**, so the session stayed in the
+  Host's store, the window kept its summary, and clearing the archive state was enough to bring the row back. Releasing
+  the live object (0.5.25, needed so a deletion leaves an open window without a restart) removed that floor, and
+  re-entering a restored session is memory-only, which is why the row came back and then disappeared at the next
+  restart. 0.5.39 adds the durable half: a ledger of restored ids under the plugin's own data directory, replayed once
+  at load, with an id dropped when it is deleted again. That is strictly more than the old version had, and it lives in
+  this plugin rather than in the product.

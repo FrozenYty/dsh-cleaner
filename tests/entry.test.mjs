@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
-import { chmod, mkdir, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1051,7 +1051,8 @@ test('a restore lets the Host adopt the session, so the window has a summary to 
       events: [{ type: 'note' }],
     }),
   }
-  const tools = install({ sessions, query })
+  const dataDir = join(TMP, 'ledger-test')
+  const tools = install({ sessions, query, config: { dataDir } })
   await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
   const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
 
@@ -1063,4 +1064,8 @@ test('a restore lets the Host adopt the session, so the window has a summary to 
   assert.deepEqual(preparedOptions.seed, [{ type: 'note' }], 'and the events it stored')
   assert.equal(preparedOptions.eventState, 'detached', 'the query clones them, so they are independently owned')
   assert.deepEqual(back.workspace.enter.entered, ['session-archived-1'], 'and the answer says the Host took it')
+  // The durable half: the id is written down, so the next load can adopt it again. This is the assertion that
+  // catches an import this file forgot — the write fails silently in production and there is no file to replays.
+  const ledger = JSON.parse(await readFile(join(dataDir, 'restored.json'), 'utf8'))
+  assert.deepEqual(ledger.ids, ['session-archived-1'], 'the restore is remembered across a restart')
 })

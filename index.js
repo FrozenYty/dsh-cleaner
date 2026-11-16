@@ -41,8 +41,8 @@
  */
 
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { realpath } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 
 import {
   listTrash,
@@ -303,6 +303,48 @@ async function detachSessions(ctx, ids) {
  * @param ids - the sessions that were just restored.
  * @returns `{entered, skipped, failed?}` or `{error}`.
  */
+
+/** The file where this plugin remembers which sessions it restored, so a restart can re-adopt them. @returns its path. */
+function restoredLedgerPath() {
+  return join(storagePaths().dataDir, 'restored.json')
+}
+
+/**
+ * Read the ids this plugin restored, so the next load can adopt them again.
+ *
+ * A row in the sidebar needs the session to be live in the Host: releasing it is what makes a deletion leave an open
+ * window without a restart, and a restored session is only live until the next restart. This ledger is the durable
+ * memory of "the plugin put this back", and the load path replays it. Bounded and best-effort: an unreadable file
+ * costs the replay, never the load.
+ * @returns the recorded ids, newest first.
+ */
+async function readRestoredLedger() {
+  try {
+    const parsed = JSON.parse(await readFile(restoredLedgerPath(), 'utf8'))
+    return Array.isArray(parsed?.ids) ? parsed.ids.filter((id) => typeof id === 'string' && id !== '') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Record ids as restored, or forget them when they are deleted or purged again.
+ * @param add - ids this restore put back.
+ * @param drop - ids a deletion or purge took away again.
+ */
+async function writeRestoredLedger(add = [], drop = []) {
+  const current = await readRestoredLedger()
+  const removed = new Set(drop)
+  const kept = current.filter((id) => !removed.has(id) && !add.includes(id))
+  const ids = [...new Set([...add, ...kept])].slice(0, 200)
+  try {
+    await mkdir(dirname(restoredLedgerPath()), { recursive: true })
+    await writeFile(restoredLedgerPath(), `${JSON.stringify({ version: 1, ids }, null, 2)}\n`)
+  } catch {
+    // A ledger that cannot be written costs the next start's replay, never the restore that worked.
+  }
+}
+
 async function enterRestored(ctx, ids) {
   const sessions = ctx.get('sessions')
   const query = ctx.get('sessionQuery')
@@ -571,6 +613,7 @@ async function trashLogs(ctx, exec, action, requested) {
   const reattached = await attachSessions(ctx, report.restored)
     // 3. The Host adopts it too: a row needs a summary in the window's list, and only an entered session has one.
     const entered = await enterRestored(ctx, back)
+    if (entered.entered !== undefined && entered.entered.length > 0) await writeRestoredLedger(entered.entered)
 reattached.enter = entered
   const swept = await sweepTrash()
   return {
@@ -659,6 +702,8 @@ async function deleteLogs(ctx, exec, requested) {
   // The record is written **after** the files, which is Codex's ordering: a move that fails must leave the row
   // where it was, and only a session the store really stopped holding may lose its membership.
   const hidden = await detachSessions(ctx, drop)
+  // A session this plugin restored and the person deleted again is no longer its to re-adopt.
+  await writeRestoredLedger([], drop)
   // An archived id is drawn by the sidebar **even when it has no log at all** — that is exactly the state a
   // deletion leaves behind (this machine had four such ids, drawn as dimmed rows nothing could remove), and the
   // archive flag is the last thing that can keep a deleted session on screen. So a deletion also drops that flag,
@@ -969,6 +1014,16 @@ export function apply(ctx, config) {
   // Validated before anything is registered: a patch value that cannot be honoured fails this load, with the
   // field and the value named, rather than the first deletion — hours later, in front of a person.
   settings = resolveCleanerConfig(config)
+  // Re-adopt what a previous run restored, once, after everything is registered: a row needs the session live,
+  // liveness is memory, and a restart takes it away. The ledger is the durable half of "this plugin put it back".
+  void (async () => {
+    try {
+      const ids = await readRestoredLedger()
+      if (ids.length > 0) await enterRestored(ctx, ids)
+    } catch {
+      // A replay that fails costs the rows, never the load: the sessions are on disk and accounted already.
+    }
+  })()
   ctx.tools.register(defineTool({
     name: 'list_session_logs',
     description:
