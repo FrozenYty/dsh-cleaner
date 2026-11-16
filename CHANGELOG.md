@@ -1,3 +1,15 @@
+## [0.5.39] - 2026-11-16
+
+- **A restored session survives a restart, because the plugin remembers what it restored.** Read from the version that
+  worked rather than from theory: before the regression the deletion **archived** and never released the live session,
+  so the window kept the session's summary and clearing the archive state brought the row straight back — nothing had
+  to be re-loaded, and nothing had to be durable. Releasing the live object (needed so a deletion leaves an open window
+  without a restart) took that away, and re-entering a restored session is a memory-only state: the row came back and
+  then vanished at the next restart. The plugin now keeps a ledger of the ids it restored, under its own data
+  directory (`restored.json`), replays it once at load, and drops an id from it when that session is deleted again.
+  Bounded at 200, best-effort throughout: an unreadable or unwritable ledger costs the replay, never a restore.
+
+## [0.5.38] - 2026-11-16
 ## [0.5.38] - 2026-11-16
 
 - **A restore now has the Host adopt the session, which is the half the window needs and the one that does not depend on
