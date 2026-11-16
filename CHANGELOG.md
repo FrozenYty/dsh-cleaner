@@ -1,3 +1,29 @@
+## [0.5.32] - 2026-11-16
+
+- **Purging asks in place, the trash can be emptied or restored in one action, and each row names its workspace.**
+  Purging is the only thing on this page that cannot be undone — a restore always is, a deletion is recoverable —
+  so its button becomes its own confirmation on the first click and acts on the second, and any other click takes
+  the question back. The header carries the two bulk actions: **全部恢复** in one call, and **清空回收站**, which asks
+  first and names what it would free (`确认永久删除 3 条？`).
+- **Each row says where the session came from**, because two sessions can carry the same title in different projects:
+  the workspace is read from the projection at the moment of the deletion, travels in the trash index, and is shown
+  as the last segment of the path (`dsh-team-roster`, `MYPROJS`) — the same read that supplies the title, now one
+  function instead of a copy of the JSON walk per fact.
+
+## [0.5.31] - 2026-11-16
+## [0.5.31] - 2026-11-16
+
+- **The 回收站 rows now read like a list a person can scan.** The deletion time was the stored timestamp
+  (`2026-11-16T02:16:36.066Z`) and the session id was glued to the title, so the loudest text in every row was a uuid.
+  Now: the title leads and the id is the row's tooltip, a session with no title keeps a short id so two blank ones are
+  still told apart, and the time is said the way a person says it — `今天 10:16`, `昨天 22:41`, `11-14 09:03`,
+  `2025-12-01 09:03`, in local time — with the exact stored value in the meta line's tooltip. The page also counts
+  what it holds (`1 条 · 8.01 MiB`) beside the title, and the expiry note no longer prints raw ids.
+- **The retention window and the cap moved into the path's tooltip.** They are the same for every row and answer a
+  question a person asks once, so as a visible line they competed with the list; the answer still carries both, and
+  hovering the path shows them.
+
+## [0.5.30] - 2026-11-16
 ## [0.5.30] - 2026-11-16
 
 - **The 回收站 page now shows how long the bytes are held and how many entries are kept.** Both numbers come from

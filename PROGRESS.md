@@ -194,3 +194,21 @@ Dates are the commit dates, in the order the work happened.
   of dropping every update — it still has no renderer, but it can now show what a page says after the Host answered.
   Confirmed red without the render change — the second render carried the path and **no** numbers — and green after
   it; `npm test` at 127 tests / 124 pass, `node scripts/check.mjs` passed.
+
+- **The trash page's rows were rewritten for the person reading them, and the limits line moved into a tooltip.**
+  Two faults, both reported from a screenshot of the running page: the release note's visible `保留 30 天 · 最多 200 条`
+  competed with the list (it is the same for every row and a person asks once), and each row led with a raw
+  `2026-11-16T02:16:36.066Z` beside a session id glued to the title. Now the title leads, the id is a tooltip, the time
+  is spoken (`今天 10:16` / `昨天 22:41` / `11-14 09:03`, local, with the exact value in the tooltip), and the page
+  counts what it holds. Both new tests were confirmed red without the change; the first attempt at the tooltip test
+  passed vacuously — a `split('"title"')` cut a prefix that ended before the line, so the assertion was replaced with a
+  walk to the node by `key`, which cannot pass while the line is there. `npm test` at 128 tests / 125 pass.
+
+- **The trash page's safety and bulk actions, from the design conversation.** Three choices were put to him and he
+  took all three: confirm in place, both bulk actions, and the workspace on the row. Purging is the only irreversible
+  action on the page, so it now takes two clicks and the question is dropped by any other action; **全部恢复** sends
+  every id in one call; **清空回收站** asks and names the count it would free; and each row leads with the workspace,
+  read from the projection at deletion time (`workingDirectory`, the same row `title` comes from) and stored in the
+  trash index. That read was one function per fact and is now one function with the row name as a parameter.
+  Proven red without the change — the row's meta line rendered `2.0 KiB · today 11:04` with no workspace — and green
+  after it; the suite is at 129 tests / 126 pass, `node scripts/check.mjs` passed.

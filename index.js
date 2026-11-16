@@ -352,6 +352,8 @@ async function trashReadout() {
         bytes: entry.bytes,
         trashed_at: entry.trashed_at,
         ...(entry.title === undefined ? {} : { title: entry.title }),
+        // Where it came from, when the projection was there to say: two sessions can share a title.
+        ...(entry.workspace === undefined ? {} : { workspace: entry.workspace }),
       })),
       expired: expired.length,
       missing: listed.missing,

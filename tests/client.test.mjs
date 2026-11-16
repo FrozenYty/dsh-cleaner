@@ -319,6 +319,31 @@ const lastState = (requests) => {
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
+/**
+ * Find the element carrying one `key` in a rendered tree.
+ *
+ * The tree is the render output, not a string, so an assertion about one row's text must not search the whole
+ * serialisation: a test here once "proved" a line was gone because a `split('"title"')` happened to cut a prefix
+ * that ended before the line — the assertion passed with the line still there. Walking to the node by `key` cannot
+ * pass vacuously.
+ */
+const findKey = (node, key) => {
+  if (node === null || typeof node !== 'object') return undefined
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findKey(child, key)
+      if (hit !== undefined) return hit
+    }
+    return undefined
+  }
+  if (node.props?.key === key) return node
+  for (const child of node.children ?? []) {
+    const hit = findKey(child, key)
+    if (hit !== undefined) return hit
+  }
+  return undefined
+}
+
 test('the registered id is the package the Host installed', () => {
   const definition = register()
   const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -863,15 +888,24 @@ test('deleting the session on screen leaves its dead view, and nothing else does
   assert.deepEqual(refused.leaves, [], 'a refusal means the session is alive, so the page stays')
 })
 
-test('the trash page shows how long the bytes are held and how many entries are kept', async () => {
-  // The last open item on PLAN.md: a person deciding whether to purge something needs the two numbers the Host
-  // enforces. The page reads them from the trash answer, so the answer carries them and the page renders one line.
+test('the limits are a tooltip, not a line on the page, and the rows lead with a name a person knows', async () => {
+  // The page answers two questions: what is in the trash, and what can I do about it. How long the bytes are held
+  // and how many entries are kept answer neither of them every time it is opened, so they moved into the path's
+  // tooltip — still there for whoever wants them, not competing with the list. The same reasoning takes the session
+  // id off the row's first line: a uuid glued to a title was the loudest text in the row and told nobody anything.
   const mounted = mount({
     menus: true,
     slots: true,
     answer: {
       action: 'list',
-      trash: { root: 'D:\\somewhere\\cleaner\\trash', retention_days: 7, limit: 50, count: 0, bytes: 0, entries: [] },
+      trash: {
+        root: 'D:\\somewhere\\cleaner\\trash',
+        retention_days: 7,
+        limit: 50,
+        count: 1,
+        bytes: 1024,
+        entries: [{ id: 'session-abcdef12-3456-7890-abcd-ef1234567890', bytes: 1024, trashed_at: new Date().toISOString() }],
+      },
       swept: [],
     },
   })
@@ -880,8 +914,99 @@ test('the trash page shows how long the bytes are held and how many entries are 
   await settle()
   await settle()
   mounted.react.beginRender()
-  const said = JSON.stringify(page.component())
-  assert.match(said, /7 days/, 'the retention window the Host enforces')
-  assert.match(said, /at most 50 entries/, 'and the cap the next deletion keeps')
-  assert.match(said, /somewhere/, 'beside the path it holds them in')
+  const tree = page.component()
+  const where = findKey(tree, 'where')
+  assert.ok(where, 'the path line is there')
+  assert.equal(where.children.join(''), 'D:\\somewhere\\cleaner\\trash', 'the path is the first line, and nothing else is on it')
+  assert.match(String(where.props.title), /7 days · at most 50 entries|Kept 7 days · at most 50 entries/, 'the numbers are in the tooltip')
+  assert.match(String(findKey(findKey(tree, 'session-abcdef12-3456-7890-abcd-ef1234567890'), 'title').children.join('')), /Untitled [0-9a-f]{8}/, 'a row without a title keeps a short id to tell it apart')
+})
+
+test('a deletion time is said the way a person says it, and the exact value stays in the tooltip', async () => {
+  // `2026-11-16T02:16:36.066Z` is a timestamp for a log: UTC, milliseconds nobody asked for, and a `T` and a `Z`
+  // that are punctuation from a format rather than words. The row says a local clock time instead, and the raw
+  // value is kept where precision matters — in the tooltip.
+  const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000).toISOString()
+  const mounted = mount({
+    menus: true,
+    slots: true,
+    answer: {
+      action: 'list',
+      trash: {
+        root: 'x',
+        count: 1,
+        bytes: 2048,
+        entries: [{ id: 'session-11111111-2222-3333-4444-555566667777', title: 'aquavision', bytes: 2048, trashed_at: threeDaysAgo }],
+      },
+      swept: [],
+    },
+  })
+  const page = mounted.panels.get('settings.section|dsh-cleaner.trash')
+  page.component()
+  await settle()
+  await settle()
+  mounted.react.beginRender()
+  const tree = page.component()
+  // The row's meta line, found by its `key` rather than by position: the tree is the render output, not a string.
+  const meta = findKey(tree, 'meta')
+  assert.ok(meta, 'the row carries a meta line')
+  const said = meta.children.join('')
+  assert.doesNotMatch(said, /T\d\d:|\.\d\d\dZ|Z\b/, 'no ISO punctuation in what a person reads')
+  assert.match(said, /^\d+(\.\d+)? (B|KiB|MiB) · (\d\d-\d\d|\d{4}-\d\d-\d\d|today|昨天|今天) \d\d:\d\d$/, `a size and a clock time, not a timestamp: ${said}`)
+  assert.equal(meta.props.title, threeDaysAgo, 'the exact value is still there for whoever wants it')
+})
+
+
+test('purging asks in place, the bulk actions use every id, and a row names its workspace', async () => {
+  // Three facts a person's hand depends on: the irreversible action needs two clicks, the bulk actions mean all of
+  // it, and a row says which workspace it came from — two sessions can carry the same title in different projects.
+  const entries = [
+    { id: 'session-aaaa1111-0000-0000-0000-000000000001', title: 'same name', workspace: 'D:\\MYPROJS\\DSH_FILES\\dsh-team-roster', bytes: 2048, trashed_at: new Date().toISOString() },
+    { id: 'session-bbbb2222-0000-0000-0000-000000000002', title: 'same name', workspace: 'D:\\MYPROJS', bytes: 1024, trashed_at: new Date().toISOString() },
+  ]
+  const mounted = mount({ menus: true, slots: true, answer: { action: 'list', trash: { root: 'x', retention_days: 30, limit: 200, count: 2, entries }, swept: [] } })
+  const page = mounted.panels.get('settings.section|dsh-cleaner.trash')
+  // Every render starts a hook cursor, exactly as React does; the fixture's cells are what survives.
+  const render = () => {
+    mounted.react.beginRender()
+    return page.component()
+  }
+  render()
+  await settle()
+  await settle()
+  const tree = render()
+
+  // Each row says where it came from, in the word a person uses for it — the last segment of the path.
+  const metas = entries.map((entry) => findKey(findKey(tree, entry.id), 'meta').children.join(''))
+  assert.match(metas[0], /^dsh-team-roster · /, 'the workspace is the row\'s first word')
+  assert.match(metas[1], /^MYPROJS · /, 'and a drive-root workspace still has a name')
+
+  const purges = () => mounted.requests.filter((call) => !call.url.endsWith('/state') && call.body?.op === 'purge')
+  assert.equal(purges().length, 0, 'nothing purged yet')
+  findKey(findKey(tree, entries[0].id), 'purge').props.onClick()   // the first click only asks
+  assert.equal(purges().length, 0, 'one click purges nothing')
+  const asked = findKey(findKey(render(), entries[0].id), 'purge')
+  assert.equal(asked.children.join(''), 'Confirm', 'the button becomes the question')
+  asked.props.onClick()                                            // the second click does it
+  await settle()
+  await settle()
+  assert.equal(purges().length, 1, 'the second click purges')
+  assert.deepEqual(purges()[0].body.ids, [entries[0].id])
+
+  // The header actions mean every row: restore-all is one call, empty-the-trash asks first and names the count.
+  const bulk = render()
+  findKey(bulk, 'restore-all').props.onClick()
+  await settle()
+  await settle()
+  const restores = mounted.requests.filter((call) => call.body?.op === 'restore')
+  assert.deepEqual(restores[0].body.ids, [entries[0].id, entries[1].id], 'restore-all names both')
+  const before = purges().length
+  findKey(render(), 'purge-all').props.onClick()
+  assert.equal(purges().length, before, 'empty-the-trash asks first')
+  const confirmAll = findKey(render(), 'purge-all')
+  assert.match(confirmAll.children.join(''), /Delete 2 for good\?/, 'the question names how many it would free')
+  confirmAll.props.onClick()
+  await settle()
+  await settle()
+  assert.equal(purges().length, before + 1, 'the second click empties it')
 })

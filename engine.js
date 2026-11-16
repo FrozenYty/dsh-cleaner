@@ -184,6 +184,24 @@ async function readDirectoryFiles(dir) {
  * @returns the title, whitespace-collapsed and bounded, or undefined.
  */
 async function readProjectionTitle(cacheDir, id) {
+  const title = await readProjectionRow(cacheDir, id, 'title')
+  if (title === undefined) return undefined
+  const trimmed = title.trim().replace(/\s+/g, ' ').replace(/"/g, "'")
+  return trimmed === '' ? undefined : trimmed.slice(0, 60)
+}
+
+/**
+ * One string row of a session's derived record, read from the projection cache.
+ *
+ * The cache is a table of named rows — `title`, `workingDirectory`, `blank` … — and a row holds
+ * `{ ver, seq, val }`. Reading one row is the whole operation, so the name is a parameter rather than a copy of
+ * the JSON walk per fact; sanitising stays with the caller, because "a title" and "a path" are tidied differently.
+ * @param cacheDir - the projection cache's session directory.
+ * @param id - a session id.
+ * @param row - the row name, as the runtime spells it.
+ * @returns the row's string value, or undefined when it is missing or not a string.
+ */
+async function readProjectionRow(cacheDir, id, row) {
   let text
   try {
     text = await readFile(join(cacheDir, `${encodeSegment(id)}.json`), 'utf8')
@@ -191,10 +209,8 @@ async function readProjectionTitle(cacheDir, id) {
     return undefined
   }
   try {
-    const title = JSON.parse(text)?.record?.rows?.title?.val
-    if (typeof title !== 'string') return undefined
-    const trimmed = title.trim().replace(/\s+/g, ' ').replace(/"/g, "'")
-    return trimmed === '' ? undefined : trimmed.slice(0, 60)
+    const value = JSON.parse(text)?.record?.rows?.[row]?.val
+    return typeof value === 'string' && value !== '' ? value : undefined
   } catch {
     return undefined
   }
@@ -335,11 +351,15 @@ export async function planCleanup({ sessionsRoot, workspaceFile, protect = [], o
   }
 
   // A title only for what a person is about to decide about, and only when one could be read: the
-  // listing is where ids have to be matched against the sessions someone remembers by name.
+  // listing is where ids have to be matched against the sessions someone remembers by name. The workspace goes
+  // with it, because two sessions can carry the same title in different projects, and the trash page shows both.
   if (projections !== undefined) {
     for (const candidate of candidates) {
       const title = await readProjectionTitle(projections, candidate.id)
       if (title !== undefined) candidate.title = title
+      const workspace = await readProjectionRow(projections, candidate.id, 'workingDirectory')
+      const trimmed = workspace?.trim()
+      if (trimmed !== undefined && trimmed !== '') candidate.workspace = trimmed
     }
   }
 
@@ -645,6 +665,10 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
       ...(crossed ? { copied: true } : {}),
     }
     if (candidate.title !== undefined) entry.title = candidate.title
+    // The workspace the session belonged to, recorded next to the title at the moment of the move: it is read from
+    // the projection, which travels into the trash and may be missing afterwards, and the page needs it to tell two
+    // same-titled sessions apart.
+    if (candidate.workspace !== undefined) entry.workspace = candidate.workspace
     // The projection is the product's derived record for this id — its title, its `cwd` and whether it is blank —
     // and a **blank** session's row is drawn from exactly that. Its own package documents pruning checkpoints as
     // "out-of-band maintenance, same stance as session persistence itself", so it travels with the log: into the
@@ -671,6 +695,7 @@ export async function moveToTrash(trashRoot, plan, now = new Date()) {
       // Only when there is one: a key holding `undefined` still answers `'title' in entry`, and the answer
       // would claim a title the cache never had.
       ...(candidate.title === undefined ? {} : { title: candidate.title }),
+      ...(candidate.workspace === undefined ? {} : { workspace: candidate.workspace }),
     })
   }
   await writeTrashIndex(trashRoot, entries)
@@ -897,6 +922,7 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       verified: landed.ok,
       ...(entry.projection_path === undefined ? {} : { projection: projectionRestored }),
       title: entry.title,
+      ...(entry.workspace === undefined ? {} : { workspace: entry.workspace }),
     })
   }
   await writeTrashIndex(trashRoot, remaining)

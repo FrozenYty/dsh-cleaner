@@ -206,8 +206,16 @@ window.__ModuleLoader__.load({
           loading: text('trash.loading', 'Reading the trash…'),
           unavailable: text('trash.unavailable', 'Host half not loaded — restart to use this page.'),
           bytes: text('trash.bytes', 'bytes'),
-          trashed: text('trash.trashed', 'deleted'),
           limits: text('trash.limits', 'Kept {days} days · at most {limit} entries'),
+          confirm: text('trash.confirm', 'Confirm'),
+          restoreAll: text('trash.restoreAll', 'Restore all'),
+          purgeAll: text('trash.purgeAll', 'Empty the trash'),
+          confirmAll: text('trash.confirmAll', 'Delete {n} for good?'),
+          today: text('trash.today', 'today'),
+          yesterday: text('trash.yesterday', 'yesterday'),
+          unnamed: text('trash.unnamed', 'Untitled'),
+          count: text('trash.count', '{n} entries'),
+          swept: text('trash.swept', '{n} entries expired and were removed'),
         })
 
         /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
@@ -227,8 +235,16 @@ window.__ModuleLoader__.load({
               'trash.loading': 'Reading the trash…',
               'trash.unavailable': 'Host half not loaded — restart to use this page.',
               'trash.bytes': 'bytes',
-              'trash.trashed': 'deleted',
               'trash.limits': 'Kept {days} days · at most {limit} entries',
+              'trash.confirm': 'Confirm',
+              'trash.restoreAll': 'Restore all',
+              'trash.purgeAll': 'Empty the trash',
+              'trash.confirmAll': 'Delete {n} for good?',
+              'trash.today': 'today',
+              'trash.yesterday': 'yesterday',
+              'trash.unnamed': 'Untitled',
+              'trash.count': '{n} entries',
+              'trash.swept': '{n} entries expired and were removed',
               'notice.deleted': 'Deleted',
               'notice.kept': 'Not deleted',
               'notice.gone': 'No log — row removed',
@@ -247,8 +263,16 @@ window.__ModuleLoader__.load({
               'trash.loading': '正在读取回收站……',
               'trash.unavailable': '宿主半边未加载，重启后可用。',
               'trash.bytes': '字节',
-              'trash.trashed': '删除于',
               'trash.limits': '保留 {days} 天 · 最多 {limit} 条',
+              'trash.confirm': '确认删除',
+              'trash.restoreAll': '全部恢复',
+              'trash.purgeAll': '清空回收站',
+              'trash.confirmAll': '确认永久删除 {n} 条？',
+              'trash.today': '今天',
+              'trash.yesterday': '昨天',
+              'trash.unnamed': '未命名会话',
+              'trash.count': '{n} 条',
+              'trash.swept': '{n} 条已过期并清理',
               'notice.deleted': '已删除',
               'notice.kept': '未删除',
               'notice.gone': '无日志，已移出列表',
@@ -632,6 +656,48 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The last segment of a workspace path, which is the name a person uses for it.
+         *
+         * The stored value is a path, because that is the fact; `D:\MYPROJS\DSH_FILES\dsh-team-roster` is shown as
+         * `dsh-team-roster`, and a path that ends in a separator (a drive root) keeps its last real segment.
+         */
+        const workspaceName = (path) => {
+          if (typeof path !== 'string' || path.trim() === '') return undefined
+          const parts = path.trim().split(/[\\/]+/).filter((part) => part !== '')
+          return parts.length === 0 ? path.trim() : parts[parts.length - 1]
+        }
+
+        /**
+         * A deletion time in the window's own clock, the way a person says it.
+         *
+         * `2026-11-16T02:16:36.066Z` is a timestamp for a log, not for a person: it is in UTC, it carries
+         * milliseconds nobody asked for, and the `T` and `Z` are punctuation from a format, not words. So: today and
+         * yesterday keep the day as a word, anything older in this year drops the year, and another year keeps it —
+         * `今天 10:16`, `昨天 22:41`, `11-14 09:03`, `2025-12-01 09:03` — always in local time, and the exact value
+         * stays in the row's tooltip for whoever wants it.
+         * @param iso - the stored timestamp.
+         * @param now - the clock to measure "today" against, so a test can pin it.
+         */
+        const when = (iso, now = Date.now()) => {
+          const at = Date.parse(String(iso ?? ''))
+          if (!Number.isFinite(at)) return '—'
+          const date = new Date(at)
+          const clock = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+          const midnight = (ms) => {
+            const mark = new Date(ms)
+            mark.setHours(0, 0, 0, 0)
+            return mark.getTime()
+          }
+          const today = midnight(now)
+          if (at >= today) return `${text('trash.today', 'today')} ${clock}`
+          if (at >= today - 86_400_000) return `${text('trash.yesterday', 'yesterday')} ${clock}`
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const sameYear = date.getFullYear() === new Date(now).getFullYear()
+          return sameYear ? `${month}-${day} ${clock}` : `${date.getFullYear()}-${month}-${day} ${clock}`
+        }
+
+        /**
          * The trash panel: a settings page that makes "a deletion is recoverable" something a person can see
          * and click, instead of a line they have to ask a model to print.
          *
@@ -641,6 +707,9 @@ window.__ModuleLoader__.load({
         function TrashPanel() {
           const [state, setState] = React.useState({ status: 'loading', entries: [], swept: [], error: undefined })
           const [busy, setBusy] = React.useState(undefined)
+          // Which purge is waiting for its second click: `purge:<id>` for a row, `purge-all` for the header. One
+          // at a time, deliberately — a question asked twice at once is a question nobody answers.
+          const [confirming, setConfirming] = React.useState(undefined)
 
           const load = () => {
             const caller = currentSessionId()
@@ -664,10 +733,11 @@ window.__ModuleLoader__.load({
 
           React.useEffect(load, [])
 
-          const act = (op, id) => {
-            setBusy(id)
+          const act = (op, ids) => {
+            setBusy(ids[0] ?? 'all')
+            setConfirming(undefined)
             const caller = currentSessionId()
-            void post('trash', { op, ids: [id], ...(caller === undefined ? {} : { caller }) }).then((answer) => {
+            void post('trash', { op, ids, ...(caller === undefined ? {} : { caller }) }).then((answer) => {
               setBusy(undefined)
               if (answer.error !== undefined) {
                 setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
@@ -677,7 +747,24 @@ window.__ModuleLoader__.load({
             })
           }
 
+          /**
+           * Purge, but only on the second click.
+           *
+           * Purging is the one action on this page that cannot be undone — a restore is always available and a
+           * deletion is recoverable — so it is the one that has to ask. Asking in place (the button becomes its own
+           * confirmation) keeps a mis-click recoverable without a dialog in the middle of a settings page, and any
+           * other action clears the question.
+           * @param op - `purge`, or `purge-all` for the header button.
+           * @param ids - what the second click would free.
+           */
+          const askThen = (op, ids) => {
+            if (confirming === op) act('purge', ids)
+            else setConfirming(op)
+          }
+
           const words = labels()
+          const totalBytes = state.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
+          const allIds = state.entries.map((entry) => entry.id)
           const rows = state.entries.map((entry) => h('div', {
             key: entry.id,
             style: {
@@ -688,23 +775,28 @@ window.__ModuleLoader__.load({
             h('div', { key: 'what', style: { flex: '1 1 auto', minWidth: 0 } }, [
               h('div', {
                 key: 'title',
+                // The title leads, because it is the only thing a person recognises. The session id is a uuid and
+                // belongs in the tooltip: glued to the title it was the loudest text in the row and told nobody
+                // anything. A session with no title keeps a short id, so two blank sessions are still told apart.
+                title: entry.id,
                 style: { fontSize: '13px', color: 'var(--dsw-alias-label-primary, #e6e6e6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-              }, entry.title === undefined || entry.title === '' ? entry.id : `${entry.title}  ${entry.id}`),
+              }, entry.title === undefined || entry.title === '' ? `${words.unnamed} ${String(entry.id).slice(-8)}` : entry.title),
               h('div', {
                 key: 'meta',
+                title: entry.trashed_at === undefined ? undefined : String(entry.trashed_at),
                 style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #9a9a9a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-              }, `${formatBytes(entry.bytes)} · ${words.trashed} ${entry.trashed_at ?? '—'}`),
+              }, [workspaceName(entry.workspace), formatBytes(entry.bytes), when(entry.trashed_at)].filter(Boolean).join(' · ')),
             ]),
             h('button', {
               key: 'restore', type: 'button', disabled: busy !== undefined,
-              onClick: () => act('restore', entry.id),
+              onClick: () => act('restore', [entry.id]),
               style: buttonStyle(false),
             }, words.restore),
             h('button', {
               key: 'purge', type: 'button', disabled: busy !== undefined,
-              onClick: () => act('purge', entry.id),
-              style: buttonStyle(true),
-            }, words.purge),
+              onClick: () => askThen(`purge:${entry.id}`, [entry.id]),
+              style: buttonStyle(confirming === `purge:${entry.id}`),
+            }, confirming === `purge:${entry.id}` ? words.confirm : words.purge),
           ]))
 
           const body = state.status === 'loading'
@@ -716,18 +808,44 @@ window.__ModuleLoader__.load({
                 : h('div', undefined, rows)
 
           return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 2px 24px' } }, [
-            h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
+            h('div', { key: 'head', style: { display: 'flex', alignItems: 'baseline', gap: '10px' } }, [
+              h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
+              // What the page holds, at a glance: a number and a size answer "is there anything to do here?" before
+              // the list is read row by row.
+              h('span', { key: 'count', style: { ...mutedStyle, fontSize: '11px', flex: '1 1 auto' } }, state.status === 'ready'
+                ? `${words.count.replace('{n}', String(state.entries.length))} · ${formatBytes(totalBytes)}`
+                : ''),
+              // The two things a person comes here to do in bulk. Restoring is safe and always offered; emptying the
+              // trash is the one irreversible action, so it asks in place — the button becomes the question, and any
+              // other click clears it.
+              ...(state.entries.length === 0 ? [] : [
+                h('button', {
+                  key: 'restore-all', type: 'button', disabled: busy !== undefined,
+                  onClick: () => act('restore', allIds),
+                  style: buttonStyle(false),
+                }, words.restoreAll),
+                h('button', {
+                  key: 'purge-all', type: 'button', disabled: busy !== undefined,
+                  onClick: () => askThen('purge-all', allIds),
+                  style: buttonStyle(confirming === 'purge-all'),
+                }, confirming === 'purge-all'
+                  ? words.confirmAll.replace('{n}', String(state.entries.length))
+                  : words.purgeAll),
+              ]),
+            ]),
             ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
-              `${state.swept.length} × ${state.swept.map((entry) => entry.id).join(', ')}`)]),
+              words.swept.replace('{n}', String(state.swept.length)))]),
             h('div', { key: 'body' }, body),
-            h('p', { key: 'where', style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' } }, [
-              `${state.root ?? ''}`,
-              // How long the bytes are held, and how many entries the next deletion keeps — the two numbers a person
-              // needs to decide whether to purge something now. Absent from an older Host, which shows the root only.
-              state.retentionDays === undefined || state.limit === undefined
-                ? ''
-                : `  ·  ${words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit))}`,
-            ].join('')),
+            // The path is reference, not a headline: it stays for the person who wants to look in a file manager,
+            // and the two numbers the Host enforces live in its tooltip instead of on the page — they are the same
+            // for every row and answer a question a person asks once, not every time they open this page.
+            h('p', {
+              key: 'where',
+              title: state.retentionDays === undefined || state.limit === undefined
+                ? undefined
+                : words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit)),
+              style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' },
+            }, `${state.root ?? ''}`),
           ])
         }
 
