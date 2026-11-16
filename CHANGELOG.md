@@ -1,3 +1,18 @@
+## [0.5.33] - 2026-11-16
+
+- **A restored session comes back to the sidebar, because the restore now re-attaches it.** A row is drawn from the
+  workspace's own membership, and a deletion is what takes the id out of it; putting the directory back at the path
+  the backend looks in never put the membership back, so a restored session had its log, its projection and no row —
+  which is what a person sees as "恢复没生效". The restore now calls the workspace registry's documented
+  `attachSession` for each session it put back, choosing the workspace by the directory recorded at deletion time (or
+  read from the projection), and reports a refusal with the registry's own words instead of swallowing it. The log is
+  the authority throughout: an attach the registry declines leaves a session that still exists, and the answer says so.
+- Proven on the real store: before the restore `workspace.json` did not contain the id, after it did, and the answer
+  carried `workspace.attached`.
+- **Sessions restored with 0.5.32 or earlier are still detached.** Delete them again and restore them from the 回收站
+  page — the second restore attaches them — or use `/clean <id>` followed by a restore.
+
+## [0.5.32] - 2026-11-16
 ## [0.5.32] - 2026-11-16
 
 - **Purging asks in place, the trash can be emptied or restored in one action, and each row names its workspace.**

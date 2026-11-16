@@ -43,13 +43,12 @@ async function writeWorkspace(ids) {
 }
 
 /** The projection cache the runtime keeps beside the store, with only the row this plugin reads. */
-async function writeProjection(id, title) {
+async function writeProjection(id, title, workspace) {
   const dir = join(TMP, 'storages', 'session_projcache', 'sessions')
   await mkdir(dir, { recursive: true })
-  await writeFile(
-    join(dir, `${id}.json`),
-    JSON.stringify({ version: 7, record: { rows: { title: { ver: 1, seq: 2, val: title } } } }),
-  )
+  const rows = { title: { ver: 1, seq: 2, val: title } }
+  if (workspace !== undefined) rows.workingDirectory = { ver: 1, seq: 1, val: workspace }
+  await writeFile(join(dir, `${id}.json`), JSON.stringify({ version: 7, record: { rows } }))
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
@@ -981,4 +980,50 @@ test('the data directory comes from the workspace record, never from the profile
   } finally {
     process.env.DSH_CLEANER_DATA_DIR = saved
   }
+})
+test('a restore puts the session back into the workspace it came from', async () => {
+  // The bug he found: the log came back and the row did not. A row is drawn from the workspace's own membership, and
+  // a deletion is what took the id out of it — recreating the directory cannot recreate the membership. The product
+  // exposes `attachSession` for exactly this, and the plugin calls it with the path the session was deleted from.
+  const workspacePath = join(TMP, 'somewhere')
+  await mkdir(workspacePath, { recursive: true })
+  const attached = []
+  const workspace = {
+    path: workspacePath,
+    sessionIds: [],
+    attachSession: async (id) => { attached.push(id) },
+    detachSession: async () => {},
+  }
+  const tools = install({ workspaces: { list: () => [workspace] } })
+  await writeProjection('session-archived-1', 'a name a person knows', workspacePath)
+
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  const held = (await route(tools, 'trash', { op: 'list' })).value
+  assert.equal(held.trash.entries[0].workspace, workspacePath, 'the deletion records where it came from')
+
+  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
+  assert.deepEqual(back.restored.map((entry) => entry.id), ['session-archived-1'])
+  assert.deepEqual(attached, ['session-archived-1'], 'the registry was asked to put it back')
+  assert.deepEqual(back.workspace.attached, ['session-archived-1'])
+})
+
+test('a workspace that refuses the attach says so, and the log is still back', async () => {
+  // A registry that will not take the session is not a failed restore: the bytes are where the backend looks, and the
+  // refusal is reported with the registry's own words rather than swallowed.
+  const workspacePath = join(TMP, 'somewhere')
+  await mkdir(workspacePath, { recursive: true })
+  const workspace = {
+    path: workspacePath,
+    sessionIds: [],
+    attachSession: async () => { throw new Error('its cwd resolves to another directory') },
+    detachSession: async () => {},
+  }
+  const tools = install({ workspaces: { list: () => [workspace] } })
+  await writeProjection('session-archived-2', 'another one', workspacePath)
+
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
+  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-2'] })).value
+  assert.deepEqual(back.workspace.attached, [])
+  assert.deepEqual(back.workspace.failed, [{ id: 'session-archived-2', error: 'its cwd resolves to another directory' }])
+  assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), 'the log is back regardless')
 })

@@ -212,3 +212,15 @@ Dates are the commit dates, in the order the work happened.
   trash index. That read was one function per fact and is now one function with the row name as a parameter.
   Proven red without the change — the row's meta line rendered `2.0 KiB · today 11:04` with no workspace — and green
   after it; the suite is at 129 tests / 126 pass, `node scripts/check.mjs` passed.
+
+- **He found the real bug of the restore path: the log came back and the row did not.** Cause, read from the installed
+  `@deepseek-ai/dsh-workspace` rather than guessed: a sidebar row is drawn from the workspace's own membership, the
+  deletion detaches the id, and putting the directory back never put the membership back — so a restored session had
+  everything except a row. The product exposes exactly the missing half, `Workspace.attachSession`, whose contract is
+  in its built source: read the session header, resolve its `cwd`, require that directory to exist and to equal the
+  workspace's canonical path, then prepend the id. The restore now calls it per restored session, choosing the
+  workspace by the directory recorded at deletion time (or from the restored projection), and reports a refusal
+  instead of swallowing it. Proven on the real store: `workspace.json` did not contain the id before the restore and
+  did after, with the answer carrying `attached`. **My earlier verification was through the wrong lens** — I checked
+  the plugin's own listing, which walks the disk, instead of the product's membership, which draws the row; that gap is
+  now closed by the live check above and by the rule below.

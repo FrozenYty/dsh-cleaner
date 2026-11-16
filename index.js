@@ -42,6 +42,7 @@
 
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { realpath } from 'node:fs/promises'
 
 import {
   listTrash,
@@ -273,6 +274,65 @@ async function detachSessions(ctx, ids) {
   return failed.length === 0 ? { registry, detached } : { registry, detached, failed }
 }
 
+/**
+ * Put a restored session back into the sidebar, through the registry's own `attachSession`.
+ *
+ * This is the half a restore was missing, and the reason a restored session did not appear in the list: a row is
+ * drawn from the workspace's membership, the deletion detaches the id, and putting the directory back does not put
+ * the membership back. The contract is the package's, read from `@deepseek-ai/dsh-workspace`: `attachSession` reads
+ * the session's stored header, resolves its `cwd`, requires that directory to exist and to equal the workspace's
+ * canonical path, and then prepends the id. So the workspace is chosen by the recorded path — from the deletion's own
+ * record, or from the projection — and the registry decides whether the session really belongs there. A refusal is
+ * reported, never thrown: the log is already back, and a session the registry will not take still exists.
+ * @param ctx - the plugin context.
+ * @param restored - what `restoreFromTrash` put back.
+ * @returns `{registry, attached, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
+ */
+async function attachSessions(ctx, restored) {
+  const registry = 'workspaceRegistry'
+  const workspaces = ctx.get(registry)
+  if (workspaces === undefined || typeof workspaces.list !== 'function') return { registry: 'absent' }
+  const attached = []
+  const failed = []
+  const canon = async (path) => {
+    try {
+      return await realpath(path)
+    } catch {
+      return undefined
+    }
+  }
+  try {
+    const list = workspaces.list()
+    const byPath = new Map()
+    for (const workspace of list) {
+      const path = await canon(workspace?.path)
+      if (path !== undefined) byPath.set(path, workspace)
+    }
+    for (const item of restored) {
+      try {
+        const holder = list.find((workspace) => workspace?.sessionIds?.includes(item.id))
+          ?? (item.workspace === undefined ? undefined : byPath.get(await canon(item.workspace)))
+        if (holder === undefined) {
+          failed.push({
+            id: item.id,
+            error: item.workspace === undefined
+              ? 'the session records no directory, so no workspace can claim it'
+              : `no workspace is registered for ${item.workspace}`,
+          })
+          continue
+        }
+        await holder.attachSession(item.id)
+        attached.push(item.id)
+      } catch (error) {
+        failed.push({ id: item.id, error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+  } catch (error) {
+    return { registry, error: error instanceof Error ? error.message : String(error) }
+  }
+  return failed.length === 0 ? { registry, attached } : { registry, attached, failed }
+}
+
 /** Bytes as a person reads them, with the exact count beside the unit, because both are asked for. */
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} bytes`
@@ -409,12 +469,14 @@ async function trashLogs(ctx, exec, action, requested) {
   const report = await restoreFromTrash(paths.trashRoot, paths.sessionsRoot, ids)
   const back = report.restored.map((entry) => entry.id)
   const unarchived = await unarchiveSessions(ctx, back)
+  const reattached = await attachSessions(ctx, report.restored)
   const swept = await sweepTrash()
   return {
     action,
     session_ids: ids,
     restored: report.restored,
     unarchived,
+      workspace: reattached,
     refused: report.refused,
     failed: report.failed,
     purged: [],
@@ -708,6 +770,15 @@ function renderTrash(value) {
       lines.push(`The workspace record still hides ${shown.failed.map((entry) => entry.id).join(', ')}; the log is back, the row is not.`)
     } else if ((shown?.unarchived?.length ?? 0) > 0) {
       lines.push('The workspace record unarchived them, so the rows come back without a reload.')
+    }
+    // The membership is the other half: a log back in the store is not a row in the sidebar.
+    const again = value.workspace
+    if (again?.error !== undefined) {
+      lines.push(`The workspace list could not be re-read (${again.error}); the log is back and the row is not.`)
+    } else if ((again?.failed?.length ?? 0) > 0) {
+      for (const entry of again.failed) lines.push(`The session did not go back into the workspace list: ${entry.id} — ${entry.error}`)
+    } else if ((again?.attached?.length ?? 0) > 0) {
+      lines.push(`${directories(again.attached.length)} went back into the workspace list.`)
     }
   } else if (value.action === 'purge') {
     const freed = value.purged.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)

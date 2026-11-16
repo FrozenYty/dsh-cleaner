@@ -152,6 +152,16 @@ plugin is loaded again, which a page reload or a plugin toggle does and a **file
 was toggled by hand; the host half had been triggered correctly at the same session, which is what made the
 asymmetry easy to miss. Write the comment for every change that lands, and say which one it was.
 
+**Before asking a person to test, walk the whole path against the installed package's own contract.** A restore
+that put the directory back, verified byte for byte, and reported success — still left no row in the sidebar for
+three releases, because the row is drawn from the **workspace's membership** and only the deletion half of
+attach/detach was implemented. Nothing in this repository's tests could see it: they assert the plugin's own
+answer, and the plugin's own listing walks the disk. So for any operation with an effect outside this plugin —
+delete, restore, purge, archive, detach, attach — read the peer package's README **and its built `lib/`** in the
+installed asar, name the exact method that performs it, and then check the **product's** record after the call
+(the sidebar's membership in `workspace.json`, not this plugin's view of it). A path is not verified because this
+repository says it worked; it is verified when the product's own record agrees.
+
 `scripts/check.mjs` cannot prove the plugin works: it never loads the Harness. Installing the bundle
 into a profile and calling the tools is the only real check, and it is the person's decision every time.
 Never claim a tool works because the install printed `applied`.
