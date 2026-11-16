@@ -611,6 +611,13 @@ window.__ModuleLoader__.load({
             state.catalog = 'not readable'
           }
           state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
+          // Two facts that decide a restore, reported at load so they can be read without clicking anything: the
+          // version of this half is then knowable from the Host, and so is whether the window has the levers at all.
+          state.handoff = 'first'
+          state.levers = [
+            typeof ctx.get('sessions')?.retain === 'function' ? 'retain' : 'no retain',
+            typeof ctx.get('uiWorkspace')?.openSession === 'function' ? 'openSession' : 'no openSession',
+          ].join('+')
           state.dictionary = keepRefusal(state.dictionary, ctx.get('locale')?.register === undefined ? 'no locale service' : 'locale service present')
           state.row = keepRefusal(state.row, rowRegistered ? 'contributed' : 'not contributed')
           state.current = currentSessionId() ?? 'none'
