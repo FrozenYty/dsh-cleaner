@@ -37,8 +37,8 @@
 ## 契约
 
 在 DeepSeek Harness 里“归档”只是把会话藏起来，日志永远留在磁盘上。产品里没有任何东西会删它，官方持久化
-缝也删不了——`@deepseek-ai/dsh-session-persistence` 把 “No deletion or retention API — pruning stored
-sessions is out-of-band backend maintenance” 写在已知限制里，JSONL 后端更是直说：“Nothing deletes
+缝也删不了——`@deepseek-ai/dsh-session-persistence` 在自己的已知限制里写着：没有删除或保留接口，清理已存
+会话属于带宽之外的后端维护；JSONL 后端则直说：什么都删不掉。
 session files”。这个 bundle 就是那次外部清理，它只守一条规矩：
 
 **删除是有人要求的刻意动作，永远不是定时器。** 插件里没有 timer、没有 interval、没有年龄阈值、没有后台
@@ -160,8 +160,9 @@ list_session_logs {}
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  archived  last write 2026-11-02T07:39:15.053Z
     "询问模型身份"  session-177a4f1f-…  2475067 bytes (2.36 MiB)  1 file  archived  last write 2026-11-03T02:14:07.060Z
+（上面是工具的真实输出：插件对外一律用英文，好让任何语言的模型读到同一份措辞。）
     …
-  Nothing was deleted. Show this list to the person and call delete_session_logs with the ids
+一行都没删。把这份清单交给使用者，再用他批准的 id 调 `delete_session_logs`——不论归档与否。
   they approve — archived or not.
 
 > 清单上那六个，全删。
@@ -169,10 +170,10 @@ list_session_logs {}
 delete_session_logs { session_ids: ["session-36560858-…", "session-177a4f1f-…", …] }
 ← Deleted 6 session directories: 4169349 bytes (3.98 MiB) reclaimed.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files    …
-  The workspace records dropped them (6 detached, 6 unarchived, 5 live sessions released), and only a record
-  that still names a session draws it, so
-  the rows are gone from every open window without a reload.
-  The session persistence backend no longer lists any of them.
+工作区记录把它们放开了（6 条摘除成员、6 条取消归档、5 条释放了内存里的活会话）；而只有还点着名的记录才会
+让侧边栏画那一行，所以每个已打开窗口里的行都消失了，不需要刷新。
+会话持久化后端也不再列出它们中的任何一条。
+会话持久化后端也不再列出它们中的任何一条。
 ```
 
 ## 它绝不做什么
@@ -227,7 +228,7 @@ bundle 的浏览器半边通过官方客户端服务 `sessions` 执行同一个 
   写这份文档的机器上那个仓库有 54 MiB，原样留着。
 - **没有定时、没有保留策略、没有大小上限。** 删不删是决定，不是规则。
 - **证明不了“人批准过这份清单”。** id 让被批准的集合在对话里明确可见，各条拒绝规则也把损害限制住了，
-  但模型仍然可以点一个没人看过的 id。见 [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md)。
+  但模型仍然可以点一个点名过的 id。见 [ADR 0003](docs/adr/0003-two-tools-with-explicit-ids.md)。
 - **不修日志。** 日志损坏、读不出来，只要会话被点名，照样会被删：本插件是清理的最后一条路，所以不能依赖
   日志可解析。
 
@@ -315,7 +316,7 @@ already gone，只有你把归档筛选切到 *显示* 或 *只看* 时它才会
 - **DSH**：对着已安装的 `0.2.2-rc.1` 桌面版验证。`engine.js` 里的存储布局和 id 转义是从那个版本的
   `app.asar`（`@deepseek-ai/dsh-session-persistence` 及其 JSONL 后端）里读出来的，不是凭记忆写的。以后
   哪个版本改了这两样中的任何一样，是本插件唯一没法自己消化的变化——而且失败方向是安全的：0 个候选、所有
-  已归档 id 报成 already gone（见 [docs/design.md](docs/design.md) §8）。
+  已归档 id 报成 “已经不在”（见 [docs/design.md](docs/design.md) §8）。
 - **会话格式**：一个会话一个目录，里面是 `session.vN.jsonl.zstd` 各代。插件不解析任何格式，所以已经发布的
   每一代、以及将来新加的代，都被“整个目录删掉”这一条覆盖。
 - **Node**：`^22.19.0 || >=24.0.0`。CI 在两个大版本、三个平台（Linux / macOS / Windows）上跑的都是
