@@ -72,7 +72,7 @@ function harness({ agents = [], resumed = [], persistence, workspaces, query, se
     get: (name) => {
       if (name === 'sessions') return sessions
       if (name === 'workingDirectory') return workingDirectory
-    if (name === 'agents') return { list: () => agents, get: (id) => agents.find((agent) => agent.id === id), resume: async (options) => { resumed.push(options.sessionId); return { dispose: async () => {} } } }
+    if (name === 'agents') return { list: () => agents, get: (id) => agents.find((agent) => agent.id === id), resume: async (options) => { resumed.push(options.resumeSessionId); return { dispose: async () => {} } } }
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
       if (name === 'workspaceRegistry') return workspaces
