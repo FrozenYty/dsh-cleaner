@@ -548,9 +548,10 @@ test('the human command is registered with the shape the command registry requir
   assert.match(definition.description, /logs/)
   assert.equal(definition.input.hint.length > 0, true)
   assert.equal(typeof definition.handler, 'function')
-  // The registry owns the definition's lifetime; the plugin registers it as an effect. Five effects are
-  // registered in a profile with both carriers: the command and the four window routes.
-  assert.equal(tools.disposed.length, 5)
+  // The registry owns the definition's lifetime; the plugin registers it as an effect. Six effects are registered
+  // in a profile with both carriers: the command, the four window routes, and the disposer that lets go of the agent
+  // handles this plugin built.
+  assert.equal(tools.disposed.length, 6)
   for (const dispose of tools.disposed) dispose()
   assert.deepEqual([...tools.commands.keys()], [])
   assert.deepEqual([...tools.routes.keys()], [], 'and the route goes with the plugin')

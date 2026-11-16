@@ -1,3 +1,13 @@
+## [0.5.54] - 2026-11-16
+
+- **A deleted session lets go of its agent, which is what actually removes its row from the window.** A person deleted
+  the session that was open and watched it stay in the sidebar under "ungrouped". The window's own list held 62 ids
+  while the Host's list held 60, and the two extra were sessions this plugin had resumed and never released:
+  `agents.resume` returns a handle and the first version dropped it on the floor. The handles are kept now and released
+  where they should be — on the deletion that removed the session, on the plugin's own unload, and in a sweep on load
+  for any remembered id with no `Session` behind it, which is the mirror of the rule that only builds one for that
+  case. That sweep also heals the two ids this release found already leaked.
+
 ## [0.5.53] - 2026-11-16
 
 - **The page stays in the window's language even when its dictionary registration is refused, and it now reads the

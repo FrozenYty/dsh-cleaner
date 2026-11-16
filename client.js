@@ -398,6 +398,8 @@ window.__ModuleLoader__.load({
          * @param sessionId - the session the deletion named.
          */
         const leaveDeletedSession = (sessionId) => {
+          // A deleted id is the other thing worth watching: the window should stop naming it.
+          state.observedIds = [sessionId]
           try {
             if (sessionId !== currentSessionId()) return
             const ui = ctx.get('uiWorkspace')
@@ -617,6 +619,24 @@ window.__ModuleLoader__.load({
          * diagnostic that dies with the thing it reports is not a diagnostic. It is also sent after a click, so
          * the next listing says what the click did.
          */
+        const describeList = () => {
+          try {
+            const ids = ctx.get('sessions')?.list?.getSnapshot?.()?.ids
+            if (!Array.isArray(ids)) {
+              state.list = 'not readable'
+              return
+            }
+            const watched = state.observedIds ?? []
+            const missing = watched.filter((id) => !ids.includes(id))
+            state.list = `${ids.length} ids` + (watched.length === 0
+              ? ''
+              : `; watched ${watched.length - missing.length}/${watched.length}`
+                + (missing.length === 0 ? '' : ` (missing ${missing.map((id) => id.slice(8, 16)).join(',')})`))
+          } catch (error) {
+            state.list = `unreadable: ${error instanceof Error ? error.message : String(error)}`
+          }
+        }
+
         const report = () => {
           try {
             const catalog = ctx.get('shortcuts')?.catalog?.getSnapshot?.()
@@ -630,6 +650,7 @@ window.__ModuleLoader__.load({
           // Two facts that decide a restore, reported at load so they can be read without clicking anything: the
           // version of this half is then knowable from the Host, and so is whether the window has the levers at all.
           state.locale = ctx.get('locale')?.getLocale?.()?.active ?? 'unknown'
+          describeList()
           state.handoff = 'first'
           state.levers = [
             typeof ctx.get('sessions')?.retain === 'function' ? 'retain' : 'no retain',
@@ -664,6 +685,24 @@ window.__ModuleLoader__.load({
               : `nowhere: route ${answer.error}; command ${carried.error}`
           })
         }
+
+        /**
+         * Report what the window's own session list holds, and again whenever it changes.
+         *
+         * `ISessions.list` is not on the injected face the inspector shows, but the sidebar's own bundle subscribes
+         * to `this.sessions.list`, so the live object carries it. That list is what rows are drawn from: a session the
+         * Host no longer has but this snapshot still names is drawn under the product's "ungrouped" bucket, and a
+         * session the Host has again is not drawn until this snapshot changes. Reading it turns that into a
+         * measurement instead of another theory.
+         */
+        ctx.effect(() => {
+          const list = ctx.get('sessions')?.list
+          if (typeof list?.subscribe !== 'function') return undefined
+          return list.subscribe(() => {
+            describeList()
+            report()
+          })
+        }, 'dsh-cleaner: list observer')
 
         /**
 
@@ -773,6 +812,8 @@ window.__ModuleLoader__.load({
          * @param ids - the sessions the Host reported as restored.
          */
         const loadRestored = async (ids) => {
+          // The ids this restore put back are the ones the window's list should name afterwards.
+          state.observedIds = ids
           try {
             const sessions = ctx.get('sessions')
             const ui = ctx.get('uiWorkspace')
