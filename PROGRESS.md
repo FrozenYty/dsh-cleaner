@@ -66,7 +66,6 @@ Dates are the commit dates, in the order the work happened.
   (`d6b56dc`, ADR [0014](docs/adr/0014-route-transport-and-recoverable-deletion.md)). The transport itself was
   a discovery: a `resource` route refuses a POST before matching, so the four routes had to be `handler`
   routes (`d9969d9`), verified by a live POST that answered JSON and a page reload that kept working.
-
 ## 2026-11-15
 
 - **One data directory, inside the workspace's `.agents` (v0.5.13).** The plugin's trash and index moved to
@@ -332,3 +331,28 @@ Dates are the commit dates, in the order the work happened.
   lists the seat's standard props (`useSessions`, `useSessionStatus`, `useSessionRetainInfo`), and the client `Service`
   contract gives `ISessions.refresh()` / `refreshProjections(id)`. The sidebar's list is a Host-derived snapshot; nothing
   re-read it after a restore, so the session was never in it. That is the actual defect, and it is fixed in 0.5.46.
+- **The person corrected the method, and the correction was already written in this repository.** After several
+  rounds of trial and error he said it plainly: consult the authoritative documents, search widely, do not guess. The
+  same day's lesson is that AGENTS.md §5 already said a page reload is not reliably enough for the client half and that
+  only switching the plugin makes it live - and I had been asking for reloads for three rounds. A rule that is written
+  down and then not read is the same as an unwritten rule; read the file before asking a person to test.
+
+- **Two of my "the product is broken" readings were my own record-shape bugs.** The sidebar membership lives at
+  `workspace.json` -> `tables.workspaces[<id>].sessionIds`, not at a top-level `workspaces`; the session store keeps
+  each log at `sessions/<escaped-workspace>/<id>`, not at `sessions/<id>`. Both ids were present the whole time. Reading
+  the raw record before drawing a conclusion is the difference between a defect and a false alarm, and this file now
+  names both shapes so the next reader does not repeat it.
+
+- **What the installed docs actually say about the session list.** `dsh-experimental-client-ui-forge/README.md` describes
+  the list as a Host `baseline` frame followed by `changed` frames, and notes that an unopened Session still appears
+  "from its cached summary"; `dsh-client-ui-workspace/README.md` states that deleting a workspace leaves its Sessions
+  "under Ungrouped", which is a normal bucket rather than a defect. The sidebar's own bundle never calls
+  `sessions.refresh()` - it subscribes to `sessions.list` - so the `refresh()` calls added in 0.5.46 and 0.5.49 are our
+  own re-read, not a mechanism the product uses. They are harmless; they are not the reason a row appears.
+
+- **The load replay was paying for agents nobody used, and my first fix broke the thing it was meant to protect.** A
+  dozen live agents sat behind a ledger that resumed every remembered id on every load. Making the resume conditional
+  on "no agent" broke the restore path in the same edit, because a restore click must always build the agent: the test
+  caught it immediately (`resumed == []`). 0.5.51 splits the two callers by a flag instead. Two smaller traps from the
+  same hour: `--test-name-pattern` that matches nothing exits 0, so a new test can look green without running; and a
+  Python insertion whose anchor did not exist aborted before writing, leaving the tree unchanged and the mind misled.
