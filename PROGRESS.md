@@ -356,3 +356,12 @@ Dates are the commit dates, in the order the work happened.
   caught it immediately (`resumed == []`). 0.5.51 splits the two callers by a flag instead. Two smaller traps from the
   same hour: `--test-name-pattern` that matches nothing exits 0, so a new test can look green without running; and a
   Python insertion whose anchor did not exist aborted before writing, leaving the tree unchanged and the mind misled.
+
+- **The client `sessions` face has no `refresh()`, and the fixture had been hiding it.** Asked the live runtime for the
+  client Service catalog: the face is `retain`, `using`, `retainInfo`, `refreshProjections`, `search`, `fork`, `scope`,
+  `binding` - no `list`, no `refresh`. So 0.5.46's and 0.5.49's `sessions.refresh?.()` were no-ops that never ran, and
+  0.5.48's list watcher never subscribed, because `list` is not on that face either. They caused no harm and no good.
+  All three are gone, along with the fixture's `list` and `refresh`, which had made the no-op pass its own test. What
+  actually puts a restored row on screen is `uiWorkspace.openSession`, as the person's own screenshot showed.
+  The general shape: a fixture that is more generous than the product turns every call the product lacks into a green
+  test. Copy the real face into the fixture, and read it from the runtime, not from a signature list.
