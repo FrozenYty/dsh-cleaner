@@ -261,3 +261,9 @@ Dates are the commit dates, in the order the work happened.
   loader is `sessions.retain(id, { source })` — the call `uiWorkspace.replaceMain` makes when a row is opened — so the
   client half now makes it after a restore, for each id the Host reports. Test first red (`[]` against the id), then
   green; the suite is at 133 tests / 130 pass with `check.mjs` passing.
+
+- **0.5.36 did not fix it either; the client now reports its own facts.** He restored from the page after the fix and
+  no row appeared. Rather than a fourth theory, the client half records what the product's client `sessions` service
+  offers (its function names), what `retain` returned, and whether its `ready` resolved or failed — the next listing
+  prints it. That is the same discipline as `product_members`: a failure this side of the seam is answered with the
+  values the seam actually returned, not with another reading of somebody else's source.

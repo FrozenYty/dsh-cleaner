@@ -748,15 +748,28 @@ window.__ModuleLoader__.load({
         const loadRestored = (ids) => {
           try {
             const sessions = ctx.get('sessions')
-            if (typeof sessions?.retain !== 'function') return
+            // Reported, not assumed: what the product's own client service offers, what it returned, and whether the
+            // reference became ready. The next listing prints it, which is how a window-side failure is diagnosed
+            // without guessing at another package's internals.
+            const offered = sessions === undefined ? 'absent' : Object.keys(sessions).filter((key) => typeof sessions[key] === 'function').join(',')
+            if (typeof sessions?.retain !== 'function') {
+              state.lastClick = `${state.lastClick}; the client sessions service offers: ${offered}`
+              report()
+              return
+            }
             for (const id of ids) {
               const reference = sessions.retain(id, { source: 'dsh-cleaner.restore' })
-              // Held, not released: releasing would let the store unload the very session whose row we just asked
-              // for, and the page is closed long before that matters.
-              void reference
+              state.lastClick = `${state.lastClick}; retained ${id} -> ${String(reference?.sessionId ?? reference)} (offered: ${offered})`
+              Promise.resolve(reference?.ready).then(
+                (ready) => { state.lastClick = `${state.lastClick}; ready ${id} -> ${ready?.sessionId ?? String(ready)}` },
+                (error) => { state.lastClick = `${state.lastClick}; ready ${id} FAILED: ${reasonOf(error)}` },
+              )
             }
-          } catch {
+            report()
+          } catch (error) {
             // A window that cannot load it still got the files back; the restore is not failed by a list.
+            state.lastClick = `${state.lastClick}; retain threw: ${reasonOf(error)}`
+            report()
           }
         }
 

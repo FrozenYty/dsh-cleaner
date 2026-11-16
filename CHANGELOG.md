@@ -1,3 +1,11 @@
+## [0.5.37] - 2026-11-16
+
+- **The window now reports what the product's client service offered and returned when a restore asks it to load a
+  session.** The row still does not appear after 0.5.36, and the honest next step is a fact from the running window
+  rather than another theory: the click records the client service's own method names, the reference `retain` returned
+  and whether its `ready` resolved or failed, and the next listing prints it. No behaviour change beyond the report.
+
+## [0.5.36] - 2026-11-16
 ## [0.5.36] - 2026-11-16
 
 - **A restore now asks the product to load the session it put back, so the row can exist.** With the files, the
