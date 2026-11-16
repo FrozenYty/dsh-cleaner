@@ -1,3 +1,15 @@
+## [0.5.30] - 2026-11-16
+
+- **The 回收站 page now shows how long the bytes are held and how many entries are kept.** Both numbers come from
+  the same config the sweep and the cap read, echoed in the trash answer, and the page prints them on one line under
+  the path: `保留 30 天 · 最多 200 条`. Deciding whether to purge something needs them, and reading them out of the
+  patch row was the only way before.
+- A profile that changes `retentionDays` or `trashLimit` sees its own values, because the answer reports what is
+  enforced rather than a constant.
+- Two tests hold it: one drives the page to its second render and asserts both numbers, one asserts the route's trash
+  answer carries them; the page test was confirmed to fail without the render change.
+
+## [0.5.29] - 2026-11-16
 ## [0.5.29] - 2026-11-16
 
 - **Deleting the session you are looking at now leaves its view instead of staying in a conversation that no longer

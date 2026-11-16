@@ -786,6 +786,10 @@ test('a deleted session can be put back, and only a purge frees its bytes', asyn
 
   const held = (await route(tools, 'trash', { op: 'list' })).value
   assert.equal(held.trash.count, 2)
+  // The two numbers the page shows a person: the window they are held for, and the cap the next deletion keeps.
+  // Both are the values actually enforced, echoed from the same config the sweep and the cap read.
+  assert.equal(held.trash.retention_days, 30)
+  assert.equal(held.trash.limit, 200)
 
   const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
   assert.deepEqual(back.restored.map((entry) => entry.id), ['session-archived-1'])

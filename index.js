@@ -324,7 +324,14 @@ async function trashReadout() {
   try {
     listed = await listTrash(paths.trashRoot)
   } catch (error) {
-    return { trash: { root: paths.trashRoot, retention_days: settings.retentionDays, error: String(error?.message ?? error) } }
+    return {
+      trash: {
+        root: paths.trashRoot,
+        retention_days: settings.retentionDays,
+        limit: settings.trashLimit,
+        error: String(error?.message ?? error),
+      },
+    }
   }
   const cutoff = Date.now() - settings.retentionDays * 86_400_000
   const expired = listed.entries.filter((entry) => {
@@ -334,7 +341,10 @@ async function trashReadout() {
   return {
     trash: {
       root: paths.trashRoot,
+      // Both numbers are the ones actually enforced, echoed here so the page can show a person how long their
+      // bytes are held and how many entries the next deletion will keep — the question the page exists to answer.
       retention_days: settings.retentionDays,
+      limit: settings.trashLimit,
       count: listed.entries.length,
       bytes: listed.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0),
       entries: listed.entries.map((entry) => ({

@@ -48,17 +48,20 @@ items that had gone stale were corrected rather than kept for the comfort of a l
       *Met:* the trash lists, restores and purges what it holds; nothing is deleted on a timer, and the sweep
       runs only when somebody looks.
 
+- [x] **The 回收站 page shows the limits it enforces** — the retention window and the cap, taken from the same
+      config the sweep and the cap read, on one line under the path (v0.5.30).
+      *Met:* a client test drives the page to its second render and asserts both numbers; a route test asserts the
+      trash answer carries them; the page test fails without the render change.
+
 ## Still owed
 
-1. **The 回收站 page does not show the limits it enforces.** It prints the root but not the retention window
-   or the cap, even though the trash answer carries `retention_days`
-   (`client.js` stores `retentionDays` in state and never renders it). A person deciding whether to keep
-   something has to know how long it is kept.
-   - Acceptance: with a profile that sets `retentionDays` to something other than the default, the page shows
-     that number and the effective cap, and a client test asserts the rendered text.
-2. **The `CHANGELOG.md` carries duplicated `## [0.5.x]` headings** (0.5.25, 0.5.24, 0.5.23 … each appears
-   twice), left by an earlier prepend. Published sections must not be rewritten, so this is recorded as
-   **accepted**, not as work — a release note that says the same thing twice is untidy, not wrong.
+- Nothing. The next thing this file holds is a new item, not an old one.
+
+## Accepted, not work
+
+- **The `CHANGELOG.md` carries duplicated `## [0.5.x]` headings** (0.5.25, 0.5.24, 0.5.23 … each appears twice),
+  left by an earlier prepend. Published sections must not be rewritten, so it is recorded rather than fixed — a
+  release note that says the same thing twice is untidy, not wrong.
 
 ## Outside this repository, reported not fixed
 
