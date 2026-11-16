@@ -699,6 +699,37 @@ test('the half reports that the page is contributed', async () => {
   assert.equal(lastState(requests).panel, 'contributed')
 })
 
+test('a deletion offers its own undo, and the undo is a restore', async () => {
+  // The product's archive row acts now and offers undo in the notice; this is the same shape, and the mechanism is
+  // one this plugin already has: an undo is a restore. Without it a person who deleted the wrong session has to find
+  // the settings page and hunt for the row.
+  const mounted = mount({
+    menus: true,
+    slots: true,
+    current: 'session-open-1',
+    answer: { removed: [{ id: 'session-other-1' }], refused: [], trash: { root: 'D:\\home\\trash' } },
+  })
+  mounted.registrations.get('dsh-cleaner.delete-log').resolve({ sessionId: 'session-other-1' })[0].run()
+  await settle()
+  const notice = mounted.panels.get('shell.overlay|dsh-cleaner.notice')
+  assert.ok(notice, 'the notice is registered')
+  const buttons = []
+  const walk = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const child of node) walk(child); return }
+    if (typeof node.props?.onClick === 'function') buttons.push(node)
+    walk(node.children)
+  }
+  walk(notice.component())
+  assert.equal(buttons.length, 2, 'the deletion notice offers two actions')
+  assert.deepEqual(buttons.map((button) => button.children.join('')), ['Undo', 'Open the trash'])
+  buttons[0].props.onClick()
+  await settle()
+  const restore = attempted(mounted.requests).filter((entry) => String(entry.url).endsWith('/dsh-cleaner/trash'))
+  assert.ok(restore.some((entry) => entry.body?.op === 'restore' && entry.body?.ids?.[0] === 'session-other-1'),
+    'the undo asks the Host to put the session back')
+})
+
 test('a click says what it did, at the frame level', () => {
   // "点击没有效果" was never a wrong symptom: it was the absence of one. The notice is the seat that makes a
   // silent no-op impossible — including the case where the click cannot run at all.
