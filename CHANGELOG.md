@@ -1,3 +1,15 @@
+## [0.5.34] - 2026-11-16
+
+- **A restore accepts the same directory under another spelling.** Found by auditing the whole path against the
+  installed packages: the restore canonicalised the session storage root but compared it with the path as recorded, so
+  a caller that planned through a junction — or, on Windows, through the `FROZEN~1` short name — was told its own
+  session was "outside the session storage root" and the restore was refused. Nothing was lost, but a legitimate
+  restore could not be performed for a reason that was not true. The recorded path is now canonicalised through its
+  parent, which exists, plus the final segment, which does not yet. A test plans through a junction and restores
+  through the real root; it fails without the change with exactly that refusal.
+- No other change: the rest of the audit below found the operations, the refusals and the documented contracts sound.
+
+## [0.5.33] - 2026-11-16
 ## [0.5.33] - 2026-11-16
 
 - **A restored session comes back to the sidebar, because the restore now re-attaches it.** A row is drawn from the

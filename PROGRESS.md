@@ -224,3 +224,18 @@ Dates are the commit dates, in the order the work happened.
   did after, with the answer carrying `attached`. **My earlier verification was through the wrong lens** — I checked
   the plugin's own listing, which walks the disk, instead of the product's membership, which draws the row; that gap is
   now closed by the live check above and by the rule below.
+
+- **Full audit, end to end, against the installed packages and the product's own records.** He asked for it after the
+  restore bug: read the peer contracts first, verify every operation, and only then claim the plugin is sound. What it
+  produced. (1) **Every service we call was checked against its package.** `Workspace.attachSession`/`detachSession`
+  (lib/index.js:111/148) match our calls; `sessionQuery.listSessions()` and `sessionPersistence.list()` are documented
+  and used as documented; and the live-release path — `store.get(id)` then `detachEntered(entry)` — is **correct and
+  necessary**: `detachEntered` (lib/index.js:1901, a public method with JSDoc) takes the **entry**, while the
+  documented `sessions.get(id)` returns the **session**, so the store lookup is the only way to reach it; the method
+  itself guards a stale entry, and our path is the one ADR 0025 chose. (2) **The live round trip was re-verified
+  against the product's four records**: before a deletion log/projection/membership all present and the archive set
+  clear; after it all three gone and the archive set still clear; after the restore all three back, byte-identical,
+  membership included. (3) **A real second bug was found**: the restore canonicalised the store root but compared the
+  recorded path as written, so a junction or short-name spelling made it refuse a legitimate restore — fixed, with a
+  test that is red without the fix. (4) The engine matrix (move, cap, retention sweep, purge, restore refusal) was run
+  on a scratch filesystem: 11/11, byte-exact, with the cap and the sweep naming what they dropped.

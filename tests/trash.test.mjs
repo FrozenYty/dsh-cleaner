@@ -344,3 +344,24 @@ test('a move across devices copies, verifies, and only then removes the source',
   assert.equal(returned.files, before.length, 'the count is a number on the copy path, where it was measured')
   assert.deepEqual((await readdir(back)).sort(), before.sort())
 })
+
+test('a restore accepts the same directory under another spelling', async () => {
+  // The audit's second finding: the restore canonicalised the store root but compared it with the recorded path as
+  // written, so a caller that planned through a junction — or, on Windows, the short name — was told its own session
+  // was "outside the session storage root". A refusal there is not a lost session, but it is a restore that cannot be
+  // performed for a reason that is not true.
+  const alias = join(HOME, 'sessions-alias')
+  await symlink(ROOT, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  await writeWorkspace()
+  const plan = await planCleanup({ sessionsRoot: alias, workspaceFile: WORKSPACE, only: ['session-old-2'] })
+  assert.match(plan.candidates[0].path, /sessions-alias/, 'the plan records the spelling it was given')
+  await moveToTrash(TRASH, plan)
+
+  const restored = await restoreFromTrash(TRASH, ROOT, ['session-old-2'])
+  assert.equal(restored.restored.length, 1, JSON.stringify(restored.refused))
+  assert.equal(restored.restored[0].path, plan.candidates[0].path.replace('sessions-alias', 'sessions'), 'it lands under the real root')
+  assert.deepEqual((await readdir(restored.restored[0].path)).sort(), ['session.v3.jsonl.zstd', 'session.v4.jsonl.zstd'])
+  // A junction is removed with `rmdir`; a POSIX symlink with `unlink`. Getting this wrong fails the test in its
+  // own teardown on Linux and macOS while passing on Windows, which is exactly what the first CI run showed.
+  await (process.platform === 'win32' ? rmdir(alias) : unlink(alias))
+})
