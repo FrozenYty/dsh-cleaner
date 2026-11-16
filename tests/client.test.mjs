@@ -1036,6 +1036,6 @@ test('a restore asks the product to load what it put back, so the row can exist'
   findKey(render(), 'restore').props.onClick()
   await settle()
   await settle()
-  const loaded = mounted.retained.filter((call) => call.options?.source === 'dsh-cleaner.restore')
+  const loaded = mounted.retained.filter((call) => call.options?.source === 'controllerOperation')
   assert.deepEqual(loaded.map((call) => call.sessionId), ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the restored session was handed to the product to load')
 })
