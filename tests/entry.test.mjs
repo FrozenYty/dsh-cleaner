@@ -1045,8 +1045,8 @@ test('a restore lets the Host adopt the session, so the window has a summary to 
   }
   const query = {
     listSessions: async () => [{ sessionId: 'session-archived-1' }],
-    load: async (id) => ({
-      header: { id, createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' },
+    readSession: async (id) => ({
+      session: { id, createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' },
       inheritedEventCount: 2,
       events: [{ type: 'note' }],
     }),
@@ -1059,8 +1059,8 @@ test('a restore lets the Host adopt the session, so the window has a summary to 
   assert.deepEqual(entered, ['session-archived-1'], 'the Host entered the restored session')
   assert.deepEqual(announced, ['session-archived-1'], 'and announced it, which is what the window listens to')
   const preparedOptions = prepared[0]?.options ?? {}
-  assert.deepEqual(preparedOptions.meta, { createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' }, 'the header the product stored, not a fresh one')
+  assert.deepEqual(preparedOptions.meta, { id: 'session-archived-1', createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' }, 'the header the product stored verbatim, so fromRestore can validate it')
   assert.deepEqual(preparedOptions.seed, [{ type: 'note' }], 'and the events it stored')
   assert.equal(preparedOptions.eventState, 'detached', 'the query clones them, so they are independently owned')
-  assert.deepEqual(back.workspace.entered, ['session-archived-1'])
+  assert.deepEqual(back.workspace.enter.entered, ['session-archived-1'], 'and the answer says the Host took it')
 })

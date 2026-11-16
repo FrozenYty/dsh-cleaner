@@ -306,8 +306,9 @@ async function detachSessions(ctx, ids) {
 async function enterRestored(ctx, ids) {
   const sessions = ctx.get('sessions')
   const query = ctx.get('sessionQuery')
-  if (typeof sessions?.prepare !== 'function' || typeof sessions?.enter !== 'function' || typeof query?.load !== 'function') {
-    return { skipped: ids, reason: 'the Host exposes no prepare/enter/load for a restored session' }
+  if (typeof sessions?.prepare !== 'function' || typeof sessions?.enter !== 'function' || typeof query?.readSession !== 'function') {
+    const missing = [typeof sessions?.prepare === 'function' ? undefined : 'sessions.prepare', typeof sessions?.enter === 'function' ? undefined : 'sessions.enter', typeof sessions?.announce === 'function' ? undefined : 'sessions.announce', typeof query?.readSession === 'function' ? undefined : 'query.readSession'].filter(Boolean)
+    return { skipped: ids, reason: `the Host exposes no ${missing.join('/')} for a restored session` }
   }
   const entered = []
   const skipped = []
@@ -318,17 +319,11 @@ async function enterRestored(ctx, ids) {
         skipped.push(id)
         continue
       }
-      const loaded = await query.load(id)
-      const header = loaded?.header ?? {}
-      const meta = {
-        createdAt: header.createdAt,
-        ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
-        ...(header.parentSession === undefined ? {} : { parentSession: header.parentSession }),
-        ...(header.isSeeded === undefined ? {} : { isSeeded: header.isSeeded }),
-        ...(header.origin === undefined ? {} : { origin: header.origin }),
-        ...(header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth }),
-        ...(header.agentPreset === undefined ? {} : { agentPreset: header.agentPreset }),
-      }
+      const loaded = await query.readSession(id)
+      const header = loaded?.session ?? loaded?.header ?? {}
+      // With `eventState`, `prepare` hands this straight to `Session.fromRestore`, so it must be the header as the
+      // product stored it — version and id included — not a reduced copy of it.
+      const meta = header
       const session = sessions.prepare(id, {
         seed: loaded?.events ?? [],
         meta,
@@ -576,7 +571,7 @@ async function trashLogs(ctx, exec, action, requested) {
   const reattached = await attachSessions(ctx, report.restored)
     // 3. The Host adopts it too: a row needs a summary in the window's list, and only an entered session has one.
     const entered = await enterRestored(ctx, back)
-    if (entered.entered !== undefined) { for (const id of entered.entered) reattached.entered = [...(reattached.entered ?? []), id] }
+reattached.enter = entered
   const swept = await sweepTrash()
   return {
     action,

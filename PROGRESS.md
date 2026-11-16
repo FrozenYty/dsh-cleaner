@@ -275,3 +275,9 @@ Dates are the commit dates, in the order the work happened.
   the session itself through `sessionQuery.load` + `sessions.prepare`/`enter`/`announce`, inside `ctx.effect`. AGENTS 5
   now says a client-half change needs the plugin toggled or the app restarted, not a page reload, and that the lesson
   cost three "verified" claims.
+- **The first attempt at adoption failed and the live host said why**: `session header version must be 4, got undefined`.
+  `prepare` hands its `meta` straight to `Session.fromRestore` when an `eventState` is given, so the meta must be the
+  header **as the product stored it** — version and id included — not a reduced copy. With the loaded header passed
+  verbatim, the live host reports `enter: {entered: [session-52546605…, session-8b1fd430…], skipped: []}` and both ids
+  appear in `live_sessions`: the sessions the restore put back are now entered and announced, which is exactly the
+  summary the window needs to draw their rows.
