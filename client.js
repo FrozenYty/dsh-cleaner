@@ -116,18 +116,24 @@ window.__ModuleLoader__.load({
          * never the item.
          */
         const text = (key, fallback) => {
+          // The product first: `bind()` walks the active language's declared fallback chain in our namespace and then
+          // in the shared one (locale `Service` contract), so whatever it resolves is right. A refused registration
+          // throws, and it must not take the rest of the resolution down with it - two separate attempts, one per
+          // source, for exactly that reason.
           try {
-            const locale = ctx.get('locale')
-            // Our own table first: a dictionary registration that was refused (a duplicate namespace left by an
-            // earlier load of this half) must not cost a person their language, and the table is ours to read.
-            const active = locale?.getLocale?.()?.active
-            // Only when the locale is known: an unknown one must not force English over a service that can answer.
-            const own = active === 'zh' ? STRINGS.zh : active === 'en' ? STRINGS.en : undefined
-            if (typeof own?.[key] === 'string') return own[key]
-            if (typeof locale?.bind === 'function') {
-              const value = locale.bind(LOCALE_NS)(key)
-              if (typeof value === 'string' && value.length > 0 && value !== key) return value
-            }
+            const value = ctx.get('locale')?.bind?.(LOCALE_NS)?.(key)
+            if (typeof value === 'string' && value.length > 0 && value !== key) return value
+          } catch {
+            // A refused registration falls through to the plugin's own table below.
+          }
+          try {
+            // Ours, for the case `bind` cannot cover: a registration refused as a duplicate (an earlier load of this
+            // half leaves one behind) answers with the key itself. `active` is a full tag - `zh-CN`, `en-US` - not
+            // the two-letter id, so the match is by prefix; reading it as `'zh'` was wrong.
+            const active = String(ctx.get('locale')?.getLocale?.()?.active ?? '').toLowerCase()
+            const own = active.startsWith('zh') ? STRINGS.zh : active.startsWith('en') ? STRINGS.en : undefined
+            const value = own?.[key]
+            if (typeof value === 'string' && value.length > 0) return value
           } catch {
             // A locale service that cannot answer costs the language, never the item.
           }
