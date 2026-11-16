@@ -144,13 +144,15 @@ chooses it from the running version — one command, both majors, and CI runs ex
 24, on Linux, macOS and Windows. Do not drop a leg to make CI faster: the engines field is a claim, and the
 matrix is what makes it true.
 
-**A change to either half of the bundle needs the profile-patch trigger, the client half included.** Editing a
-file under this repository evicts the linked plugin's module, and the window's contributions of that plugin —
-the session-menu row, the shortcut, the trash page — are torn down with it; the window rebuilds them when the
-plugin is loaded again, which a page reload or a plugin toggle does and a **file change alone does not**. On
-2026-11-16 an edit to `client.js` was left without a trigger and the 删除会话 row stayed gone until the plugin
-was toggled by hand; the host half had been triggered correctly at the same session, which is what made the
-asymmetry easy to miss. Write the comment for every change that lands, and say which one it was.
+**A change to either half of the bundle needs the profile-patch trigger, and the client half needs more than that.**
+Editing a file under this repository evicts the linked plugin's module, and the window's contributions of that plugin —
+the session-menu row, the shortcut, the trash page — are torn down with it. The window rebuilds them when the plugin is
+loaded again. **A page reload is not reliably enough for the client half**: on 2026-11-16 a fix to `client.js` was
+"verified" by a page refresh three times while the window kept running the previous bundle — the host's own
+`window.report` stayed empty because the code that writes it never executed — and only toggling the plugin made it
+live. So: write the trigger for every change that lands, say which half it was, and for a client-half change tell the
+person to switch the plugin off and on (or restart the app) rather than to reload the page. The same session also lost
+a fix to this: 0.5.36's `retain` call was reported as "still not fixed" while it had never run.
 
 **Before asking a person to test, walk the whole path against the installed package's own contract.** A restore
 that put the directory back, verified byte for byte, and reported success — still left no row in the sidebar for

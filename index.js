@@ -288,6 +288,62 @@ async function detachSessions(ctx, ids) {
  * @param restored - what `restoreFromTrash` put back.
  * @returns `{registry, attached, failed?}` or `{registry, error}` or `{registry: 'absent'}`.
  */
+
+/**
+ * Let the Host adopt the sessions a restore put back, through the product's own load-and-enter path.
+ *
+ * A restored session is on disk and accounted, and the window still cannot draw it: a row needs a summary in the
+ * window's own list, and that list only holds sessions the product has **entered**. Nothing enters one here, and no
+ * client-side call reaches a window that is running an older bundle — so the Host does it itself, with the same
+ * primitives the product uses when a person clicks a row: `sessionQuery.load` reads the logical source (header,
+ * inherited count and events), `sessions.prepare` builds a store-owned session from exactly those, `enter` installs it
+ * and `announce` publishes it. `ctx.effect` owns the detach disposer, so unloading the plugin takes it all back down
+ * and a restored session never leaks into the store.
+ * @param ctx - the plugin context.
+ * @param ids - the sessions that were just restored.
+ * @returns `{entered, skipped, failed?}` or `{error}`.
+ */
+async function enterRestored(ctx, ids) {
+  const sessions = ctx.get('sessions')
+  const query = ctx.get('sessionQuery')
+  if (typeof sessions?.prepare !== 'function' || typeof sessions?.enter !== 'function' || typeof query?.readSession !== 'function') {
+    const missing = [typeof sessions?.prepare === 'function' ? undefined : 'sessions.prepare', typeof sessions?.enter === 'function' ? undefined : 'sessions.enter', typeof sessions?.announce === 'function' ? undefined : 'sessions.announce', typeof query?.readSession === 'function' ? undefined : 'query.readSession'].filter(Boolean)
+    return { skipped: ids, reason: `the Host exposes no ${missing.join('/')} for a restored session` }
+  }
+  const entered = []
+  const skipped = []
+  const failed = []
+  for (const id of new Set(ids)) {
+    try {
+      if (sessions.get?.(id) !== undefined) {
+        skipped.push(id)
+        continue
+      }
+      const loaded = await query.readSession(id)
+      const header = loaded?.session ?? loaded?.header ?? {}
+      // With `eventState`, `prepare` hands this straight to `Session.fromRestore`, so it must be the header as the
+      // product stored it — version and id included — not a reduced copy of it.
+      const meta = header
+      const session = sessions.prepare(id, {
+        seed: loaded?.events ?? [],
+        meta,
+        ...(loaded?.inheritedEventCount === undefined ? {} : { inheritedEventCount: loaded.inheritedEventCount }),
+        // The loaded events are structured-cloned by the query, so they are independently owned and safe to adopt.
+        eventState: 'detached',
+      })
+      ctx.effect(() => {
+        const detach = sessions.enter(session)
+        sessions.announce(session)
+        return detach
+      }, `dsh-cleaner: enter ${id}`)
+      entered.push(id)
+    } catch (error) {
+      failed.push({ id, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  return failed.length === 0 ? { entered, skipped } : { entered, skipped, failed }
+}
+
 async function attachSessions(ctx, restored) {
   const registry = 'workspaceRegistry'
   const workspaces = ctx.get(registry)
@@ -391,7 +447,15 @@ async function productView(ctx) {
   } catch {
     // Same: a query that throws is reported as no sessions, and the rest of the answer stands.
   }
-  return { product_members: members, product_sessions: sessions }
+  let live = []
+  try {
+    // The window draws a row from its own list, and that list holds entered sessions: this is the half of the answer
+    // that a restore has to change, so the listing reports it.
+    live = (ctx.get('sessions')?.list?.() ?? []).map((session) => String(session?.id ?? session?.header?.id))
+  } catch {
+    // A store that throws costs the diagnostic, never the listing.
+  }
+  return { product_members: members, product_sessions: sessions, live_sessions: live }
 }
 
 function listLogs(ctx, exec) {
@@ -505,6 +569,9 @@ async function trashLogs(ctx, exec, action, requested) {
   const back = report.restored.map((entry) => entry.id)
   const unarchived = await unarchiveSessions(ctx, back)
   const reattached = await attachSessions(ctx, report.restored)
+    // 3. The Host adopts it too: a row needs a summary in the window's list, and only an entered session has one.
+    const entered = await enterRestored(ctx, back)
+reattached.enter = entered
   const swept = await sweepTrash()
   return {
     action,
