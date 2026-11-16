@@ -52,7 +52,7 @@ async function writeProjection(id, title, workspace) {
 }
 
 /** A context with only what this plugin reaches for: the registry, `agents`, the seam, the query and the workspaces. */
-function harness({ agents = [], persistence, workspaces, query, sessions, workingDirectory, commands = true, webServer = true } = {}) {
+function harness({ agents = [], resumed = [], persistence, workspaces, query, sessions, workingDirectory, commands = true, webServer = true } = {}) {
   const tools = new Map()
   const registered = new Map()
   const routes = new Map()
@@ -72,7 +72,7 @@ function harness({ agents = [], persistence, workspaces, query, sessions, workin
     get: (name) => {
       if (name === 'sessions') return sessions
       if (name === 'workingDirectory') return workingDirectory
-      if (name === 'agents') return { list: () => agents }
+    if (name === 'agents') return { list: () => agents, get: (id) => agents.find((agent) => agent.id === id), resume: async (options) => { resumed.push(options.sessionId); return { dispose: async () => {} } } }
       if (name === 'sessionPersistence') return persistence
       if (name === 'sessionQuery') return query
       if (name === 'workspaceRegistry') return workspaces
@@ -553,6 +553,8 @@ test('a command registry that mounts after the plugin still gets the command', (
     tools: { register: (definition) => { tools.set(definition.name, definition); return () => tools.delete(definition.name) } },
     effect: (callback) => { const disposer = callback(); return () => disposer?.() },
     get: () => undefined,
+    list: () => [],
+    roots: () => [],
     inject: (deps, callback) => { pending.push({ deps, callback }) },
   }
 
@@ -868,7 +870,8 @@ test('a profile config moves the data directory, and a bad one fails the load', 
 
 test('the cap is applied by the next deletion, and the answer says what it cost', async () => {
   const tools = install({ config: { trashLimit: 1 } })
-  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  const removed = (await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })).value
+  assert.equal(removed.removed_count, 1, 'the deletion moved it, so the restore has something to put back')
   await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-2'] })
 
   const held = (await route(tools, 'trash', { op: 'list' })).value
@@ -997,7 +1000,8 @@ test('a restore puts the session back into the workspace it came from', async ()
   const tools = install({ workspaces: { list: () => [workspace] } })
   await writeProjection('session-archived-1', 'a name a person knows', workspacePath)
 
-  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  const removed = (await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })).value
+  assert.equal(removed.removed_count, 1, 'the deletion moved it, so the restore has something to put back')
   const held = (await route(tools, 'trash', { op: 'list' })).value
   assert.equal(held.trash.entries[0].workspace, workspacePath, 'the deletion records where it came from')
 
@@ -1028,44 +1032,24 @@ test('a workspace that refuses the attach says so, and the log is still back', a
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), 'the log is back regardless')
 })
 
-test('a restore lets the Host adopt the session, so the window has a summary to draw', async () => {
-  // The last half of the row, and the one that does not depend on the window running any code: a row needs a summary
-  // in the window's own list, and that list holds sessions the product has **entered**. A restored session is on disk
-  // and accounted and never entered, so the Host enters it here through the product's own primitives — the query
-  // loads the logical source, the store prepares it from exactly that, enters it and announces it.
-  const entered = []
-  const announced = []
-  const prepared = []
-  const sessions = {
-    list: () => [],
-    get: () => undefined,
-    prepare: (id, options) => { prepared.push({ id, options }); return { id, header: { id } } },
-    enter: (session) => { entered.push(session.id); return () => {} },
-    announce: (session) => { announced.push(session.id) },
-  }
-  const query = {
-    listSessions: async () => [{ sessionId: 'session-archived-1' }],
-    readSession: async (id) => ({
-      session: { id, createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' },
-      inheritedEventCount: 2,
-      events: [{ type: 'note' }],
-    }),
-  }
+test('a restore resumes an agent on the session, so its row and its prompt both work', async () => {
+  // The operation a person click performs, and the only one that leaves the session usable: `agents.resume` loads a
+  // persisted session and rebuilds the agent on it. Entering a bare Session was not enough - it is listed, and then
+  // rejects every prompt as `session/agent-busy`, which is exactly what a person saw on a restored fork.
+  const resumed = []
+  const query = { listSessions: async () => [{ sessionId: 'session-archived-1' }] }
+  const sessions = { store: { get: () => undefined }, detachEntered: () => {} }
   const dataDir = join(TMP, 'ledger-test')
-  const tools = install({ sessions, query, config: { dataDir } })
-  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
-  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
+  const tools = install({ agents: [], resumed, sessions, query, config: { dataDir } })
+  const removed = (await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })).value
+  assert.equal((removed.removed ?? []).length, 1, 'the deletion moved it, so the restore has something to put back')
 
+  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
   assert.equal(back.restored.length, 1)
-  assert.deepEqual(entered, ['session-archived-1'], 'the Host entered the restored session')
-  assert.deepEqual(announced, ['session-archived-1'], 'and announced it, which is what the window listens to')
-  const preparedOptions = prepared[0]?.options ?? {}
-  assert.deepEqual(preparedOptions.meta, { id: 'session-archived-1', createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' }, 'the header the product stored verbatim, so fromRestore can validate it')
-  assert.deepEqual(preparedOptions.seed, [{ type: 'note' }], 'and the events it stored')
-  assert.equal(preparedOptions.eventState, 'detached', 'the query clones them, so they are independently owned')
-  assert.deepEqual(back.workspace.enter.entered, ['session-archived-1'], 'and the answer says the Host took it')
-  // The durable half: the id is written down, so the next load can adopt it again. This is the assertion that
-  // catches an import this file forgot — the write fails silently in production and there is no file to replays.
+  assert.deepEqual(resumed, ['session-archived-1'], 'the Host resumed an agent on the restored session')
+  assert.deepEqual(back.workspace.reopened.resumed, ['session-archived-1'], 'and the answer says so')
+  // The durable half: the id is written down, so the next load can resume it again. This is the assertion that catches
+  // an import this file forgot - the write then fails silently and there is nothing to replay after a restart.
   const ledger = JSON.parse(await readFile(join(dataDir, 'restored.json'), 'utf8'))
   assert.deepEqual(ledger.ids, ['session-archived-1'], 'the restore is remembered across a restart')
 })

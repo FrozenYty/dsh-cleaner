@@ -291,3 +291,11 @@ Dates are the commit dates, in the order the work happened.
   restart. 0.5.39 adds the durable half: a ledger of restored ids under the plugin's own data directory, replayed once
   at load, with an id dropped when it is deleted again. That is strictly more than the old version had, and it lives in
   this plugin rather than in the product.
+
+- **The restore took four wrong layers before the right one, and each wrong one was caught by a check, not by reasoning.**
+  (1) attach the membership (#79) — the row still did not appear; (2) the client calling `sessions.retain` (#82) — it ran
+  and was not enough; (3) `sessions.prepare`/`enter`/`announce` (#84) — the row appeared and every prompt was rejected
+  as `session/agent-busy`, because a session with no agent is not runnable; (4) `ctx.agents.resume` — the product's own
+  "load a persisted session and resume an agent on it". Read `dsh-agent/README.md` and `AgentRegistry` to find it; the
+  lesson is that the product's listing, its row and its prompt all hang off the **agent**, not off the session store,
+  and that a plausible-sounding capability (`enter`) is not the same as the documented one (`resume`).

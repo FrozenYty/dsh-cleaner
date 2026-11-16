@@ -346,44 +346,27 @@ async function writeRestoredLedger(add = [], drop = []) {
 }
 
 async function enterRestored(ctx, ids) {
-  const sessions = ctx.get('sessions')
-  const query = ctx.get('sessionQuery')
-  if (typeof sessions?.prepare !== 'function' || typeof sessions?.enter !== 'function' || typeof query?.readSession !== 'function') {
-    const missing = [typeof sessions?.prepare === 'function' ? undefined : 'sessions.prepare', typeof sessions?.enter === 'function' ? undefined : 'sessions.enter', typeof sessions?.announce === 'function' ? undefined : 'sessions.announce', typeof query?.readSession === 'function' ? undefined : 'query.readSession'].filter(Boolean)
-    return { skipped: ids, reason: `the Host exposes no ${missing.join('/')} for a restored session` }
-  }
-  const entered = []
+  const agents = ctx.get('agents')
+  if (typeof agents?.resume !== 'function') return { skipped: [...new Set(ids)], reason: 'the Host exposes no agents.resume' }
+  const resumed = []
   const skipped = []
   const failed = []
   for (const id of new Set(ids)) {
     try {
-      if (sessions.get?.(id) !== undefined) {
+      if (agents.get?.(id) !== undefined) {
         skipped.push(id)
         continue
       }
-      const loaded = await query.readSession(id)
-      const header = loaded?.session ?? loaded?.header ?? {}
-      // With `eventState`, `prepare` hands this straight to `Session.fromRestore`, so it must be the header as the
-      // product stored it — version and id included — not a reduced copy of it.
-      const meta = header
-      const session = sessions.prepare(id, {
-        seed: loaded?.events ?? [],
-        meta,
-        ...(loaded?.inheritedEventCount === undefined ? {} : { inheritedEventCount: loaded.inheritedEventCount }),
-        // The loaded events are structured-cloned by the query, so they are independently owned and safe to adopt.
-        eventState: 'detached',
-      })
-      ctx.effect(() => {
-        const detach = sessions.enter(session)
-        sessions.announce(session)
-        return detach
-      }, `dsh-cleaner: enter ${id}`)
-      entered.push(id)
+      // `agents.resume` is the product's own "load a persisted session and rebuild the agent on it" — the same
+      // operation a person's click performs. Entering a bare Session was not enough: a session with no agent is
+      // listed and then rejects every prompt as `session/agent-busy`, which is exactly what a person saw.
+      await agents.resume({ sessionId: id })
+      resumed.push(id)
     } catch (error) {
       failed.push({ id, error: error instanceof Error ? error.message : String(error) })
     }
   }
-  return failed.length === 0 ? { entered, skipped } : { entered, skipped, failed }
+  return failed.length === 0 ? { resumed, skipped } : { resumed, skipped, failed }
 }
 
 async function attachSessions(ctx, restored) {
@@ -497,7 +480,15 @@ async function productView(ctx) {
   } catch {
     // A store that throws costs the diagnostic, never the listing.
   }
-  return { product_members: members, product_sessions: sessions, live_sessions: live }
+  let liveAgents = []
+  try {
+    // A row is drawn and a prompt is accepted only while an agent owns the session: this is what a restore has
+    // to produce, so the listing reports it beside the store view.
+    liveAgents = (ctx.get('agents')?.list?.() ?? []).map((agent) => String(agent?.id ?? agent?.sessionId))
+  } catch {
+    // A registry that throws costs the diagnostic, never the listing.
+  }
+  return { product_members: members, product_sessions: sessions, live_sessions: live, live_agents: liveAgents }
 }
 
 function listLogs(ctx, exec) {
@@ -612,9 +603,9 @@ async function trashLogs(ctx, exec, action, requested) {
   const unarchived = await unarchiveSessions(ctx, back)
   const reattached = await attachSessions(ctx, report.restored)
     // 3. The Host adopts it too: a row needs a summary in the window's list, and only an entered session has one.
-    const entered = await enterRestored(ctx, back)
-    if (entered.entered !== undefined && entered.entered.length > 0) await writeRestoredLedger(entered.entered)
-reattached.enter = entered
+    const reopened = await enterRestored(ctx, back)
+    if (reopened.resumed !== undefined && reopened.resumed.length > 0) await writeRestoredLedger(reopened.resumed)
+    reattached.reopened = reopened
   const swept = await sweepTrash()
   return {
     action,
