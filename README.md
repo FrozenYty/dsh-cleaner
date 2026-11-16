@@ -447,6 +447,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a deletion also drop the archive flag? | [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md) |
 | How does a deletion remove the live session object, so no restart is needed? | [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md) |
 | Why does the plugin's data live under the home directory and never move? | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
+| What does a restore actually have to do, and in what order? | [ADR 0027](docs/adr/0027-a-restore-is-files-membership-and-an-agent.md) |
 | How does the sidebar row reach the host, and why can a deletion be undone? | [ADR 0014](docs/adr/0014-route-transport-and-recoverable-deletion.md) |
 | Where does the trash live, and how is it bounded? | [ADR 0015](docs/adr/0015-our-own-data-directory.md) |
 | Why is archiving not a precondition? | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |

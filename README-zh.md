@@ -379,6 +379,7 @@ node -e "import('./engine.js').then(async (m) => console.log(JSON.stringify(awai
 | 为什么删除还要取消归档？ | [ADR 0024](docs/adr/0024-a-deletion-drops-the-archive-flag.md) |
 | 删除如何释放内存里的 live 会话，做到不用重启？ | [ADR 0025](docs/adr/0025-a-deletion-releases-the-live-session.md) |
 | 为什么插件数据放在用户主目录下、永不移动？ | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
+| 恢复一条会话到底要做哪几件事，顺序是什么？ | [ADR 0027](docs/adr/0027-a-restore-is-files-membership-and-an-agent.md) |
 | 为什么数据目录放在用户主目录下、永不移动？ | [ADR 0026](docs/adr/0026-data-lives-under-the-home-directory.md) |
 | 为什么归档不再是前提？ | [ADR 0010](docs/adr/0010-no-archive-precondition.md) |
 | 为什么除了工具还有一条命令？ | [ADR 0011](docs/adr/0011-one-operation-two-callers.md) |
