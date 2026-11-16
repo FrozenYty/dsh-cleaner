@@ -748,6 +748,8 @@ window.__ModuleLoader__.load({
         const loadRestored = (ids) => {
           try {
             const sessions = ctx.get('sessions')
+            const ui = ctx.get('uiWorkspace')
+            let opened = false
             // Reported, not assumed: what the product's own client service offers, what it returned, and whether the
             // reference became ready. The next listing prints it, which is how a window-side failure is diagnosed
             // without guessing at another package's internals.
@@ -758,9 +760,17 @@ window.__ModuleLoader__.load({
               return
             }
             for (const id of ids) {
-              // The documented source names are controllerOperation and gateway (SessionReferenceSourceMap); a
-              // private string is not one of them. And retain returns an owned reference whose ready settles the
-              // initial history opening, so the row is drawn from a generation that finished opening.
+              // The durable half is the product's own navigation: a session the window has *opened* is held by the main
+              // view, so its row survives this plugin being switched off — exactly what a person observed when the one
+              // session they chatted with stayed and the untouched one vanished. `retain` alone is held by this page,
+              // so it dies with the plugin; it is kept for the remaining ids, which at least stay listed while the
+              // plugin is on, and opening one is what makes it permanent.
+              if (!opened && typeof ui?.openSession === 'function') {
+                opened = true
+                ui.openSession(id)
+                state.lastClick = `${state.lastClick}; opened ${id}`
+                continue
+              }
               const reference = sessions.retain(id, { source: 'controllerOperation' })
               state.lastClick = `${state.lastClick}; retained ${id} -> ${String(reference?.sessionId ?? reference)} (offered: ${offered})`
               Promise.resolve(reference?.ready).then(
