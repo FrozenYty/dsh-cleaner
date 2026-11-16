@@ -299,3 +299,10 @@ Dates are the commit dates, in the order the work happened.
   "load a persisted session and resume an agent on it". Read `dsh-agent/README.md` and `AgentRegistry` to find it; the
   lesson is that the product's listing, its row and its prompt all hang off the **agent**, not off the session store,
   and that a plausible-sounding capability (`enter`) is not the same as the documented one (`resume`).
+
+- **The resume option name was the whole last failure, and it was sitting in the answer all along.** `workspace.reopened`
+  reported `Cannot read properties of undefined (reading 'length')` for both ids since 0.5.40; the built
+  `AgentLoop.resumeWith` takes `options.resumeSessionId`, so `{ sessionId }` left the id undefined. Fixed, and the live
+  Host now answers `reopened: {resumed: [both], skipped: []}` with both ids in `live_agents`. The general lesson, worth
+  more than this bug: the diagnostic was already correct and already printed — what was missing was a way to read it.
+  Everything before this point was argued from the outside because the window half could not report.

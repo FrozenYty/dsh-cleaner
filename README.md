@@ -21,7 +21,7 @@ delete one.
 
 ## Status
 
-- Current version: v0.5.41.
+- Current version: v0.5.42.
 - **Exercised in a real profile on this machine** (2026-11-13): installed from this directory, both
   tools appeared, `list_session_logs` reported the six logs, and `delete_session_logs`
   removed exactly those six directories — 4,169,349 bytes reclaimed, 0 failed, 0 refused. The mounted

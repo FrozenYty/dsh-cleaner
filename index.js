@@ -360,7 +360,8 @@ async function enterRestored(ctx, ids) {
       // `agents.resume` is the product's own "load a persisted session and rebuild the agent on it" — the same
       // operation a person's click performs. Entering a bare Session was not enough: a session with no agent is
       // listed and then rejects every prompt as `session/agent-busy`, which is exactly what a person saw.
-      await agents.resume({ sessionId: id })
+      // The option is `resumeSessionId`, read from the loop factory itself: `resumeWith` takes `options.resumeSessionId`.
+      await agents.resume({ resumeSessionId: id })
       resumed.push(id)
     } catch (error) {
       failed.push({ id, error: error instanceof Error ? error.message : String(error) })

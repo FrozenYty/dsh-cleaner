@@ -1,3 +1,14 @@
+## [0.5.42] - 2026-11-16
+
+- **A restore now really resumes an agent, because the option name was wrong.** Read from the loop factory's own built
+  code (`AgentLoop.resumeWith`): it takes `options.resumeSessionId`, not `options.sessionId`. Passing `sessionId` left
+  the id `undefined`, so the factory failed with `Cannot read properties of undefined (reading 'length')` — which the
+  restore answer reported all along under `workspace.reopened.failed`, and which nobody read until the window half was
+  made observable. On the live Host the same call now answers
+  `reopened: {resumed: [both ids], skipped: []}` and both ids appear in `live_agents`: the restored sessions have an
+  owner, so a row can be drawn and a prompt is accepted instead of `prompt rejected (session/agent-busy)`.
+
+## [0.5.41] - 2026-11-16
 ## [0.5.41] - 2026-11-16
 
 - **The window-side `retain` now uses a documented source name, which is what the official contract requires.** Read
