@@ -758,7 +758,10 @@ window.__ModuleLoader__.load({
               return
             }
             for (const id of ids) {
-              const reference = sessions.retain(id, { source: 'dsh-cleaner.restore' })
+              // The documented source names are controllerOperation and gateway (SessionReferenceSourceMap); a
+              // private string is not one of them. And retain returns an owned reference whose ready settles the
+              // initial history opening, so the row is drawn from a generation that finished opening.
+              const reference = sessions.retain(id, { source: 'controllerOperation' })
               state.lastClick = `${state.lastClick}; retained ${id} -> ${String(reference?.sessionId ?? reference)} (offered: ${offered})`
               Promise.resolve(reference?.ready).then(
                 (ready) => { state.lastClick = `${state.lastClick}; ready ${id} -> ${ready?.sessionId ?? String(ready)}` },

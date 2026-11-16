@@ -1,3 +1,17 @@
+## [0.5.41] - 2026-11-16
+
+- **The window-side `retain` now uses a documented source name, which is what the official contract requires.** Read
+  from the live Client inspection (`Service.listService` for `sessions`) rather than guessed: `retain` "retain[s] an
+  exact Client generation and start[s] its shared initial history opening", and `SessionReferenceSourceMap` declares
+  exactly two names — `controllerOperation` and `gateway`. The plugin had invented `dsh-cleaner.restore`, which is not
+  one of them; it now passes `controllerOperation` and still reports `reference.ready`.
+- **The window half has never once reported to the Host, and the plugin's listing says so.** `client_half` reads
+  `nothing heard from a window yet` on the live Host even though the window runs current client code (the retention
+  line is gone from the trash page, which only 0.5.31+ does). Every client-side diagnostic added tonight was therefore
+  written into a channel nobody reads, which is why three "verified" claims about the client were unfounded. The next
+  step is to find where `report()` loses its POST, not to add more diagnostics to the same channel.
+
+## [0.5.40] - 2026-11-16
 ## [0.5.40] - 2026-11-16
 
 - **A restore now resumes an agent on the session, which is what makes it usable again — and the row follows.** The
