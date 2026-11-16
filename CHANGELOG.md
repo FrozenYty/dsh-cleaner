@@ -1,3 +1,17 @@
+## [0.5.38] - 2026-11-16
+
+- **A restore now has the Host adopt the session, which is the half the window needs and the one that does not depend on
+  the window reloading anything.** Read from the installed packages rather than guessed: a row needs a summary in the
+  window's own list, that list holds sessions the product has **entered**, and nothing entered a restored one. The
+  Host now does it with the product's own primitives — `sessionQuery.load(id)` reads the logical source (header,
+  inherited event count, events), `sessions.prepare` builds a store-owned session from exactly those, `enter` installs
+  it and `announce` publishes it — all inside `ctx.effect`, so a plugin unload takes it back down. A Host that exposes
+  no such pair skips it and still restores the files.
+- **This is the shape of the regression you remembered.** The deletion switched from *archive* to *detach* (#65), so the
+  membership stopped surviving a deletion; the restore re-attached it (#79) and still left the window without a
+  summary. Both halves are in place now.
+
+## [0.5.37] - 2026-11-16
 ## [0.5.37] - 2026-11-16
 
 - **The window now reports what the product's client service offered and returned when a restore asks it to load a

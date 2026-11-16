@@ -1027,3 +1027,40 @@ test('a workspace that refuses the attach says so, and the log is still back', a
   assert.deepEqual(back.workspace.failed, [{ id: 'session-archived-2', error: 'its cwd resolves to another directory' }])
   assert.ok(existsSync(join(ROOT, '--D-ALPHA--', 'session-archived-2')), 'the log is back regardless')
 })
+
+test('a restore lets the Host adopt the session, so the window has a summary to draw', async () => {
+  // The last half of the row, and the one that does not depend on the window running any code: a row needs a summary
+  // in the window's own list, and that list holds sessions the product has **entered**. A restored session is on disk
+  // and accounted and never entered, so the Host enters it here through the product's own primitives — the query
+  // loads the logical source, the store prepares it from exactly that, enters it and announces it.
+  const entered = []
+  const announced = []
+  const prepared = []
+  const sessions = {
+    list: () => [],
+    get: () => undefined,
+    prepare: (id, options) => { prepared.push({ id, options }); return { id, header: { id } } },
+    enter: (session) => { entered.push(session.id); return () => {} },
+    announce: (session) => { announced.push(session.id) },
+  }
+  const query = {
+    listSessions: async () => [{ sessionId: 'session-archived-1' }],
+    load: async (id) => ({
+      header: { id, createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' },
+      inheritedEventCount: 2,
+      events: [{ type: 'note' }],
+    }),
+  }
+  const tools = install({ sessions, query })
+  await route(tools, 'delete', { caller: CALLER, ids: ['session-archived-1'] })
+  const back = (await route(tools, 'trash', { op: 'restore', ids: ['session-archived-1'] })).value
+
+  assert.equal(back.restored.length, 1)
+  assert.deepEqual(entered, ['session-archived-1'], 'the Host entered the restored session')
+  assert.deepEqual(announced, ['session-archived-1'], 'and announced it, which is what the window listens to')
+  const preparedOptions = prepared[0]?.options ?? {}
+  assert.deepEqual(preparedOptions.meta, { createdAt: 1, cwd: 'D:\\ALPHA', origin: 'fork' }, 'the header the product stored, not a fresh one')
+  assert.deepEqual(preparedOptions.seed, [{ type: 'note' }], 'and the events it stored')
+  assert.equal(preparedOptions.eventState, 'detached', 'the query clones them, so they are independently owned')
+  assert.deepEqual(back.workspace.entered, ['session-archived-1'])
+})

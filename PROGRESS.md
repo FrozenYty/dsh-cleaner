@@ -267,3 +267,11 @@ Dates are the commit dates, in the order the work happened.
   offers (its function names), what `retain` returned, and whether its `ready` resolved or failed — the next listing
   prints it. That is the same discipline as `product_members`: a failure this side of the seam is answered with the
   values the seam actually returned, not with another reading of somebody else's source.
+
+- **The client-side `retain` of 0.5.36 never ran, and the reason was the reload.** `window.report` stayed empty after
+  he clicked 恢复, while the shipped `client.js` clearly calls `loadRestored` on the restore branch — so the window was
+  running an older bundle and a page refresh does not replace it. That also means 0.5.36 was reported as "still not
+  fixed" without ever executing. The host side cannot wait for a window to catch up, so 0.5.38 makes the Host adopt
+  the session itself through `sessionQuery.load` + `sessions.prepare`/`enter`/`announce`, inside `ctx.effect`. AGENTS 5
+  now says a client-half change needs the plugin toggled or the app restarted, not a page reload, and that the lesson
+  cost three "verified" claims.
