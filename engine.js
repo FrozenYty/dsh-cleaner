@@ -844,6 +844,23 @@ export async function listTrash(trashRoot, { sessionsRoot, purgeAfterDays = 0, l
  * @param ids - the session ids to restore.
  * @returns `{ restored, refused, failed }`.
  */
+
+/**
+ * The canonical spelling of a path that does not exist yet.
+ *
+ * A restore names a directory the deletion took away, so `realpath` on the whole path fails with ENOENT. Its parent
+ * does exist, and canonicalising the parent is what makes `FROZEN~1` and `FrozenYty` compare equal — the difference
+ * is in the directory above the leaf, never in the leaf itself.
+ * @param path - the recorded path.
+ * @returns the canonical absolute path, or the input when no ancestor resolves.
+ */
+async function canonicalRestoreTarget(path) {
+  try {
+    return join(await realpath(dirname(path)), basename(path))
+  } catch {
+    return path
+  }
+}
 export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
   if (typeof trashRoot !== 'string' || trashRoot.length === 0) throw new Error('restoreFromTrash: a trash root is required')
   if (typeof sessionsRoot !== 'string' || sessionsRoot.length === 0) throw new Error('restoreFromTrash: a session storage root is required')
@@ -865,7 +882,11 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       remaining.push(entry)
       continue
     }
-    const target = entry.path
+    // The same directory has more than one spelling on Windows — `FROZEN~1` and the long name — and a caller that
+    // planned with one and restored with the other would otherwise be told its own session is outside the store.
+    // Canonicalised through the parent, which exists, plus the final segment, which does not yet: that is exactly
+    // what `realpath` cannot do for a path that is absent.
+    const target = await canonicalRestoreTarget(entry.path)
     // The index is ours, but it is still data on disk: a target outside the store is refused rather than
     // created, so a tampered index cannot write anywhere.
     const inside = relative(storeRoot, target)
