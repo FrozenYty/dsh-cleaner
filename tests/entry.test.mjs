@@ -148,6 +148,21 @@ after(async () => {
   else process.env.DSH_CLEANER_DATA_DIR = PREVIOUS_DATA_DIR
 })
 
+test('a load replay builds an agent only for a session the process holds without one', async () => {
+  // The replay runs on every load, so what it does per remembered id is a cost, not a nicety: resuming every id
+  // the ledger remembers left a dozen live agents nobody was using. A persisted session the process has not opened
+  // needs nothing - the product loads it on demand. A Session object held **without** an agent is the one state
+  // that refuses a prompt as `session/agent-busy`, and that is the only one this may pay for.
+  const resumed = []
+  const dataDir = join(TMP, 'replay-test')
+  await mkdir(dataDir, { recursive: true })
+  await writeFile(join(dataDir, 'restored.json'), JSON.stringify({ version: 1, ids: ['session-held-1', 'session-cold-1'] }))
+  const sessions = { store: { get: (id) => (id === 'session-held-1' ? { id } : undefined) }, detachEntered: () => {} }
+  install({ agents: [], resumed, sessions, config: { dataDir } })
+  await new Promise((resolve) => setTimeout(resolve, 25))
+  assert.deepEqual(resumed, ['session-held-1'], 'only the session the process holds without an agent is resumed')
+})
+
 test('the entry registers exactly the listing and the deleting tool', () => {
   const tools = install()
   assert.deepEqual([...tools.keys()].sort(), ['delete_session_logs', 'list_session_logs', 'trash_session_logs'])

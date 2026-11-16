@@ -1,3 +1,14 @@
+## [0.5.51] - 2026-11-16
+
+- **A load replay builds an agent only for the session that needs one.** The ledger was replayed on every load and
+  resumed every id it remembered, which left a dozen live agents nobody was using. A persisted session the process has
+  not opened needs nothing — the product loads it on demand, which is what a restored session looks like from the
+  outside. The one state that misbehaves is a `Session` object the process holds **without** an agent: a prompt on it
+  is refused as `session/agent-busy`, and that is the only one worth paying for at load. A restore click still passes
+  `false` and always builds the agent, because the session was put back a moment ago and the product knows nothing
+  about it yet. The new test fails if the replay ever resumes a session the process is not holding.
+
+## [0.5.50] - 2026-11-16
 ## [0.5.50] - 2026-11-16
 
 - **The retention window and the cap are no longer shown on the trash page at all.** They used to be the tooltip on the

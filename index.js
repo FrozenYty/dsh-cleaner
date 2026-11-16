@@ -345,15 +345,29 @@ async function writeRestoredLedger(add = [], drop = []) {
   }
 }
 
-async function enterRestored(ctx, ids) {
+/**
+ * @param ctx - plugin context.
+ * @param ids - the sessions to make usable.
+ * @param onlyIfBusy - on a load replay, resume **only** a Session object the process holds without an agent, which
+ * is the one state that refuses a prompt as `session/agent-busy`. A persisted session the process has not opened
+ * needs nothing - the product loads it on demand - and paying an agent for every id the ledger remembers kept a
+ * dozen live agents that nobody was using. A restore click passes `false`: the session was put back a moment ago,
+ * so the product knows nothing about it and it must be built here and now.
+ */
+async function enterRestored(ctx, ids, onlyIfBusy = false) {
   const agents = ctx.get('agents')
   if (typeof agents?.resume !== 'function') return { skipped: [...new Set(ids)], reason: 'the Host exposes no agents.resume' }
   const resumed = []
   const skipped = []
   const failed = []
+  const sessions = ctx.get('sessions')
   for (const id of new Set(ids)) {
     try {
       if (agents.get?.(id) !== undefined) {
+        skipped.push(id)
+        continue
+      }
+      if (onlyIfBusy && sessions?.store?.get?.(id) === undefined) {
         skipped.push(id)
         continue
       }
@@ -1008,10 +1022,12 @@ export function apply(ctx, config) {
   settings = resolveCleanerConfig(config)
   // Re-adopt what a previous run restored, once, after everything is registered: a row needs the session live,
   // liveness is memory, and a restart takes it away. The ledger is the durable half of "this plugin put it back".
+  // `onlyIfBusy` because this runs on **every** load: a session the process has not opened needs nothing, and
+  // resuming every remembered id is what kept a dozen live agents nobody was using.
   void (async () => {
     try {
       const ids = await readRestoredLedger()
-      if (ids.length > 0) await enterRestored(ctx, ids)
+      if (ids.length > 0) await enterRestored(ctx, ids, true)
     } catch {
       // A replay that fails costs the rows, never the load: the sessions are on disk and accounted already.
     }
