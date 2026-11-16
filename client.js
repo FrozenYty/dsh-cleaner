@@ -118,6 +118,12 @@ window.__ModuleLoader__.load({
         const text = (key, fallback) => {
           try {
             const locale = ctx.get('locale')
+            // Our own table first: a dictionary registration that was refused (a duplicate namespace left by an
+            // earlier load of this half) must not cost a person their language, and the table is ours to read.
+            const active = locale?.getLocale?.()?.active
+            // Only when the locale is known: an unknown one must not force English over a service that can answer.
+            const own = active === 'zh' ? STRINGS.zh : active === 'en' ? STRINGS.en : undefined
+            if (typeof own?.[key] === 'string') return own[key]
             if (typeof locale?.bind === 'function') {
               const value = locale.bind(LOCALE_NS)(key)
               if (typeof value === 'string' && value.length > 0 && value !== key) return value
@@ -217,15 +223,8 @@ window.__ModuleLoader__.load({
           count: text('trash.count', '{n} entries'),
           swept: text('trash.swept', '{n} entries expired and were removed'),
         })
-
-        /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
-        const registerDictionary = () => {
-          const locale = ctx.get('locale')
-          if (locale === undefined || typeof locale.register !== 'function') return undefined
-          // Inside `ctx.effect`, like every other contribution: disabling the plugin evicts its client module, and
-          // the effect is what removes the strings with it. A bare `register` would leave this plugin's dictionary
-          // behind in a window that no longer has the plugin.
-          return ctx.effect(() => locale.register(LOCALE_NS, {
+        /** The strings in both languages: `text` reads this table before any service. */
+        const STRINGS = {
             en: {
               [LABEL_KEY]: 'Delete session',
               'trash.title': 'Trash',
@@ -282,7 +281,17 @@ window.__ModuleLoader__.load({
               'notice.working': '正在删除……',
               'notice.noSession': '没有打开的会话可作为调用者',
             },
-          }))
+        }
+
+
+        /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
+        const registerDictionary = () => {
+          const locale = ctx.get('locale')
+          if (locale === undefined || typeof locale.register !== 'function') return undefined
+          // Inside `ctx.effect`, like every other contribution: disabling the plugin evicts its client module, and
+          // the effect is what removes the strings with it. A bare `register` would leave this plugin's dictionary
+          // behind in a window that no longer has the plugin.
+          return ctx.effect(() => locale.register(LOCALE_NS, STRINGS), 'dsh-cleaner: dictionary')
         }
 
         /**
@@ -613,6 +622,7 @@ window.__ModuleLoader__.load({
           state.menu = ctx.get('contextMenus') === undefined ? 'no menu service' : 'menu service present'
           // Two facts that decide a restore, reported at load so they can be read without clicking anything: the
           // version of this half is then knowable from the Host, and so is whether the window has the levers at all.
+          state.locale = ctx.get('locale')?.getLocale?.()?.active ?? 'unknown'
           state.handoff = 'first'
           state.levers = [
             typeof ctx.get('sessions')?.retain === 'function' ? 'retain' : 'no retain',
