@@ -239,3 +239,15 @@ Dates are the commit dates, in the order the work happened.
   recorded path as written, so a junction or short-name spelling made it refuse a legitimate restore — fixed, with a
   test that is red without the fix. (4) The engine matrix (move, cap, retention sweep, purge, restore refusal) was run
   on a scratch filesystem: 11/11, byte-exact, with the cap and the sweep naming what they dropped.
+
+- **Put the product view in the listing, because the restore's row was still missing after the attach worked.** He
+  reloaded the whole page and the two sessions were still absent, while `workspace.json` held them and the attach had
+  reported success. So the anchor was wrong again: `workspace.sessionIds` is a **filtered getter**, and the sidebar
+  also needs the session in its own list-before-ordering step, which drops every id whose summary it does not have
+  (`orderByRecency`: `summaries[id] === undefined → []`, read in the client package). The listing now answers both
+  questions itself — `product_members` (the registry's getter, filtered) and `product_sessions` (the query's list) —
+  and both hold the two ids after a host reload. What is still unproven is the window's in-memory list, and the
+  contract that explains it is `SessionStore.prepare`/`enter`/`announce`: `enter` deliberately does **not** emit
+  `session/created`; the caller must announce. A restore puts the files back and nobody announces, so a session that
+  is on disk and accounted can still be unknown to a window that snapshotted earlier. The fix, once the prediction is
+  confirmed by his eyes, is to prepare and announce the restored session instead of only writing the files.
