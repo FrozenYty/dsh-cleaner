@@ -313,3 +313,9 @@ Dates are the commit dates, in the order the work happened.
   is ours and dies with our page. 0.5.43 opens the first restored id and retains the rest; the test asserts the open.
   Worth recording as the shape of every remaining question here: an observation from the person beats any amount of
   reasoning about another package's internals.
+
+- **The ordering of two statements was the last inch, and it had been there since 0.5.36.** `act` reloaded the page's own
+  list first and unguarded; a throw there skipped `loadRestored` entirely, so the restore looked broken while the files
+  were always back (the live Host showed trash count 0, both members and ten live agents after his attempt). Fixed by
+  putting the hand-off first and wrapping the reload. The general shape, again: the plugin's own answer was right and the
+  window-side step was never reached, and only a readable report from that side could show it.
