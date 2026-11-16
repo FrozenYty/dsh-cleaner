@@ -1,3 +1,13 @@
+## [0.5.56] - 2026-11-16
+
+- **A deletion now offers its own undo, and the notice says where the trash is.** Both follow the product's own archive
+  row, which acts immediately and offers undo in the notice rather than asking twice: an undo here is a restore, which
+  this plugin already does properly — files, membership, agent and row. The second action opens the settings panel,
+  which is the most a plugin can do: a section's owner props carry only `close` (the shell owns modal visibility and
+  navigation), so the last click on `回收站` is the person's. Both actions are removed from the notice as soon as they
+  are used, and the notice still clears itself after twelve seconds. The `trash.settingsId` guess is not made: an
+  unregistered main key throws and preserves the current selection, so a refused panel open costs nothing.
+
 ## [0.5.55] - 2026-11-16
 
 - **A deleted session's row leaves the window at once, without a reload.** The client keeps one `SessionScope` per

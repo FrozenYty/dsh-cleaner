@@ -150,9 +150,17 @@ window.__ModuleLoader__.load({
          * React state. One writer (`notify`), any number of readers.
          */
         let noticeText
+        let noticeActions = []
         const noticeReaders = new Set()
-        const notify = (text) => {
+        /**
+         * @param text - the one line the notice says.
+         * @param actions - optional buttons, `{label, run}`. A deletion offers its own undo because the product's
+         * archive row does exactly that — act now, offer undo in the notice — and this plugin can offer the same
+         * thing with a mechanism it already has: an undo is a restore.
+         */
+        const notify = (text, actions = []) => {
           noticeText = text
+          noticeActions = actions
           for (const reader of noticeReaders) {
             try {
               reader()
@@ -170,22 +178,24 @@ window.__ModuleLoader__.load({
          * ambiguity is what cost the most rounds here.
          */
         function Notice() {
-          const [text, setText] = React.useState(noticeText)
+          const [frame, setFrame] = React.useState({ text: noticeText, actions: noticeActions })
           React.useEffect(() => {
-            const update = () => setText(noticeText)
+            const update = () => setFrame({ text: noticeText, actions: noticeActions })
             noticeReaders.add(update)
             update()
             return () => noticeReaders.delete(update)
           }, [])
           React.useEffect(() => {
-            if (text === undefined) return undefined
+            if (frame.text === undefined) return undefined
             const timer = setTimeout(() => {
               noticeText = undefined
-              setText(undefined)
+              noticeActions = []
+              setFrame({ text: undefined, actions: [] })
             }, 12000)
             return () => clearTimeout(timer)
-          }, [text])
-          if (text === undefined || text === '') return null
+          }, [frame])
+          if (frame.text === undefined || frame.text === '') return null
+          const actions = Array.isArray(frame.actions) ? frame.actions : []
           return h('div', {
             role: 'status',
             style: {
@@ -203,9 +213,40 @@ window.__ModuleLoader__.load({
               fontSize: '12px',
               lineHeight: 1.5,
               boxShadow: '0 8px 24px rgb(0 0 0 / 0.25)',
-              pointerEvents: 'none',
+              pointerEvents: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
             },
-          }, text)
+          },
+          h('span', { key: 'say', style: { flex: '1 1 auto' } }, frame.text),
+          ...actions.map((action, index) => h('button', {
+            key: `act-${index}`,
+            type: 'button',
+            onClick: () => {
+              // The action runs first, then the notice is cleared: a refused undo may set its own notice.
+              try {
+                action.run()
+              } finally {
+                if (noticeText === frame.text) {
+                  noticeText = undefined
+                  noticeActions = []
+                  setFrame({ text: undefined, actions: [] })
+                }
+              }
+            },
+            style: {
+              flex: '0 0 auto',
+              padding: '2px 10px',
+              borderRadius: '999px',
+              border: '1px solid var(--dsw-alias-border-l3, #4a4a4a)',
+              background: 'transparent',
+              color: 'var(--dsw-alias-label-primary, #e6e6e6)',
+              fontSize: '12px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            },
+          }, action.label)))
         }
         /** Every string the trash panel needs, resolved when it renders rather than when it loads. */
         const labels = () => ({
@@ -250,6 +291,8 @@ window.__ModuleLoader__.load({
               'trash.count': '{n} entries',
               'trash.swept': '{n} entries expired and were removed',
               'notice.deleted': 'Deleted',
+          'notice.undo': 'Undo',
+          'notice.openTrash': 'Open the trash',
               'notice.kept': 'Not deleted',
               'notice.gone': 'No log — row removed',
               'notice.requested': 'Delete requested — see this conversation',
@@ -278,6 +321,8 @@ window.__ModuleLoader__.load({
               'trash.count': '{n} 条',
               'trash.swept': '{n} 条已过期并清理',
               'notice.deleted': '已删除',
+          'notice.undo': '撤销',
+          'notice.openTrash': '查看回收站',
               'notice.kept': '未删除',
               'notice.gone': '无日志，已移出列表',
               'notice.requested': '已请求删除，回执见本会话',
@@ -416,6 +461,34 @@ window.__ModuleLoader__.load({
           }
         }
         /** Release a hold, best effort: a refused release costs the row, never the deletion that happened. */
+        /**
+         * Undo a deletion. The notice offers it because the product's own archive row does: act now, offer undo in the
+         * notice. Here an undo is a restore, which this plugin already does properly — files, membership, agent, row.
+         * @param ids - the ids the deletion removed.
+         */
+        const undoDelete = (ids) => {
+          void post('trash', { op: 'restore', ids }).then(() => {
+            try {
+              load()
+            } catch {
+              // A listing that cannot reload costs the view, never the undo.
+            }
+          })
+        }
+        /**
+         * Show the settings panel, where the trash section lives. This is the most a plugin can do: a section's owner
+         * props carry only `close` (the shell owns modal visibility and navigation), so the last click — the `回收站`
+         * nav row — is the person's. `selectPanel` throws on a key that is not registered and preserves the current
+         * selection, so a refused guess costs nothing.
+         */
+        const openTrashSettings = () => {
+          try {
+            ctx.get('layout')?.selectPanel?.('settings')
+          } catch {
+            // Not a registered main panel here: the notice still said where to look.
+          }
+        }
+
         const releaseHeld = (reference) => {
           try {
             reference?.release?.()
@@ -487,7 +560,10 @@ window.__ModuleLoader__.load({
                 ? `deleted over the route (recoverable under ${answer.trash?.root ?? 'the trash'})`
                 : `${noLog ? 'nothing to delete: no log' : 'nothing moved'}${why === undefined ? '' : `: ${why}`}`
               if (moved > 0) {
-                notify(text('notice.deleted', 'Deleted'))
+                notify(text('notice.deleted', 'Deleted'), [
+                  { label: text('notice.undo', 'Undo'), run: () => undoDelete([sessionId]) },
+                  { label: text('notice.openTrash', 'Open the trash'), run: openTrashSettings },
+                ])
               } else if (noLog) {
                 notify(text('notice.gone', 'No log — row removed'))
               } else {
