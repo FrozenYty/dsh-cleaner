@@ -251,3 +251,13 @@ Dates are the commit dates, in the order the work happened.
   `session/created`; the caller must announce. A restore puts the files back and nobody announces, so a session that
   is on disk and accounted can still be unknown to a window that snapshotted earlier. The fix, once the prediction is
   confirmed by his eyes, is to prepare and announce the restored session instead of only writing the files.
+
+- **Found the last gate of "restore leaves no row", in the client package rather than by guessing.** With the files,
+  the projection (all 30 rows), the membership (the registry's filtered getter), the query's own session list and the
+  archive flag all verified, the row was still absent after a reload. Reading `@deepseek-ai/dsh-client-ui-workspace`
+  settled it: the sidebar builds its ids from the workspace membership and then runs them through `orderByRecency`,
+  which drops every id whose summary its own list does not hold, and the client's list only contains sessions the
+  product has **loaded**. A restart never helped because nothing had loaded the restored session. The product's own
+  loader is `sessions.retain(id, { source })` — the call `uiWorkspace.replaceMain` makes when a row is opened — so the
+  client half now makes it after a restore, for each id the Host reports. Test first red (`[]` against the id), then
+  green; the suite is at 133 tests / 130 pass with `check.mjs` passing.

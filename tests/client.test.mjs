@@ -1010,3 +1010,32 @@ test('purging asks in place, the bulk actions use every id, and a row names its 
   await settle()
   assert.equal(purges().length, before + 1, 'the second click empties it')
 })
+
+test('a restore asks the product to load what it put back, so the row can exist', async () => {
+  // The last missing half. Files, projection, membership and archive flag were all correct and the row still never
+  // appeared: a sidebar row needs a summary in the window's own list, and `orderByRecency` drops every id it has no
+  // summary for. The product loads a session through `sessions.retain`, the same call the sidebar makes when a row is
+  // opened — so the restore must make it, or the session stays invisible until something else opens it.
+  const mounted = mount({
+    menus: true,
+    slots: true,
+    answer: {
+      action: 'restore',
+      restored: [{ id: 'session-52546605-0c58-479b-8492-823df2aede8d', verified: true }],
+      // The same fake answers the listing the page loads first, so the row it restores exists to click.
+      trash: { root: 'x', retention_days: 30, limit: 200, count: 1, bytes: 2048, entries: [{ id: 'session-52546605-0c58-479b-8492-823df2aede8d', bytes: 2048, trashed_at: new Date().toISOString() }] },
+      refused: [],
+      failed: [],
+    },
+  })
+  const page = mounted.panels.get('settings.section|dsh-cleaner.trash')
+  const render = () => { mounted.react.beginRender(); return page.component() }
+  render()
+  await settle()
+  await settle()
+  findKey(render(), 'restore').props.onClick()
+  await settle()
+  await settle()
+  const loaded = mounted.retained.filter((call) => call.options?.source === 'dsh-cleaner.restore')
+  assert.deepEqual(loaded.map((call) => call.sessionId), ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the restored session was handed to the product to load')
+})

@@ -1,3 +1,15 @@
+## [0.5.36] - 2026-11-16
+
+- **A restore now asks the product to load the session it put back, so the row can exist.** With the files, the
+  projection, the membership and the archive flag all correct, the row still never appeared — the last gate is the
+  window's own list, and `orderByRecency` (read in `@deepseek-ai/dsh-client-ui-workspace`) drops every id it has no
+  summary for. The product loads a session through `sessions.retain(id, { source })` — the very call the sidebar makes
+  when a person opens a row (`uiWorkspace.replaceMain`) — and the restore now makes it for each id the Host restored.
+  A reference that cannot be retained costs the row, never the restore: the files are already back.
+- **Sessions restored with 0.5.35 or earlier are still unloaded** (yours: `dsh-search` and `dsh-memory`). Delete them
+  again and restore them from the 回收站 page — that restore loads them — or any click that opens the session does it.
+
+## [0.5.35] - 2026-11-16
 ## [0.5.35] - 2026-11-16
 
 - **The listing now reports what the product itself says.** The audit's rule — verify against the product's own record,
