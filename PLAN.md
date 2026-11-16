@@ -48,14 +48,20 @@ items that had gone stale were corrected rather than kept for the comfort of a l
       *Met:* the trash lists, restores and purges what it holds; nothing is deleted on a timer, and the sweep
       runs only when somebody looks.
 
-- [x] **The 回收站 page shows the limits it enforces** — the retention window and the cap, taken from the same
-      config the sweep and the cap read, on one line under the path (v0.5.30).
-      *Met:* a client test drives the page to its second render and asserts both numbers; a route test asserts the
-      trash answer carries them; the page test fails without the render change.
-
+- [x] **A restored session is a usable session, and the page keeps its own counsel about the store.** A restore
+      puts the log back, asks the workspace registry to claim it, rebuilds the agent through `agents.resume`, and asks
+      the window to open it ([ADR 0027](docs/adr/0027-a-restore-is-files-membership-and-an-agent.md)).
+      *Met:* the product's own record carries it — `workspace.json` → `tables.workspaces[<id>].sessionIds` holds the
+      restored id, `archivedSessionIds` holds neither, the log is back in the store, and `sessionQuery.listSessions()`
+      names it; a person's screenshot shows the row and a completed turn on it. The retention window and the cap left
+      the page at a person's request (v0.5.50) and are answered by the listing tool instead, so the page no longer
+      claims to show limits it draws nowhere.
 ## Still owed
 
-- Nothing. The next thing this file holds is a new item, not an old one.
+- **Two branches await a merge**: `fix/language-when-the-registration-is-refused` (v0.5.53) and
+  `docs/adr-0027-restore`. Both are pushed, both pass `scripts/check.mjs` and the suite locally, and neither was
+  merged blind: on 2026-11-16 `api.github.com` answered `EOF` for every request while SSH to `github.com` worked,
+  so neither the check runs nor the merge call could be read. Merge them when the API answers, in that order.
 
 ## Accepted, not work
 
