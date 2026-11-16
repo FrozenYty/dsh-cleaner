@@ -397,6 +397,33 @@ window.__ModuleLoader__.load({
          * id is the one the window shows.
          * @param sessionId - the session the deletion named.
          */
+        /**
+         * Hold a reference on a session an operation is about to remove.
+         *
+         * The client keeps one `SessionScope` per addressed id, and `retireScope` is what lets the id go: it calls
+         * `manager.drop`, and `projectList` rebuilds the list the sidebar draws from (`sessions.service`). Releasing
+         * the last reference is what retires that scope, so the row leaves at once instead of waiting for the next
+         * page load. The hold has to happen **before** the deletion, because afterwards there is no log to address.
+         */
+        const holdSession = (sessionId) => {
+          try {
+            const sessions = ctx.get('sessions')
+            return typeof sessions?.retain === 'function'
+              ? sessions.retain(sessionId, { source: 'controllerOperation' })
+              : undefined
+          } catch {
+            return undefined
+          }
+        }
+        /** Release a hold, best effort: a refused release costs the row, never the deletion that happened. */
+        const releaseHeld = (reference) => {
+          try {
+            reference?.release?.()
+          } catch {
+            // Nothing to do: the row leaves on the next load instead.
+          }
+        }
+
         const leaveDeletedSession = (sessionId) => {
           // A deleted id is the other thing worth watching: the window should stop naming it.
           state.observedIds = [sessionId]
@@ -430,8 +457,13 @@ window.__ModuleLoader__.load({
             return
           }
           state.lastClick = `asked for ${sessionId}`
+          const held = holdSession(sessionId)
           notify(text('notice.working', 'Deleting…'))
           void post('delete', { caller, ids: [sessionId] }).then(async (answer) => {
+            // The Host has answered, so the hold is no longer needed on either branch: a deletion that happened
+            // retires the window's scope for the id, and one that was refused keeps its row because the session is
+            // still there.
+            releaseHeld(held)
             if (answer.error === undefined) {
               const moved = Array.isArray(answer.removed) ? answer.removed.length : 0
               // The answer's own fields decide what happened; a reason string is not an interface. An id with no
@@ -861,8 +893,10 @@ window.__ModuleLoader__.load({
             setBusy(ids[0] ?? 'all')
             setConfirming(undefined)
             const caller = currentSessionId()
+            const held = op === 'delete' || op === 'purge' ? ids.map((id) => holdSession(id)) : []
             void post('trash', { op, ids, ...(caller === undefined ? {} : { caller }) }).then(async (answer) => {
               setBusy(undefined)
+              for (const reference of held) releaseHeld(reference)
               if (answer.error !== undefined) {
                 setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
                 return
