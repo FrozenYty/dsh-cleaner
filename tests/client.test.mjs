@@ -902,7 +902,7 @@ test('deleting the session on screen leaves its dead view, and nothing else does
   assert.deepEqual(refused.leaves, [], 'a refusal means the session is alive, so the page stays')
 })
 
-test('the limits are a tooltip, not a line on the page, and the rows lead with a name a person knows', async () => {
+test('the path is the only line under the rows, and the rows lead with a name a person knows', async () => {
   // The page answers two questions: what is in the trash, and what can I do about it. How long the bytes are held
   // and how many entries are kept answer neither of them every time it is opened, so they moved into the path's
   // tooltip — still there for whoever wants them, not competing with the list. The same reasoning takes the session
@@ -932,7 +932,12 @@ test('the limits are a tooltip, not a line on the page, and the rows lead with a
   const where = findKey(tree, 'where')
   assert.ok(where, 'the path line is there')
   assert.equal(where.children.join(''), 'D:\\somewhere\\cleaner\\trash', 'the path is the first line, and nothing else is on it')
-  assert.match(String(where.props.title), /7 days · at most 50 entries|Kept 7 days · at most 50 entries/, 'the numbers are in the tooltip')
+  // The retention window and the cap are not shown at all: a person asked for the sentence to go, and the listing
+  // tool still answers both numbers. Nothing on this page may carry them.
+  assert.equal(where.props.title, undefined, 'the path line carries no tooltip')
+  const rendered = JSON.stringify(tree)
+  assert.ok(!rendered.includes('at most 50'), 'the cap is not rendered anywhere')
+  assert.ok(!rendered.includes('最多'), 'and neither is its Chinese form')
   assert.match(String(findKey(findKey(tree, 'session-abcdef12-3456-7890-abcd-ef1234567890'), 'title').children.join('')), /Untitled [0-9a-f]{8}/, 'a row without a title keeps a short id to tell it apart')
 })
 

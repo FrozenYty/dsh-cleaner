@@ -1,3 +1,11 @@
+## [0.5.50] - 2026-11-16
+
+- **The retention window and the cap are no longer shown on the trash page at all.** They used to be the tooltip on the
+  path line, and a person asked for them to go: the path stays, the sentence does not. Both numbers remain in the
+  listing tool's own answer, where they belong — they describe the store, not something a person needs on screen. The
+  test that used to require the tooltip now requires the page to carry neither number in either language.
+
+## [0.5.49] - 2026-11-16
 ## [0.5.49] - 2026-11-16
 
 - **A deletion now leaves the window's own list too, which is what stops a deleted row from reappearing under the
