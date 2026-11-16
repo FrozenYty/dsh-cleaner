@@ -1,3 +1,15 @@
+## [0.5.47] - 2026-11-16
+
+- **The trash page speaks the window's language again, from the plugin's own table.** The dictionary was registered, the
+  registration was in an effect, and every string the page asked for still fell back to the English text written at the
+  call site — because `text()` consulted the locale service first and used the caller's English as its last resort, while
+  the plugin's own zh table sat unused beside it. `text()` now reads that table first, keyed by the live
+  `locale.getLocale().active`, and only when the locale is known: an unknown one must not overrule a service that can
+  answer. A dictionary registration refused as a duplicate (an earlier load of the same half leaves one behind) no longer
+  costs a person their language. The state line now reports the active locale as well, so the language question is
+  answerable from the Host without a click.
+
+## [0.5.46] - 2026-11-16
 ## [0.5.46] - 2026-11-16
 
 - **A restore now re-reads the session list, which is where the row comes from.** From the live Client inspection: the

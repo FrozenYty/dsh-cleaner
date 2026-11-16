@@ -251,6 +251,9 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
         // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
         // the product's own fallback (an untranslated language lands on `en`).
         return {
+          // The live snapshot the real service publishes: `text` prefers the plugin's own table when the active
+          // locale is known, so the fixture must answer this or that path stays untested.
+          getLocale: () => ({ active: String(locale ?? 'en'), locales: [], revision: 1 }),
           register: (ns, dicts) => {
             dictionaries.set(ns, dicts)
             return () => dictionaries.delete(ns)
