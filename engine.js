@@ -202,9 +202,23 @@ async function readProjectionTitle(cacheDir, id) {
  * @returns the row's string value, or undefined when it is missing or not a string.
  */
 async function readProjectionRow(cacheDir, id, row) {
+  return readProjectionFile(join(cacheDir, `${encodeSegment(id)}.json`), row)
+}
+
+/**
+ * One string row out of a projection file, at whatever path it currently lives.
+ *
+ * The same reader as `readProjectionRow`, because a projection is read in two places: the cache, where the file is
+ * named after the session, and a trash folder, where the deletion stored it as `projection.json`. One JSON walk,
+ * two paths.
+ * @param file - the projection file.
+ * @param row - the row name, as the runtime spells it.
+ * @returns the row's string value, or undefined when it is missing or not a string.
+ */
+async function readProjectionFile(file, row) {
   let text
   try {
-    text = await readFile(join(cacheDir, `${encodeSegment(id)}.json`), 'utf8')
+    text = await readFile(file, 'utf8')
   } catch {
     return undefined
   }
@@ -889,7 +903,12 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
     // The derived record goes back before the directory does: once `held` has moved, the folder that carries the
     // projection is gone. Written back first, and only when the deletion had taken one.
     let projectionRestored = false
+    // The workspace the session came from, which the caller needs to put it back into the sidebar: recorded by the
+    // deletion when it could, otherwise read from the projection — and read **here**, before the move, because the
+    // held copy is what carries it. Best-effort either way: a restore without it is still a restore.
+    let workspace = entry.workspace
     if (typeof entry.projection_path === 'string' && entry.projection_path.length > 0) {
+      if (workspace === undefined) workspace = await readProjectionFile(join(held, 'projection.json'), 'workingDirectory')
       try {
         await mkdir(dirname(entry.projection_path), { recursive: true })
         await moveAcrossDevices(join(held, 'projection.json'), entry.projection_path)
@@ -922,7 +941,7 @@ export async function restoreFromTrash(trashRoot, sessionsRoot, ids) {
       verified: landed.ok,
       ...(entry.projection_path === undefined ? {} : { projection: projectionRestored }),
       title: entry.title,
-      ...(entry.workspace === undefined ? {} : { workspace: entry.workspace }),
+      ...(workspace === undefined ? {} : { workspace }),
     })
   }
   await writeTrashIndex(trashRoot, remaining)
