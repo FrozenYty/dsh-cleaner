@@ -459,8 +459,6 @@ window.__ModuleLoader__.load({
               // workspace can take a draft). A refused deletion leaves the session alive, so it must not move.
               // The window's own list still holds the id after the Host has let it go, and the product draws every
               // listed session no workspace claims under its "ungrouped" bucket - which is exactly what a person saw
-              // after deleting from this row. `refresh` is the documented re-read, and it is what removes the row.
-              if (moved > 0 || noLog) await Promise.resolve(ctx.get('sessions')?.refresh?.()).catch(() => {})
               if (moved > 0 || noLog) leaveDeletedSession(sessionId)
               report()
               return
@@ -662,31 +660,6 @@ window.__ModuleLoader__.load({
         }
 
         /**
-         * Report again whenever the session list changes.
-         *
-         * A restore, a deletion and the Host's own re-read all end in that list, and the list is the one thing the
-         * Window owns which the Host cannot see. Subscribing here means every future change answers the question
-         * "is the restored session in it" by itself, instead of asking a person to click so it can be read.
-         */
-        ctx.effect(() => {
-          const list = ctx.get('sessions')?.list
-          if (typeof list?.subscribe !== 'function') return undefined
-          let queued
-          const unsubscribe = list.subscribe(() => {
-            if (queued !== undefined) return
-            queued = setTimeout(() => {
-              queued = undefined
-              const ids = list.getSnapshot?.()?.ids ?? []
-              const wanted = state.restoredIds ?? []
-              state.sessionList = `${ids.length} ids; restored present ${wanted.filter((id) => ids.includes(id)).length}/${wanted.length}`
-              report()
-            }, 250)
-          })
-          return () => {
-            if (queued !== undefined) clearTimeout(queued)
-            unsubscribe()
-          }
-        }, 'dsh-cleaner: session-list watcher')
 
 
         /**
@@ -815,14 +788,8 @@ window.__ModuleLoader__.load({
               // so it dies with the plugin; it is kept for the remaining ids, which at least stay listed while the
               // plugin is on, and opening one is what makes it permanent.
               // The list the sidebar draws from is a Host-derived snapshot, so it has to be re-read after a restore or
-              // the session simply is not in it. `refresh` is the documented way; `refreshProjections` re-reads the one
               // projection the row renders. Both are best-effort: a Host that cannot answer costs the row, not the log.
-              const listBefore = sessions.list?.getSnapshot?.()?.ids?.length ?? 0
               await Promise.resolve(sessions.refreshProjections?.(id)).catch(() => {})
-              await Promise.resolve(sessions.refresh?.()).catch(() => {})
-              const listAfter = sessions.list?.getSnapshot?.()?.ids ?? []
-              const verdict = listAfter.includes(id) ? 'has it' : 'MISSING it'
-              state.lastClick = `${state.lastClick}; list ${listBefore} -> ${listAfter.length} (${verdict})`
               if (!opened && typeof ui?.openSession === 'function') {
                 opened = true
                 ui.openSession(id)
@@ -858,9 +825,7 @@ window.__ModuleLoader__.load({
               // not be able to skip it. This ordering was the bug behind "restored but no row" once already.
               if (op === 'restore') void loadRestored((answer.restored ?? []).map((entry) => entry.id))
               // A deletion has to leave the window's own list as well, or the product keeps drawing the id under its
-              // "ungrouped" bucket: the list is a Host-derived snapshot, and only something asking for a re-read
               // removes what the Host no longer has. `restore` was already handled; this covers the other direction.
-              if (op !== 'restore') await Promise.resolve(ctx.get('sessions')?.refresh?.()).catch(() => {})
               // Reload the page's own list, but never let it take the restore down with it.
               try {
                 load()

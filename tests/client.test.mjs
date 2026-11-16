@@ -221,9 +221,8 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
         if (sessions === 'absent') return undefined
         // The documented shape: retain a session, await the binding, run a command in it, release it.
         return {
-        // The list the sidebar draws from is a Host-derived snapshot, so a restore has to re-read it.
-        list: { getSnapshot: () => ({ ids: [], byId: {} }) },
-        refresh: async () => { refreshed.push('list') },
+        // Exactly the face the live runtime publishes: no `list`, no `refresh()` - a fixture that offers more
+        // than the product hides every call the product does not have.
         refreshProjections: async (id) => { refreshed.push(id) },
           retain: (sessionId, options) => {
             retained.push({ sessionId, options })
@@ -1060,6 +1059,7 @@ test('a restore asks the product to load what it put back, so the row can exist'
   // rather than merely retained. A person measured the difference: the session they chatted with survived the
   // plugin being switched off, the untouched one vanished.
   assert.deepEqual(mounted.opens, ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the first restored session is opened, which is what keeps its row')
-  // The row only exists in a list that was re-read after the restore: refresh is the documented way.
-  assert.deepEqual(mounted.refreshed, ['session-52546605-0c58-479b-8492-823df2aede8d', 'list'], 'the projection and the shared list were re-read')
+  // Only `refreshProjections` exists on the client `sessions` face - there is no `refresh()` to call, and
+  // the fixture no longer pretends otherwise. The row itself comes from opening the session, above.
+  assert.deepEqual(mounted.refreshed, ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the projection was re-read, and nothing else was asked of a face that has nothing else')
 })
