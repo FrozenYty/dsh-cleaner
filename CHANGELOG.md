@@ -1,3 +1,13 @@
+## [0.5.55] - 2026-11-16
+
+- **A deleted session's row leaves the window at once, without a reload.** The client keeps one `SessionScope` per
+  addressed id and rebuilds the list the sidebar draws from whenever the manager changes; `retireScope` is what lets an
+  id go, and it runs when the **last reference** to it is released. So the half now holds a reference across the
+  deletion — `sessions.retain(id, { source: 'controllerOperation' })` before the call, because afterwards there is no
+  log left to address — and releases it as soon as the Host answers, on either branch. Releasing the last reference is
+  what makes the row disappear immediately; without it the row waited for the next page load, which is what a person
+  saw as a deleted session sitting under "ungrouped". The test fails without the release.
+
 ## [0.5.54] - 2026-11-16
 
 - **A deleted session lets go of its agent, which is what actually removes its row from the window.** A person deleted

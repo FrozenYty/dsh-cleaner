@@ -374,7 +374,7 @@ test('the bundle half requires nothing', () => {
 test('a session menu item deletes through the host route, naming the target and the caller', async () => {
   // The caller is the session the window is showing: the host protects that one, and it is the only thing a
   // route has instead of an agent. The target travels in the same body — one request, one act.
-  const { registrations, requests } = mount({ menus: true, current: 'session-open-1' })
+  const { registrations, requests, retained, released } = mount({ menus: true, current: 'session-open-1' })
 
   const entry = registrations.get('dsh-cleaner.delete-log')
   assert.equal(entry.target, 'session')
@@ -403,6 +403,13 @@ test('a session menu item deletes through the host route, naming the target and 
   // No target, no item: the menu must not offer a deletion it cannot name.
   assert.equal(entry.resolve(undefined).length, 0)
   assert.equal(entry.resolve({}).length, 0)
+
+  // The row leaves at once because the window held a reference on the session across the deletion and released it:
+  // releasing the last one retires the client's scope for that id, and `retireScope` is what drops it from the list
+  // the sidebar draws (`manager.drop` -> `projectList`). Without the release the row waits for the next page load.
+  assert.equal(retained.filter((entry) => entry.sessionId === 'session-other-1').length, 1,
+    'the session was held once, before the deletion')
+  assert.ok(released.includes('session-other-1'), 'and released after it, which is what removes the row')
 })
 
 test('the row is offered without asking the host anything', () => {
