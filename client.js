@@ -207,6 +207,10 @@ window.__ModuleLoader__.load({
           unavailable: text('trash.unavailable', 'Host half not loaded — restart to use this page.'),
           bytes: text('trash.bytes', 'bytes'),
           limits: text('trash.limits', 'Kept {days} days · at most {limit} entries'),
+          confirm: text('trash.confirm', 'Confirm'),
+          restoreAll: text('trash.restoreAll', 'Restore all'),
+          purgeAll: text('trash.purgeAll', 'Empty the trash'),
+          confirmAll: text('trash.confirmAll', 'Delete {n} for good?'),
           today: text('trash.today', 'today'),
           yesterday: text('trash.yesterday', 'yesterday'),
           unnamed: text('trash.unnamed', 'Untitled'),
@@ -232,6 +236,10 @@ window.__ModuleLoader__.load({
               'trash.unavailable': 'Host half not loaded — restart to use this page.',
               'trash.bytes': 'bytes',
               'trash.limits': 'Kept {days} days · at most {limit} entries',
+              'trash.confirm': 'Confirm',
+              'trash.restoreAll': 'Restore all',
+              'trash.purgeAll': 'Empty the trash',
+              'trash.confirmAll': 'Delete {n} for good?',
               'trash.today': 'today',
               'trash.yesterday': 'yesterday',
               'trash.unnamed': 'Untitled',
@@ -256,6 +264,10 @@ window.__ModuleLoader__.load({
               'trash.unavailable': '宿主半边未加载，重启后可用。',
               'trash.bytes': '字节',
               'trash.limits': '保留 {days} 天 · 最多 {limit} 条',
+              'trash.confirm': '确认删除',
+              'trash.restoreAll': '全部恢复',
+              'trash.purgeAll': '清空回收站',
+              'trash.confirmAll': '确认永久删除 {n} 条？',
               'trash.today': '今天',
               'trash.yesterday': '昨天',
               'trash.unnamed': '未命名会话',
@@ -644,6 +656,18 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The last segment of a workspace path, which is the name a person uses for it.
+         *
+         * The stored value is a path, because that is the fact; `D:\MYPROJS\DSH_FILES\dsh-team-roster` is shown as
+         * `dsh-team-roster`, and a path that ends in a separator (a drive root) keeps its last real segment.
+         */
+        const workspaceName = (path) => {
+          if (typeof path !== 'string' || path.trim() === '') return undefined
+          const parts = path.trim().split(/[\\/]+/).filter((part) => part !== '')
+          return parts.length === 0 ? path.trim() : parts[parts.length - 1]
+        }
+
+        /**
          * A deletion time in the window's own clock, the way a person says it.
          *
          * `2026-11-16T02:16:36.066Z` is a timestamp for a log, not for a person: it is in UTC, it carries
@@ -683,6 +707,9 @@ window.__ModuleLoader__.load({
         function TrashPanel() {
           const [state, setState] = React.useState({ status: 'loading', entries: [], swept: [], error: undefined })
           const [busy, setBusy] = React.useState(undefined)
+          // Which purge is waiting for its second click: `purge:<id>` for a row, `purge-all` for the header. One
+          // at a time, deliberately — a question asked twice at once is a question nobody answers.
+          const [confirming, setConfirming] = React.useState(undefined)
 
           const load = () => {
             const caller = currentSessionId()
@@ -706,10 +733,11 @@ window.__ModuleLoader__.load({
 
           React.useEffect(load, [])
 
-          const act = (op, id) => {
-            setBusy(id)
+          const act = (op, ids) => {
+            setBusy(ids[0] ?? 'all')
+            setConfirming(undefined)
             const caller = currentSessionId()
-            void post('trash', { op, ids: [id], ...(caller === undefined ? {} : { caller }) }).then((answer) => {
+            void post('trash', { op, ids, ...(caller === undefined ? {} : { caller }) }).then((answer) => {
               setBusy(undefined)
               if (answer.error !== undefined) {
                 setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
@@ -719,8 +747,24 @@ window.__ModuleLoader__.load({
             })
           }
 
+          /**
+           * Purge, but only on the second click.
+           *
+           * Purging is the one action on this page that cannot be undone — a restore is always available and a
+           * deletion is recoverable — so it is the one that has to ask. Asking in place (the button becomes its own
+           * confirmation) keeps a mis-click recoverable without a dialog in the middle of a settings page, and any
+           * other action clears the question.
+           * @param op - `purge`, or `purge-all` for the header button.
+           * @param ids - what the second click would free.
+           */
+          const askThen = (op, ids) => {
+            if (confirming === op) act('purge', ids)
+            else setConfirming(op)
+          }
+
           const words = labels()
           const totalBytes = state.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
+          const allIds = state.entries.map((entry) => entry.id)
           const rows = state.entries.map((entry) => h('div', {
             key: entry.id,
             style: {
@@ -741,18 +785,18 @@ window.__ModuleLoader__.load({
                 key: 'meta',
                 title: entry.trashed_at === undefined ? undefined : String(entry.trashed_at),
                 style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #9a9a9a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-              }, `${formatBytes(entry.bytes)} · ${when(entry.trashed_at)}`),
+              }, [workspaceName(entry.workspace), formatBytes(entry.bytes), when(entry.trashed_at)].filter(Boolean).join(' · ')),
             ]),
             h('button', {
               key: 'restore', type: 'button', disabled: busy !== undefined,
-              onClick: () => act('restore', entry.id),
+              onClick: () => act('restore', [entry.id]),
               style: buttonStyle(false),
             }, words.restore),
             h('button', {
               key: 'purge', type: 'button', disabled: busy !== undefined,
-              onClick: () => act('purge', entry.id),
-              style: buttonStyle(true),
-            }, words.purge),
+              onClick: () => askThen(`purge:${entry.id}`, [entry.id]),
+              style: buttonStyle(confirming === `purge:${entry.id}`),
+            }, confirming === `purge:${entry.id}` ? words.confirm : words.purge),
           ]))
 
           const body = state.status === 'loading'
@@ -768,9 +812,26 @@ window.__ModuleLoader__.load({
               h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
               // What the page holds, at a glance: a number and a size answer "is there anything to do here?" before
               // the list is read row by row.
-              h('span', { key: 'count', style: { ...mutedStyle, fontSize: '11px' } }, state.status === 'ready'
+              h('span', { key: 'count', style: { ...mutedStyle, fontSize: '11px', flex: '1 1 auto' } }, state.status === 'ready'
                 ? `${words.count.replace('{n}', String(state.entries.length))} · ${formatBytes(totalBytes)}`
                 : ''),
+              // The two things a person comes here to do in bulk. Restoring is safe and always offered; emptying the
+              // trash is the one irreversible action, so it asks in place — the button becomes the question, and any
+              // other click clears it.
+              ...(state.entries.length === 0 ? [] : [
+                h('button', {
+                  key: 'restore-all', type: 'button', disabled: busy !== undefined,
+                  onClick: () => act('restore', allIds),
+                  style: buttonStyle(false),
+                }, words.restoreAll),
+                h('button', {
+                  key: 'purge-all', type: 'button', disabled: busy !== undefined,
+                  onClick: () => askThen('purge-all', allIds),
+                  style: buttonStyle(confirming === 'purge-all'),
+                }, confirming === 'purge-all'
+                  ? words.confirmAll.replace('{n}', String(state.entries.length))
+                  : words.purgeAll),
+              ]),
             ]),
             ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
               words.swept.replace('{n}', String(state.swept.length)))]),

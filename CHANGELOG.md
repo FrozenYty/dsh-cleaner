@@ -1,3 +1,16 @@
+## [0.5.32] - 2026-11-16
+
+- **Purging asks in place, the trash can be emptied or restored in one action, and each row names its workspace.**
+  Purging is the only thing on this page that cannot be undone — a restore always is, a deletion is recoverable —
+  so its button becomes its own confirmation on the first click and acts on the second, and any other click takes
+  the question back. The header carries the two bulk actions: **全部恢复** in one call, and **清空回收站**, which asks
+  first and names what it would free (`确认永久删除 3 条？`).
+- **Each row says where the session came from**, because two sessions can carry the same title in different projects:
+  the workspace is read from the projection at the moment of the deletion, travels in the trash index, and is shown
+  as the last segment of the path (`dsh-team-roster`, `MYPROJS`) — the same read that supplies the title, now one
+  function instead of a copy of the JSON walk per fact.
+
+## [0.5.31] - 2026-11-16
 ## [0.5.31] - 2026-11-16
 
 - **The 回收站 rows now read like a list a person can scan.** The deletion time was the stored timestamp

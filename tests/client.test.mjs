@@ -955,3 +955,58 @@ test('a deletion time is said the way a person says it, and the exact value stay
   assert.match(said, /^\d+(\.\d+)? (B|KiB|MiB) · (\d\d-\d\d|\d{4}-\d\d-\d\d|today|昨天|今天) \d\d:\d\d$/, `a size and a clock time, not a timestamp: ${said}`)
   assert.equal(meta.props.title, threeDaysAgo, 'the exact value is still there for whoever wants it')
 })
+
+
+test('purging asks in place, the bulk actions use every id, and a row names its workspace', async () => {
+  // Three facts a person's hand depends on: the irreversible action needs two clicks, the bulk actions mean all of
+  // it, and a row says which workspace it came from — two sessions can carry the same title in different projects.
+  const entries = [
+    { id: 'session-aaaa1111-0000-0000-0000-000000000001', title: 'same name', workspace: 'D:\\MYPROJS\\DSH_FILES\\dsh-team-roster', bytes: 2048, trashed_at: new Date().toISOString() },
+    { id: 'session-bbbb2222-0000-0000-0000-000000000002', title: 'same name', workspace: 'D:\\MYPROJS', bytes: 1024, trashed_at: new Date().toISOString() },
+  ]
+  const mounted = mount({ menus: true, slots: true, answer: { action: 'list', trash: { root: 'x', retention_days: 30, limit: 200, count: 2, entries }, swept: [] } })
+  const page = mounted.panels.get('settings.section|dsh-cleaner.trash')
+  // Every render starts a hook cursor, exactly as React does; the fixture's cells are what survives.
+  const render = () => {
+    mounted.react.beginRender()
+    return page.component()
+  }
+  render()
+  await settle()
+  await settle()
+  const tree = render()
+
+  // Each row says where it came from, in the word a person uses for it — the last segment of the path.
+  const metas = entries.map((entry) => findKey(findKey(tree, entry.id), 'meta').children.join(''))
+  assert.match(metas[0], /^dsh-team-roster · /, 'the workspace is the row\'s first word')
+  assert.match(metas[1], /^MYPROJS · /, 'and a drive-root workspace still has a name')
+
+  const purges = () => mounted.requests.filter((call) => !call.url.endsWith('/state') && call.body?.op === 'purge')
+  assert.equal(purges().length, 0, 'nothing purged yet')
+  findKey(findKey(tree, entries[0].id), 'purge').props.onClick()   // the first click only asks
+  assert.equal(purges().length, 0, 'one click purges nothing')
+  const asked = findKey(findKey(render(), entries[0].id), 'purge')
+  assert.equal(asked.children.join(''), 'Confirm', 'the button becomes the question')
+  asked.props.onClick()                                            // the second click does it
+  await settle()
+  await settle()
+  assert.equal(purges().length, 1, 'the second click purges')
+  assert.deepEqual(purges()[0].body.ids, [entries[0].id])
+
+  // The header actions mean every row: restore-all is one call, empty-the-trash asks first and names the count.
+  const bulk = render()
+  findKey(bulk, 'restore-all').props.onClick()
+  await settle()
+  await settle()
+  const restores = mounted.requests.filter((call) => call.body?.op === 'restore')
+  assert.deepEqual(restores[0].body.ids, [entries[0].id, entries[1].id], 'restore-all names both')
+  const before = purges().length
+  findKey(render(), 'purge-all').props.onClick()
+  assert.equal(purges().length, before, 'empty-the-trash asks first')
+  const confirmAll = findKey(render(), 'purge-all')
+  assert.match(confirmAll.children.join(''), /Delete 2 for good\?/, 'the question names how many it would free')
+  confirmAll.props.onClick()
+  await settle()
+  await settle()
+  assert.equal(purges().length, before + 1, 'the second click empties it')
+})

@@ -203,3 +203,12 @@ Dates are the commit dates, in the order the work happened.
   counts what it holds. Both new tests were confirmed red without the change; the first attempt at the tooltip test
   passed vacuously — a `split('"title"')` cut a prefix that ended before the line, so the assertion was replaced with a
   walk to the node by `key`, which cannot pass while the line is there. `npm test` at 128 tests / 125 pass.
+
+- **The trash page's safety and bulk actions, from the design conversation.** Three choices were put to him and he
+  took all three: confirm in place, both bulk actions, and the workspace on the row. Purging is the only irreversible
+  action on the page, so it now takes two clicks and the question is dropped by any other action; **全部恢复** sends
+  every id in one call; **清空回收站** asks and names the count it would free; and each row leads with the workspace,
+  read from the projection at deletion time (`workingDirectory`, the same row `title` comes from) and stored in the
+  trash index. That read was one function per fact and is now one function with the row name as a parameter.
+  Proven red without the change — the row's meta line rendered `2.0 KiB · today 11:04` with no workspace — and green
+  after it; the suite is at 129 tests / 126 pass, `node scripts/check.mjs` passed.
