@@ -1,3 +1,15 @@
+## [0.5.40] - 2026-11-16
+
+- **A restore now resumes an agent on the session, which is what makes it usable again — and the row follows.** The
+  earlier attempt entered a bare `Session` with `sessions.prepare`/`enter`/`announce`: the row appeared, and every
+  prompt was then rejected as `prompt rejected (session/agent-busy)`, because a session no agent owns is not runnable.
+  Read from the installed package: `dsh-agent`'s README and `AgentRegistry.resume` — "load a persisted session and
+  resume an agent on it through the registered factory" — which is the operation a person's click performs. A restore
+  calls `ctx.agents.resume({ sessionId })` for each id it put back, and the ledger replay at load does the same, so a
+  restored session is listed, owned and promptable.
+- The listing also reports `live_agents`, so the state a row and a prompt both depend on is readable from the answer.
+
+## [0.5.39] - 2026-11-16
 ## [0.5.39] - 2026-11-16
 
 - **A restored session survives a restart, because the plugin remembers what it restored.** Read from the version that
