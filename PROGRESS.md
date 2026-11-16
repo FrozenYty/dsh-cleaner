@@ -319,3 +319,9 @@ Dates are the commit dates, in the order the work happened.
   were always back (the live Host showed trash count 0, both members and ten live agents after his attempt). Fixed by
   putting the hand-off first and wrapping the reload. The general shape, again: the plugin's own answer was right and the
   window-side step was never reached, and only a readable report from that side could show it.
+
+- **Two restores in a row proved the window half was not running my code, and I had no way to see it without another
+  click.** The Host emptied the trash, kept the membership and resumed the agent both times, while `lastClick` kept an
+  older sentence: the writes were happening in a different closure, or in an older module. So 0.5.45 makes the half state
+  its own version (`handoff`) and its available levers at load. The lesson, for the third time tonight, is the same: when
+  a component cannot be observed, every change to it is a guess — build the observation first.

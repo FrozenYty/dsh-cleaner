@@ -1,3 +1,13 @@
+## [0.5.45] - 2026-11-16
+
+- **The window half now reports its own version and whether it holds the two levers, at load.** Two restores in a row
+  showed the Host carrying the work out (trash emptied, membership and agent in place) while the window's `lastClick`
+  still held a sentence from an earlier click — which can only mean the window is not running this half's current code,
+  and there was no way to see that without asking a person to click again. The state now carries `handoff` (a marker only
+  this version sets) and `levers` (whether `sessions.retain` and `uiWorkspace.openSession` are reachable at all), so one
+  page refresh answers both questions and nobody has to click twice to be understood. The Host's state line prints both.
+
+## [0.5.44] - 2026-11-16
 ## [0.5.44] - 2026-11-16
 
 - **The hand-off now runs before the page reloads its own list, and a listing that throws cannot skip it.** In `act`,
