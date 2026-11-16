@@ -354,6 +354,33 @@ async function writeRestoredLedger(add = [], drop = []) {
  * dozen live agents that nobody was using. A restore click passes `false`: the session was put back a moment ago,
  * so the product knows nothing about it and it must be built here and now.
  */
+/**
+ * The agent handles this plugin built, so it can let them go again.
+ *
+ * `agents.resume` returns a handle and the first version of this file **dropped it on the floor**: the agent then
+ * outlives the session it was built for, and the window keeps drawing that session - the live Host showed two
+ * deleted sessions among 62 window-listed ids while the Host's own list held 60. An agent this plugin built is this
+ * plugin's to dispose, on the deletion that removed the session and on the unload that ends the plugin.
+ */
+const liveHandles = new Map()
+
+/** Dispose the handles for these ids, best effort, and forget them. */
+async function releaseHandles(ids) {
+  const released = []
+  for (const id of new Set(ids)) {
+    const dispose = liveHandles.get(id)
+    if (dispose === undefined) continue
+    liveHandles.delete(id)
+    try {
+      await dispose()
+      released.push(id)
+    } catch {
+      // A handle that refuses to dispose costs a live agent, never the deletion that already happened.
+    }
+  }
+  return released
+}
+
 async function enterRestored(ctx, ids, onlyIfBusy = false) {
   const agents = ctx.get('agents')
   if (typeof agents?.resume !== 'function') return { skipped: [...new Set(ids)], reason: 'the Host exposes no agents.resume' }
@@ -368,6 +395,10 @@ async function enterRestored(ctx, ids, onlyIfBusy = false) {
         continue
       }
       if (onlyIfBusy && sessions?.store?.get?.(id) === undefined) {
+        // No Session object in this process, so nothing needs the agent an earlier load built for it. Letting it go
+        // here is the mirror of the rule above, and it is what heals the two ids this file had already leaked: an
+        // agent with no session behind it keeps the window drawing a row the Host no longer has.
+        await releaseHandles([id])
         skipped.push(id)
         continue
       }
@@ -375,7 +406,9 @@ async function enterRestored(ctx, ids, onlyIfBusy = false) {
       // operation a person's click performs. Entering a bare Session was not enough: a session with no agent is
       // listed and then rejects every prompt as `session/agent-busy`, which is exactly what a person saw.
       // The option is `resumeSessionId`, read from the loop factory itself: `resumeWith` takes `options.resumeSessionId`.
-      await agents.resume({ resumeSessionId: id })
+      const handle = await agents.resume({ resumeSessionId: id })
+      const dispose = handle?.dispose ?? handle?.[Symbol.asyncDispose]
+      if (typeof dispose === 'function') liveHandles.set(id, dispose)
       resumed.push(id)
     } catch (error) {
       failed.push({ id, error: error instanceof Error ? error.message : String(error) })
@@ -718,6 +751,9 @@ async function deleteLogs(ctx, exec, requested) {
   const unarchived = await unarchiveSessions(ctx, drop)
   // And the live session object itself: a live session is listed by every window until the store lets it go, and
   // `detachEntered` is the product's own removal — it emits `session/disposed`, which is what removes the row now.
+  // A deleted session's agent is what kept it in the window's list: the Host's own list held 60 ids while the
+  // window held 62, and the extra two were sessions this plugin had resumed and never let go.
+  const agentsLetGo = await releaseHandles(drop)
   const live = await releaseLiveSessions(ctx, drop)
   // Ask the host what it still lists: that answer is reported either way, and it is the difference between
   // "the host let go" and "the host still holds it in memory".
@@ -1032,6 +1068,12 @@ export function apply(ctx, config) {
       // A replay that fails costs the rows, never the load: the sessions are on disk and accounted already.
     }
   })()
+  // Whatever this plugin built, it lets go of when it unloads: the sessions, the logs and the memberships stay,
+  // because those are the product's records and not this plugin's memory.
+  ctx.effect(() => () => {
+    void releaseHandles([...liveHandles.keys()])
+  }, 'dsh-cleaner: agent handles')
+
   ctx.tools.register(defineTool({
     name: 'list_session_logs',
     description:
