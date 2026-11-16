@@ -733,6 +733,33 @@ window.__ModuleLoader__.load({
 
           React.useEffect(load, [])
 
+        /**
+         * Ask the product to load a session a restore just put back.
+         *
+         * This is the half that was still missing after the files, the projection, the membership and the archive flag
+         * were all correct: a sidebar row needs a summary in the window's own list, and a session the window has never
+         * loaded has none — `orderByRecency` drops every id it has no summary for, which is why a restored session kept
+         * being invisible even after a reload. The product's own answer is `sessions.retain(id, { source })`, the very
+         * call `uiWorkspace.replaceMain` makes when a person opens a row: it loads the session through the Host, and
+         * the Host entering and announcing it is what puts it in the list. A reference whose `release` exists is kept
+         * for this page only, so the load is not mistaken for "this is the session on screen".
+         * @param ids - the sessions the Host reported as restored.
+         */
+        const loadRestored = (ids) => {
+          try {
+            const sessions = ctx.get('sessions')
+            if (typeof sessions?.retain !== 'function') return
+            for (const id of ids) {
+              const reference = sessions.retain(id, { source: 'dsh-cleaner.restore' })
+              // Held, not released: releasing would let the store unload the very session whose row we just asked
+              // for, and the page is closed long before that matters.
+              void reference
+            }
+          } catch {
+            // A window that cannot load it still got the files back; the restore is not failed by a list.
+          }
+        }
+
           const act = (op, ids) => {
             setBusy(ids[0] ?? 'all')
             setConfirming(undefined)
@@ -744,6 +771,7 @@ window.__ModuleLoader__.load({
                 return
               }
               load()
+              if (op === 'restore') loadRestored((answer.restored ?? []).map((entry) => entry.id))
             })
           }
 
