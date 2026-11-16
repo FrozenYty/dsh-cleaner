@@ -206,8 +206,12 @@ window.__ModuleLoader__.load({
           loading: text('trash.loading', 'Reading the trash…'),
           unavailable: text('trash.unavailable', 'Host half not loaded — restart to use this page.'),
           bytes: text('trash.bytes', 'bytes'),
-          trashed: text('trash.trashed', 'deleted'),
           limits: text('trash.limits', 'Kept {days} days · at most {limit} entries'),
+          today: text('trash.today', 'today'),
+          yesterday: text('trash.yesterday', 'yesterday'),
+          unnamed: text('trash.unnamed', 'Untitled'),
+          count: text('trash.count', '{n} entries'),
+          swept: text('trash.swept', '{n} entries expired and were removed'),
         })
 
         /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
@@ -227,8 +231,12 @@ window.__ModuleLoader__.load({
               'trash.loading': 'Reading the trash…',
               'trash.unavailable': 'Host half not loaded — restart to use this page.',
               'trash.bytes': 'bytes',
-              'trash.trashed': 'deleted',
               'trash.limits': 'Kept {days} days · at most {limit} entries',
+              'trash.today': 'today',
+              'trash.yesterday': 'yesterday',
+              'trash.unnamed': 'Untitled',
+              'trash.count': '{n} entries',
+              'trash.swept': '{n} entries expired and were removed',
               'notice.deleted': 'Deleted',
               'notice.kept': 'Not deleted',
               'notice.gone': 'No log — row removed',
@@ -247,8 +255,12 @@ window.__ModuleLoader__.load({
               'trash.loading': '正在读取回收站……',
               'trash.unavailable': '宿主半边未加载，重启后可用。',
               'trash.bytes': '字节',
-              'trash.trashed': '删除于',
               'trash.limits': '保留 {days} 天 · 最多 {limit} 条',
+              'trash.today': '今天',
+              'trash.yesterday': '昨天',
+              'trash.unnamed': '未命名会话',
+              'trash.count': '{n} 条',
+              'trash.swept': '{n} 条已过期并清理',
               'notice.deleted': '已删除',
               'notice.kept': '未删除',
               'notice.gone': '无日志，已移出列表',
@@ -632,6 +644,36 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * A deletion time in the window's own clock, the way a person says it.
+         *
+         * `2026-11-16T02:16:36.066Z` is a timestamp for a log, not for a person: it is in UTC, it carries
+         * milliseconds nobody asked for, and the `T` and `Z` are punctuation from a format, not words. So: today and
+         * yesterday keep the day as a word, anything older in this year drops the year, and another year keeps it —
+         * `今天 10:16`, `昨天 22:41`, `11-14 09:03`, `2025-12-01 09:03` — always in local time, and the exact value
+         * stays in the row's tooltip for whoever wants it.
+         * @param iso - the stored timestamp.
+         * @param now - the clock to measure "today" against, so a test can pin it.
+         */
+        const when = (iso, now = Date.now()) => {
+          const at = Date.parse(String(iso ?? ''))
+          if (!Number.isFinite(at)) return '—'
+          const date = new Date(at)
+          const clock = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+          const midnight = (ms) => {
+            const mark = new Date(ms)
+            mark.setHours(0, 0, 0, 0)
+            return mark.getTime()
+          }
+          const today = midnight(now)
+          if (at >= today) return `${text('trash.today', 'today')} ${clock}`
+          if (at >= today - 86_400_000) return `${text('trash.yesterday', 'yesterday')} ${clock}`
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const sameYear = date.getFullYear() === new Date(now).getFullYear()
+          return sameYear ? `${month}-${day} ${clock}` : `${date.getFullYear()}-${month}-${day} ${clock}`
+        }
+
+        /**
          * The trash panel: a settings page that makes "a deletion is recoverable" something a person can see
          * and click, instead of a line they have to ask a model to print.
          *
@@ -678,6 +720,7 @@ window.__ModuleLoader__.load({
           }
 
           const words = labels()
+          const totalBytes = state.entries.reduce((sum, entry) => sum + (Number(entry.bytes) || 0), 0)
           const rows = state.entries.map((entry) => h('div', {
             key: entry.id,
             style: {
@@ -688,12 +731,17 @@ window.__ModuleLoader__.load({
             h('div', { key: 'what', style: { flex: '1 1 auto', minWidth: 0 } }, [
               h('div', {
                 key: 'title',
+                // The title leads, because it is the only thing a person recognises. The session id is a uuid and
+                // belongs in the tooltip: glued to the title it was the loudest text in the row and told nobody
+                // anything. A session with no title keeps a short id, so two blank sessions are still told apart.
+                title: entry.id,
                 style: { fontSize: '13px', color: 'var(--dsw-alias-label-primary, #e6e6e6)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-              }, entry.title === undefined || entry.title === '' ? entry.id : `${entry.title}  ${entry.id}`),
+              }, entry.title === undefined || entry.title === '' ? `${words.unnamed} ${String(entry.id).slice(-8)}` : entry.title),
               h('div', {
                 key: 'meta',
+                title: entry.trashed_at === undefined ? undefined : String(entry.trashed_at),
                 style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #9a9a9a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-              }, `${formatBytes(entry.bytes)} · ${words.trashed} ${entry.trashed_at ?? '—'}`),
+              }, `${formatBytes(entry.bytes)} · ${when(entry.trashed_at)}`),
             ]),
             h('button', {
               key: 'restore', type: 'button', disabled: busy !== undefined,
@@ -716,18 +764,27 @@ window.__ModuleLoader__.load({
                 : h('div', undefined, rows)
 
           return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 2px 24px' } }, [
-            h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
+            h('div', { key: 'head', style: { display: 'flex', alignItems: 'baseline', gap: '10px' } }, [
+              h('h2', { key: 'title', style: { fontSize: '16px', fontWeight: 650, margin: 0, color: 'var(--dsw-alias-label-primary, #e6e6e6)' } }, words.title),
+              // What the page holds, at a glance: a number and a size answer "is there anything to do here?" before
+              // the list is read row by row.
+              h('span', { key: 'count', style: { ...mutedStyle, fontSize: '11px' } }, state.status === 'ready'
+                ? `${words.count.replace('{n}', String(state.entries.length))} · ${formatBytes(totalBytes)}`
+                : ''),
+            ]),
             ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
-              `${state.swept.length} × ${state.swept.map((entry) => entry.id).join(', ')}`)]),
+              words.swept.replace('{n}', String(state.swept.length)))]),
             h('div', { key: 'body' }, body),
-            h('p', { key: 'where', style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' } }, [
-              `${state.root ?? ''}`,
-              // How long the bytes are held, and how many entries the next deletion keeps — the two numbers a person
-              // needs to decide whether to purge something now. Absent from an older Host, which shows the root only.
-              state.retentionDays === undefined || state.limit === undefined
-                ? ''
-                : `  ·  ${words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit))}`,
-            ].join('')),
+            // The path is reference, not a headline: it stays for the person who wants to look in a file manager,
+            // and the two numbers the Host enforces live in its tooltip instead of on the page — they are the same
+            // for every row and answer a question a person asks once, not every time they open this page.
+            h('p', {
+              key: 'where',
+              title: state.retentionDays === undefined || state.limit === undefined
+                ? undefined
+                : words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit)),
+              style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' },
+            }, `${state.root ?? ''}`),
           ])
         }
 
