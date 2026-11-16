@@ -94,8 +94,8 @@ decision you have already made. Both callers end in one implementation, so a per
 calling cannot disagree ([ADR 0011](docs/adr/0011-one-operation-two-callers.md)).
 
 A session's own **⋯ menu** carries the same thing as one row — *删除会话* / *Delete session*, in the window's
-language, drawn in the same red as 删除工作区, with the trash glyph the product registers for it, seated
-below 归档会话, at the very end of the menu: 归档会话 is a **footer** action (`afterContent: true`, which the product sets on it), so this row sets the same flag and sorts after it with `order: 700` ([ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md)). It is a data contribution to the menu, not a
+language, drawn in the same red as the product's *Delete workspace*, with the trash glyph it registers, seated
+below the product's *Archive session*, at the very end of the menu: that row is a **footer** action (`afterContent: true`, which the product sets on it), so this row sets the same flag and sorts after it with `order: 700` ([ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md)). It is a data contribution to the menu, not a
 renderer: the bundle supplies the label, the icon key and the click, and the sidebar draws it like its own
 actions. The row is plain data: it asks the host nothing when the menu opens, and its one call happens on the
 click, with Ctrl+Shift+D printed beside the label once the shortcut catalogue holds it. **Ctrl+Shift+D** (⌘⇧D
@@ -171,7 +171,7 @@ builtins and each other.
 
 **Updating** is `git pull` in that clone, then **one** of: reload the page, switch the plugin off and on in
 the plugin list, or restart the app. Do not skip it — a changed file evicts the loaded bundle, and the window
-takes its contributions from it, so until the window reloads the 删除会话 row, the shortcut and the trash page
+takes its contributions from it, so until the window reloads the *Delete session* row, the shortcut and the trash page
 are **gone**, which looks exactly like the plugin having uninstalled itself. A page reload is enough; a restart
 is only the heaviest way to do the same thing. **Removing** is `plugin_manager` with
 `remove_bundle`, or `dsh plugin --profile <name> remove dsh-cleaner` on a CLI profile; the clone, the
@@ -189,6 +189,7 @@ exchange, from the live run recorded in [Status](#status):
 > Which sessions are still taking space?
 
 list_session_logs {}
+(The titles printed in these samples are the sessions' own — they are whatever language their first prompt was in.)
 ← Session logs on disk: 6, 4169349 bytes (3.98 MiB) (6 of them archived).
   The session store holds 36 directories, 94607680 bytes (90.22 MiB) in all.
     "导入 Claude Code 聊天记录"  session-36560858-…  182051 bytes (177.8 KiB)  3 files  archived  last write 2026-11-02T07:39:15.053Z
@@ -437,7 +438,7 @@ makes. It never deletes; `applyCleanup` is the only function that does.
 | Why does a busy agent block a deletion, and a resident one not? | [ADR 0008](docs/adr/0008-busy-not-resident.md) |
 | Which workspace records does a deletion touch? | [ADR 0009](docs/adr/0009-two-records-two-cases.md) (superseded) |
 | Why does a deleted row disappear at once? | [ADR 0012](docs/adr/0012-archive-never-unarchive.md) |
-| Why is the row the last one in a session menu, below 归档会话? | [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md) (corrects [ADR 0016](docs/adr/0016-row-below-archive.md)) |
+| Why is the row the last one in a session menu, below the product's *Archive session*? | [ADR 0017](docs/adr/0017-row-belongs-in-the-footer.md) (corrects [ADR 0016](docs/adr/0016-row-below-archive.md)) |
 | Which session does a deletion refuse to touch — and does the one on screen count? | [ADR 0018](docs/adr/0018-protection-follows-the-carrier.md) |
 | What happens to the Harness interface when the plugin is closed? | [ADR 0019](docs/adr/0019-contributions-follow-the-plugin-lifetime.md) |
 | How do other tools delete a session, and which parts of that do we adopt? | [ADR 0020](docs/adr/0020-what-the-neighbours-do.md) |
