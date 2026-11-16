@@ -306,3 +306,10 @@ Dates are the commit dates, in the order the work happened.
   Host now answers `reopened: {resumed: [both], skipped: []}` with both ids in `live_agents`. The general lesson, worth
   more than this bug: the diagnostic was already correct and already printed — what was missing was a way to read it.
   Everything before this point was argued from the outside because the window half could not report.
+
+- **The persistence of a restored row turned out to be "the window opened it", and a person proved it by experiment.**
+  One restored session he chatted with survived the plugin being switched off; the one he never touched vanished. That
+  matches the product's model: the main view holds what it opens (`uiWorkspace.openSession`), while a `retain` reference
+  is ours and dies with our page. 0.5.43 opens the first restored id and retains the rest; the test asserts the open.
+  Worth recording as the shape of every remaining question here: an observation from the person beats any amount of
+  reasoning about another package's internals.

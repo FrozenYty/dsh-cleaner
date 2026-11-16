@@ -110,6 +110,9 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
   const commands = []
   const released = []
   const leaves = []
+  // Sessions this window opened: the product holds what it opens, which is what keeps a restored row after the
+  // plugin is switched off.
+  const opens = []
   let pendingInject
 
   page.fetch = async (url, options) => {
@@ -236,7 +239,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
       if (name === 'uiWorkspace') {
         // The window's own workspace face: `startSession()` is the sidebar's 新会话 button, and with no workspace
         // able to take a draft it clears the view to the default page. Recorded so a test can see the navigation.
-        return { startSession: () => leaves.push(current) }
+      return { startSession: () => leaves.push(current), openSession: (id) => opens.push(id) }
       }
       if (name === 'locale') {        // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
         // The product's dictionary service: `register(ns, {en, zh})` contributes, `bind(ns)` reads back with
@@ -304,6 +307,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
     commands,
     released,
     leaves,
+    opens,
     react: built.react,
     cleanup,
     pendingInject: () => pendingInject,
@@ -1037,5 +1041,8 @@ test('a restore asks the product to load what it put back, so the row can exist'
   await settle()
   await settle()
   const loaded = mounted.retained.filter((call) => call.options?.source === 'controllerOperation')
-  assert.deepEqual(loaded.map((call) => call.sessionId), ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the restored session was handed to the product to load')
+  // The durable half: the product's own navigation holds what it opens, so the first restored session is opened
+  // rather than merely retained. A person measured the difference: the session they chatted with survived the
+  // plugin being switched off, the untouched one vanished.
+  assert.deepEqual(mounted.opens, ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the first restored session is opened, which is what keeps its row')
 })

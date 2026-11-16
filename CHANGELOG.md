@@ -1,3 +1,13 @@
+## [0.5.43] - 2026-11-16
+
+- **A restore opens the first restored session, because that is what keeps its row after the plugin is switched off.**
+  Measured by a person, not inferred: of two restored sessions, the one they chatted with stayed after the plugin was
+  switched off and the untouched one disappeared. The window holds a session it has *opened* — `uiWorkspace.openSession`
+  is the product's own navigation and its main view is what retains it — while `sessions.retain` is held by this plugin's
+  page and dies with the plugin. So the restore now opens the first id through `uiWorkspace.openSession` and retains the
+  remaining ones for the session's lifetime. The test asserts the open, so this cannot regress into a bare `retain`.
+
+## [0.5.42] - 2026-11-16
 ## [0.5.42] - 2026-11-16
 
 - **A restore now really resumes an agent, because the option name was wrong.** Read from the loop factory's own built
