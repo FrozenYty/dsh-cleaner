@@ -139,9 +139,11 @@ dsh plugin --profile web add ~/code/dsh-cleaner
 
 没有构建步骤、没有依赖、没有安装脚本：`index.js` 和 `engine.js` 只用 `node:` 内置模块和彼此。
 
-**更新**是在那个 clone 里 `git pull` 再重启应用：宿主只在启动时读 bundle，正在运行的窗口用的还是它加载
-时的那份代码。**卸载**是 `plugin_manager` 的 `remove_bundle`，CLI 管的 profile 用
-`dsh plugin --profile <name> remove dsh-cleaner`；clone、存储、以及已经删掉的东西都不受影响。
+**更新**是在那个 clone 里 `git pull`，然后**做一件事**：刷新页面、在插件列表里把插件关掉再打开、或者重启应用。
+这一步不能省——文件一变，已加载的 bundle 就被逐出，而窗口的贡献（删除会话行、快捷键、回收站页）都来自它，所以在窗口
+重新加载之前它们**会消失**，看起来就像插件把自己卸载了。刷新页面就够了，重启只是同一件事最重的一种做法。**卸载**是
+`plugin_manager` 的 `remove_bundle`，CLI 管的 profile 用 `dsh plugin --profile <name> remove dsh-cleaner`；clone、
+存储、以及已经删掉的东西都不受影响。
 
 装好之后，插件列表里那张卡的标题是**清理**、描述是`只删日志，不碰在用。`——卡片在、开关是开的，就说明
 bundle 加载成功了。

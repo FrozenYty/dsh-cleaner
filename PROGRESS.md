@@ -176,3 +176,13 @@ Dates are the commit dates, in the order the work happened.
   which the product already exposes — is **deliberately not built**: it would need a `onSelfDelete` config field
   whose default is the current behaviour, and nobody asked for it. If that use becomes real, it is a small field and
   two tests, and the guards stay: succeed + current session only.
+
+- **A client-half change was left without an HMR trigger, and the 删除会话 row vanished until the plugin was
+  toggled by hand.** Worth recording because it was diagnosed as a possible deletion bug and was not one: the host
+  answered normally throughout (route up, the workspace's trash root, 47 stored sessions) and the earlier
+  delete-and-restore cycle had passed. What happened is the documented seam: editing a file under the repository
+  evicts the linked bundle's module, the window's contributions of that plugin are torn down with it, and the
+  window rebuilds them only when the plugin is loaded again — a page reload or a plugin toggle does that, a file
+  change alone does not. The host half *had* been triggered at 01:40 and `client.js` was edited at 01:49 with no
+  trigger, which is exactly the asymmetry that hid it. The rule is now in `AGENTS.md` §5 for every future change,
+  and the README pair tells a person what to do after `git pull` and what the symptom looks like if they do not.
