@@ -1,3 +1,16 @@
+## [0.5.53] - 2026-11-16
+
+- **The page stays in the window's language even when its dictionary registration is refused, and it now reads the
+  language tag correctly.** Two defects, both found by asking the runtime for the exact contract instead of trusting a
+  guess. The locale snapshot is `{ active, locales, revision }` where `active` is a **full tag** — `zh-CN`, `en-US` —
+  and `text()` compared it to `'zh'`, so the plugin's own table never matched. And `bind()` **throws** when the
+  registration was refused as a duplicate (an earlier load of this half leaves one behind), while the table lookup sat
+  inside the same `try`: the throw skipped the fallback entirely and the page fell back to the English text written at
+  the call site. The two attempts are separate now — the product first, because `bind()` already walks the declared
+  fallback chain, then the plugin's own table by prefix. The new test is the falsifiable one: with the dictionary
+  refused, the panel title must still read 回收站, and it failed before this change.
+
+## [0.5.52] - 2026-11-16
 ## [0.5.51] - 2026-11-16
 
 - **A load replay builds an agent only for the session that needs one.** The ledger was replayed on every load and

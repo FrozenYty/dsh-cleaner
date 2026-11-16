@@ -258,6 +258,9 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
             return () => dictionaries.delete(ns)
           },
           bind: (ns) => (key) => {
+            // A registration refused as a duplicate (an earlier load of the same half leaves one behind) answers
+            // with the key itself. That is the only case the plugin's own table exists for.
+            if (options.dictionary === 'refused') return key
             const chain = [String(locale ?? 'en').slice(0, 2).toLowerCase(), 'en']
             for (const language of chain) {
               const value = dictionaries.get(ns)?.[language]?.[key]
@@ -899,6 +902,16 @@ test('deleting the session on screen leaves its dead view, and nothing else does
   await settle()
   await settle()
   assert.deepEqual(refused.leaves, [], 'a refusal means the session is alive, so the page stays')
+})
+
+test('a refused dictionary registration still leaves the page in the window\'s language', () => {
+  // `register(ns, dicts)` throws on a duplicate (ns, locale), and an earlier load of this half leaves one behind, so
+  // the registration can be refused while the window is still Chinese. `bind()` then answers with the key itself,
+  // and the plugin's own table is what keeps the page readable - matched by prefix, because `active` is `zh-CN`.
+  const refused = mount({ menus: true, slots: true, locale: 'zh-CN', dictionary: 'refused' })
+  const panel = refused.panels.get('settings.section|dsh-cleaner.trash')
+  assert.ok(panel, 'the page is still registered')
+  assert.equal(panel.options.label(), '回收站', 'the title is Chinese even though the dictionary refused the registration')
 })
 
 test('the path is the only line under the rows, and the rows lead with a name a person knows', async () => {
