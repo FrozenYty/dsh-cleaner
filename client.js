@@ -659,6 +659,34 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * Report again whenever the session list changes.
+         *
+         * A restore, a deletion and the Host's own re-read all end in that list, and the list is the one thing the
+         * Window owns which the Host cannot see. Subscribing here means every future change answers the question
+         * "is the restored session in it" by itself, instead of asking a person to click so it can be read.
+         */
+        ctx.effect(() => {
+          const list = ctx.get('sessions')?.list
+          if (typeof list?.subscribe !== 'function') return undefined
+          let queued
+          const unsubscribe = list.subscribe(() => {
+            if (queued !== undefined) return
+            queued = setTimeout(() => {
+              queued = undefined
+              const ids = list.getSnapshot?.()?.ids ?? []
+              const wanted = state.restoredIds ?? []
+              state.sessionList = `${ids.length} ids; restored present ${wanted.filter((id) => ids.includes(id)).length}/${wanted.length}`
+              report()
+            }, 250)
+          })
+          return () => {
+            if (queued !== undefined) clearTimeout(queued)
+            unsubscribe()
+          }
+        }, 'dsh-cleaner: session-list watcher')
+
+
+        /**
          * A byte count a person can read at a glance.
          *
          * The one piece of arithmetic this panel does, kept a plain function so the formula is not buried in
@@ -763,6 +791,7 @@ window.__ModuleLoader__.load({
          * @param ids - the sessions the Host reported as restored.
          */
         const loadRestored = async (ids) => {
+            state.restoredIds = ids
           try {
             const sessions = ctx.get('sessions')
             const ui = ctx.get('uiWorkspace')

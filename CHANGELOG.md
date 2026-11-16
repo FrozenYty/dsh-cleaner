@@ -1,3 +1,13 @@
+## [0.5.48] - 2026-11-16
+
+- **The window reports the session list by itself, so whether a restored row exists is readable without anyone
+  clicking.** The list is the one thing the Window owns and the Host cannot see — every route from outside answers 401,
+  and the page only posts when something makes it. The half now subscribes to the session list and reports
+  `sessionList` on every change: how many ids it holds and how many of the restored ones are among them. A restore, a
+  deletion and the Host's own re-read all end in that list, so from the next page load onward every future change
+  answers the question by itself instead of needing a person to click so it can be read.
+
+## [0.5.47] - 2026-11-16
 ## [0.5.47] - 2026-11-16
 
 - **The trash page speaks the window's language again, from the plugin's own table.** The dictionary was registered, the
