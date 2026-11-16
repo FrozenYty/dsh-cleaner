@@ -325,3 +325,10 @@ Dates are the commit dates, in the order the work happened.
   older sentence: the writes were happening in a different closure, or in an older module. So 0.5.45 makes the half state
   its own version (`handoff`) and its available levers at load. The lesson, for the third time tonight, is the same: when
   a component cannot be observed, every change to it is a guess — build the observation first.
+
+- **The row question was answered by the runtime inspector, not by another guess.** `Slots.listSubTree` shows the live
+  page's seats and their occupants: our trash page is registered (`registrant: registerPanel, id: dsh-cleaner.trash,
+  active: true`), which proves the client half runs current code - so the staleness theory was wrong. The same output
+  lists the seat's standard props (`useSessions`, `useSessionStatus`, `useSessionRetainInfo`), and the client `Service`
+  contract gives `ISessions.refresh()` / `refreshProjections(id)`. The sidebar's list is a Host-derived snapshot; nothing
+  re-read it after a restore, so the session was never in it. That is the actual defect, and it is fixed in 0.5.46.

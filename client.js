@@ -752,7 +752,7 @@ window.__ModuleLoader__.load({
          * for this page only, so the load is not mistaken for "this is the session on screen".
          * @param ids - the sessions the Host reported as restored.
          */
-        const loadRestored = (ids) => {
+        const loadRestored = async (ids) => {
           try {
             const sessions = ctx.get('sessions')
             const ui = ctx.get('uiWorkspace')
@@ -772,6 +772,15 @@ window.__ModuleLoader__.load({
               // session they chatted with stayed and the untouched one vanished. `retain` alone is held by this page,
               // so it dies with the plugin; it is kept for the remaining ids, which at least stay listed while the
               // plugin is on, and opening one is what makes it permanent.
+              // The list the sidebar draws from is a Host-derived snapshot, so it has to be re-read after a restore or
+              // the session simply is not in it. `refresh` is the documented way; `refreshProjections` re-reads the one
+              // projection the row renders. Both are best-effort: a Host that cannot answer costs the row, not the log.
+              const listBefore = sessions.list?.getSnapshot?.()?.ids?.length ?? 0
+              await Promise.resolve(sessions.refreshProjections?.(id)).catch(() => {})
+              await Promise.resolve(sessions.refresh?.()).catch(() => {})
+              const listAfter = sessions.list?.getSnapshot?.()?.ids ?? []
+              const verdict = listAfter.includes(id) ? 'has it' : 'MISSING it'
+              state.lastClick = `${state.lastClick}; list ${listBefore} -> ${listAfter.length} (${verdict})`
               if (!opened && typeof ui?.openSession === 'function') {
                 opened = true
                 ui.openSession(id)
@@ -805,7 +814,7 @@ window.__ModuleLoader__.load({
               }
               // The hand-off comes first, deliberately: it is what makes the row exist, and a listing that throws must
               // not be able to skip it. This ordering was the bug behind "restored but no row" once already.
-              if (op === 'restore') loadRestored((answer.restored ?? []).map((entry) => entry.id))
+              if (op === 'restore') void loadRestored((answer.restored ?? []).map((entry) => entry.id))
               // Reload the page's own list, but never let it take the restore down with it.
               try {
                 load()

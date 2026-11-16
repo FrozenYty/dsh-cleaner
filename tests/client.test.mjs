@@ -107,6 +107,8 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
   const injections = []
   /** The command carrier: what it retained, what it ran, and what it released. */
   const retained = []
+  // The list the sidebar draws from is Host-derived: a restore that does not re-read it leaves the session out.
+  const refreshed = []
   const commands = []
   const released = []
   const leaves = []
@@ -219,6 +221,10 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
         if (sessions === 'absent') return undefined
         // The documented shape: retain a session, await the binding, run a command in it, release it.
         return {
+        // The list the sidebar draws from is a Host-derived snapshot, so a restore has to re-read it.
+        list: { getSnapshot: () => ({ ids: [], byId: {} }) },
+        refresh: async () => { refreshed.push('list') },
+        refreshProjections: async (id) => { refreshed.push(id) },
           retain: (sessionId, options) => {
             retained.push({ sessionId, options })
             return {
@@ -308,6 +314,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
     released,
     leaves,
     opens,
+    refreshed,
     react: built.react,
     cleanup,
     pendingInject: () => pendingInject,
@@ -1045,4 +1052,6 @@ test('a restore asks the product to load what it put back, so the row can exist'
   // rather than merely retained. A person measured the difference: the session they chatted with survived the
   // plugin being switched off, the untouched one vanished.
   assert.deepEqual(mounted.opens, ['session-52546605-0c58-479b-8492-823df2aede8d'], 'the first restored session is opened, which is what keeps its row')
+  // The row only exists in a list that was re-read after the restore: refresh is the documented way.
+  assert.deepEqual(mounted.refreshed, ['session-52546605-0c58-479b-8492-823df2aede8d', 'list'], 'the projection and the shared list were re-read')
 })
