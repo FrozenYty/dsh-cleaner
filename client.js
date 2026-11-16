@@ -796,8 +796,16 @@ window.__ModuleLoader__.load({
                 setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
                 return
               }
-              load()
+              // The hand-off comes first, deliberately: it is what makes the row exist, and a listing that throws must
+              // not be able to skip it. This ordering was the bug behind "restored but no row" once already.
               if (op === 'restore') loadRestored((answer.restored ?? []).map((entry) => entry.id))
+              // Reload the page's own list, but never let it take the restore down with it.
+              try {
+                load()
+              } catch (error) {
+                state.lastClick = `${state.lastClick}; the listing did not reload: ${reasonOf(error)}`
+                report()
+              }
             })
           }
 

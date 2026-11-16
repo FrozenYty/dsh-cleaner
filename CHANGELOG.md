@@ -1,3 +1,12 @@
+## [0.5.44] - 2026-11-16
+
+- **The hand-off now runs before the page reloads its own list, and a listing that throws cannot skip it.** In `act`,
+  `load()` ran first and was unguarded, so anything it threw — a malformed listing, a busy Host — silently skipped
+  `loadRestored` and left the page looking empty. That is the whole of "restored but no row" and of "the restore itself
+  is broken": the files were back every time; the page and the hand-off were not. The order is now hand-off first, with
+  the reload wrapped so its failure is reported instead of swallowed.
+
+## [0.5.43] - 2026-11-16
 ## [0.5.43] - 2026-11-16
 
 - **A restore opens the first restored session, because that is what keeps its row after the plugin is switched off.**
