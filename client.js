@@ -458,6 +458,10 @@ window.__ModuleLoader__.load({
               // session that no longer exists is a dead page, and `startSession()` is the product's own "new
               // session" (the same call the sidebar button makes, which falls back to the default page when no
               // workspace can take a draft). A refused deletion leaves the session alive, so it must not move.
+              // The window's own list still holds the id after the Host has let it go, and the product draws every
+              // listed session no workspace claims under its "ungrouped" bucket - which is exactly what a person saw
+              // after deleting from this row. `refresh` is the documented re-read, and it is what removes the row.
+              if (moved > 0 || noLog) await Promise.resolve(ctx.get('sessions')?.refresh?.()).catch(() => {})
               if (moved > 0 || noLog) leaveDeletedSession(sessionId)
               report()
               return
@@ -845,7 +849,7 @@ window.__ModuleLoader__.load({
             setBusy(ids[0] ?? 'all')
             setConfirming(undefined)
             const caller = currentSessionId()
-            void post('trash', { op, ids, ...(caller === undefined ? {} : { caller }) }).then((answer) => {
+            void post('trash', { op, ids, ...(caller === undefined ? {} : { caller }) }).then(async (answer) => {
               setBusy(undefined)
               if (answer.error !== undefined) {
                 setState((previous) => ({ ...previous, status: 'unavailable', error: answer.error }))
@@ -854,6 +858,10 @@ window.__ModuleLoader__.load({
               // The hand-off comes first, deliberately: it is what makes the row exist, and a listing that throws must
               // not be able to skip it. This ordering was the bug behind "restored but no row" once already.
               if (op === 'restore') void loadRestored((answer.restored ?? []).map((entry) => entry.id))
+              // A deletion has to leave the window's own list as well, or the product keeps drawing the id under its
+              // "ungrouped" bucket: the list is a Host-derived snapshot, and only something asking for a re-read
+              // removes what the Host no longer has. `restore` was already handled; this covers the other direction.
+              if (op !== 'restore') await Promise.resolve(ctx.get('sessions')?.refresh?.()).catch(() => {})
               // Reload the page's own list, but never let it take the restore down with it.
               try {
                 load()

@@ -1,3 +1,14 @@
+## [0.5.49] - 2026-11-16
+
+- **A deletion now leaves the window's own list too, which is what stops a deleted row from reappearing under the
+  product's "ungrouped" bucket.** A person deleted two sessions and watched them move into 未分组 instead of vanishing:
+  the Host had done its part (log moved, membership dropped, live object released), but the Window's list is a
+  Host-derived snapshot and nothing had re-read it, so the product kept drawing the ids no workspace claims. Both
+  deletion paths — the row menu and the trash page — now call `ISessions.refresh()` after a removal that happened, the
+  same documented re-read the restore already used. It is the same defect as "restored but no row", in the other
+  direction, and one fix covers both.
+
+## [0.5.48] - 2026-11-16
 ## [0.5.48] - 2026-11-16
 
 - **The window reports the session list by itself, so whether a restored row exists is readable without anyone
