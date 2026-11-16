@@ -1368,7 +1368,7 @@ function stateReport(rawInput) {
  */
 function formatState(state) {
   const parts = []
-  for (const key of ['inject', 'service', 'register', 'catalog', 'menu', 'dictionary', 'row', 'panel', 'panel_icon', 'notice', 'route', 'report', 'handoff', 'levers', 'locale', 'current', 'lastClick', 'fatal']) {
+  for (const key of ['inject', 'service', 'register', 'catalog', 'menu', 'dictionary', 'row', 'panel', 'panel_icon', 'notice', 'route', 'report', 'handoff', 'levers', 'locale', 'list', 'current', 'lastClick', 'fatal']) {
     if (state[key] !== undefined) parts.push(`${key}=${String(state[key])}`)
   }
   return parts.length === 0 ? 'the window half sent an empty state' : parts.join('  ')
