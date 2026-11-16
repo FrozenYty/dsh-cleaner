@@ -144,6 +144,14 @@ chooses it from the running version — one command, both majors, and CI runs ex
 24, on Linux, macOS and Windows. Do not drop a leg to make CI faster: the engines field is a claim, and the
 matrix is what makes it true.
 
+**A change to either half of the bundle needs the profile-patch trigger, the client half included.** Editing a
+file under this repository evicts the linked plugin's module, and the window's contributions of that plugin —
+the session-menu row, the shortcut, the trash page — are torn down with it; the window rebuilds them when the
+plugin is loaded again, which a page reload or a plugin toggle does and a **file change alone does not**. On
+2026-11-16 an edit to `client.js` was left without a trigger and the 删除会话 row stayed gone until the plugin
+was toggled by hand; the host half had been triggered correctly at the same session, which is what made the
+asymmetry easy to miss. Write the comment for every change that lands, and say which one it was.
+
 `scripts/check.mjs` cannot prove the plugin works: it never loads the Harness. Installing the bundle
 into a profile and calling the tools is the only real check, and it is the person's decision every time.
 Never claim a tool works because the install printed `applied`.

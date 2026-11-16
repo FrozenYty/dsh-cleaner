@@ -169,8 +169,11 @@ dsh plugin --profile web add ~/code/dsh-cleaner
 There is no build step, no dependency and no install script: `index.js` and `engine.js` use only `node:`
 builtins and each other.
 
-**Updating** is `git pull` in that clone and a restart of the app: the host reads the bundle when it
-starts, so a running window keeps the code it loaded. **Removing** is `plugin_manager` with
+**Updating** is `git pull` in that clone, then **one** of: reload the page, switch the plugin off and on in
+the plugin list, or restart the app. Do not skip it — a changed file evicts the loaded bundle, and the window
+takes its contributions from it, so until the window reloads the 删除会话 row, the shortcut and the trash page
+are **gone**, which looks exactly like the plugin having uninstalled itself. A page reload is enough; a restart
+is only the heaviest way to do the same thing. **Removing** is `plugin_manager` with
 `remove_bundle`, or `dsh plugin --profile <name> remove dsh-cleaner` on a CLI profile; the clone, the
 store, and every deletion already made are untouched.
 
