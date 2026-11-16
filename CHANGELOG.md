@@ -1,3 +1,15 @@
+## [0.5.46] - 2026-11-16
+
+- **A restore now re-reads the session list, which is where the row comes from.** From the live Client inspection: the
+  standard props of the sidebar's seat include `useSessions`, and the `sessions` service exposes `refresh()` and
+  `refreshProjections(sessionId)` — the list a sidebar draws from is a **Host-derived snapshot**, so a restore that does
+  not re-read it leaves the session out of it no matter how correct the files, the membership and the agent are. Every
+  restored id now gets `refreshProjections` and `refresh`, and the window reports what the list held before and after it
+  (`list 9 -> 10 (has it)` or `(MISSING it)`), so whether the row exists is readable from the Host.
+- The order inside the hand-off was wrong as well: the first id is opened and the loop `continue`d, which skipped the
+  refresh for exactly that id. The refresh now runs before the open for every id.
+
+## [0.5.45] - 2026-11-16
 ## [0.5.45] - 2026-11-16
 
 - **The window half now reports its own version and whether it holds the two levers, at load.** Two restores in a row
