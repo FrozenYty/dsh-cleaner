@@ -41,8 +41,8 @@
  */
 
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { realpath } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 
 import {
   listTrash,
