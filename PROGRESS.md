@@ -186,3 +186,11 @@ Dates are the commit dates, in the order the work happened.
   change alone does not. The host half *had* been triggered at 01:40 and `client.js` was edited at 01:49 with no
   trigger, which is exactly the asymmetry that hid it. The rule is now in `AGENTS.md` §5 for every future change,
   and the README pair tells a person what to do after `git pull` and what the symptom looks like if they do not.
+
+- **The trash page shows the retention window and the cap, closing the last item on `PLAN.md`.** The two numbers a
+  person needs to decide whether to purge something now come from the same config the sweep and the cap read
+  (`retentionDays`, `trashLimit`), echoed in the trash answer and printed on one line under the path. The test drives
+  the page to its second render, which needed the client fixture's `React` to keep hook state between renders instead
+  of dropping every update — it still has no renderer, but it can now show what a page says after the Host answered.
+  Confirmed red without the render change — the second render carried the path and **no** numbers — and green after
+  it; `npm test` at 127 tests / 124 pass, `node scripts/check.mjs` passed.

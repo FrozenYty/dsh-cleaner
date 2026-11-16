@@ -35,27 +35,39 @@ function register(page = {}) {
 /** The plugin object the loader's factory returns, with a `require` that knows only the page's module table. */
 function plugin(definition) {
   const asked = []
+  const react = fakeReact()
   const value = definition.factory((name) => {
     asked.push(name)
-    if (name === 'react') return fakeReact()
+    if (name === 'react') return react
     throw new Error(`the bundle half must not require anything but the page's own table (asked for ${name})`)
   })
   value.asked = asked
+  value.react = react
   return value
 }
 
 /**
- * A React just real enough to call a component function once.
+ * A React just real enough to call a component function, and to render it twice.
  *
- * `useState` answers the initial value and drops every update, and `useEffect` runs the effect immediately:
- * enough to see the first render tree (the labels and the structure) without a renderer. The list itself is
- * covered by the host-side tests, which exercise the same route answer.
+ * `useEffect` runs the effect immediately, and `useState` keeps its value between renders while a test drives them
+ * (`hookCells` is cleared by `mount` for each new page): enough to see the first render tree **and** the tree after
+ * a load resolved, which is the only way to assert what a page says once the Host has answered. There is still no
+ * renderer, no diffing and no ordering — the list itself is covered by the host-side tests.
  */
 function fakeReact() {
+  const cells = []
+  let cursor = 0
   return {
     createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() }),
-    useState: (initial) => [initial, () => {}],
+    useState: (initial) => {
+      const index = cursor
+      cursor += 1
+      if (cells[index] === undefined) cells[index] = initial
+      return [cells[index], (next) => { cells[index] = typeof next === 'function' ? next(cells[index]) : next }]
+    },
     useEffect: (effect) => { effect() },
+    // A render starts a fresh hook cursor, exactly as React does; the cells are what survives.
+    beginRender: () => { cursor = 0 },
   }
 }
 
@@ -278,7 +290,8 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
           },
   }
   const cleanup = []
-  plugin(register(page)).apply(ctx)
+  const built = plugin(register(page))
+  built.apply(ctx)
   return {
     requests,
     registered,
@@ -291,6 +304,7 @@ function mount({ menus, locale, shortcuts, slots, sessions, current, injectThrow
     commands,
     released,
     leaves,
+    react: built.react,
     cleanup,
     pendingInject: () => pendingInject,
   }
@@ -847,4 +861,27 @@ test('deleting the session on screen leaves its dead view, and nothing else does
   await settle()
   await settle()
   assert.deepEqual(refused.leaves, [], 'a refusal means the session is alive, so the page stays')
+})
+
+test('the trash page shows how long the bytes are held and how many entries are kept', async () => {
+  // The last open item on PLAN.md: a person deciding whether to purge something needs the two numbers the Host
+  // enforces. The page reads them from the trash answer, so the answer carries them and the page renders one line.
+  const mounted = mount({
+    menus: true,
+    slots: true,
+    answer: {
+      action: 'list',
+      trash: { root: 'D:\\somewhere\\cleaner\\trash', retention_days: 7, limit: 50, count: 0, bytes: 0, entries: [] },
+      swept: [],
+    },
+  })
+  const page = mounted.panels.get('settings.section|dsh-cleaner.trash')
+  page.component()                       // the first render: "reading the trash"
+  await settle()
+  await settle()
+  mounted.react.beginRender()
+  const said = JSON.stringify(page.component())
+  assert.match(said, /7 days/, 'the retention window the Host enforces')
+  assert.match(said, /at most 50 entries/, 'and the cap the next deletion keeps')
+  assert.match(said, /somewhere/, 'beside the path it holds them in')
 })

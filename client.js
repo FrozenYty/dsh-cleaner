@@ -207,6 +207,7 @@ window.__ModuleLoader__.load({
           unavailable: text('trash.unavailable', 'Host half not loaded — restart to use this page.'),
           bytes: text('trash.bytes', 'bytes'),
           trashed: text('trash.trashed', 'deleted'),
+          limits: text('trash.limits', 'Kept {days} days · at most {limit} entries'),
         })
 
         /** Contribute this plugin's strings to the product's dictionary, and nothing else. */
@@ -227,6 +228,7 @@ window.__ModuleLoader__.load({
               'trash.unavailable': 'Host half not loaded — restart to use this page.',
               'trash.bytes': 'bytes',
               'trash.trashed': 'deleted',
+              'trash.limits': 'Kept {days} days · at most {limit} entries',
               'notice.deleted': 'Deleted',
               'notice.kept': 'Not deleted',
               'notice.gone': 'No log — row removed',
@@ -246,6 +248,7 @@ window.__ModuleLoader__.load({
               'trash.unavailable': '宿主半边未加载，重启后可用。',
               'trash.bytes': '字节',
               'trash.trashed': '删除于',
+              'trash.limits': '保留 {days} 天 · 最多 {limit} 条',
               'notice.deleted': '已删除',
               'notice.kept': '未删除',
               'notice.gone': '无日志，已移出列表',
@@ -654,6 +657,7 @@ window.__ModuleLoader__.load({
                 error: undefined,
                 root: trash.root,
                 retentionDays: trash.retention_days,
+                limit: trash.limit,
               })
             })
           }
@@ -716,7 +720,14 @@ window.__ModuleLoader__.load({
             ...(state.swept.length === 0 ? [] : [h('p', { key: 'swept', style: mutedStyle },
               `${state.swept.length} × ${state.swept.map((entry) => entry.id).join(', ')}`)]),
             h('div', { key: 'body' }, body),
-            h('p', { key: 'where', style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' } }, `${state.root ?? ''}`),
+            h('p', { key: 'where', style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' } }, [
+              `${state.root ?? ''}`,
+              // How long the bytes are held, and how many entries the next deletion keeps — the two numbers a person
+              // needs to decide whether to purge something now. Absent from an older Host, which shows the root only.
+              state.retentionDays === undefined || state.limit === undefined
+                ? ''
+                : `  ·  ${words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit))}`,
+            ].join('')),
           ])
         }
 
