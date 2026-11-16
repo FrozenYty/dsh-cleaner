@@ -212,7 +212,6 @@ window.__ModuleLoader__.load({
           loading: text('trash.loading', 'Reading the trash…'),
           unavailable: text('trash.unavailable', 'Host half not loaded — restart to use this page.'),
           bytes: text('trash.bytes', 'bytes'),
-          limits: text('trash.limits', 'Kept {days} days · at most {limit} entries'),
           confirm: text('trash.confirm', 'Confirm'),
           restoreAll: text('trash.restoreAll', 'Restore all'),
           purgeAll: text('trash.purgeAll', 'Empty the trash'),
@@ -966,9 +965,8 @@ window.__ModuleLoader__.load({
             // for every row and answer a question a person asks once, not every time they open this page.
             h('p', {
               key: 'where',
-              title: state.retentionDays === undefined || state.limit === undefined
-                ? undefined
-                : words.limits.replace('{days}', String(state.retentionDays)).replace('{limit}', String(state.limit)),
+              // The retention window and the cap are facts about the store, not something a person needs on screen:
+              // the path stays, the sentence does not. The listing tool still answers both numbers in its own answer.
               style: { ...mutedStyle, marginTop: '10px', fontSize: '11px' },
             }, `${state.root ?? ''}`),
           ])
